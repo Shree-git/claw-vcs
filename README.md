@@ -10,7 +10,7 @@ claw intent create --title "Add dark mode" --goal "Support light/dark theme togg
 claw change create --intent <intent-id>
 # ... write code ...
 claw snapshot -m "Initial dark mode implementation"
-claw ship --intent <intent-id>
+claw ship --intent <intent-id> --evidence test=pass --evidence lint=pass
 ```
 
 ## Why Claw exists
@@ -201,6 +201,7 @@ Partial clone filters let you fetch selectively:
 claw init                    Initialize a new repository
 claw intent <subcommand>     Create and manage intents
 claw change <subcommand>     Create and manage changes
+claw policy <subcommand>     Create and manage integration policies
 claw snapshot -m "msg"       Record the working tree atomically
 claw ship --intent <id>      Finalize a change and produce a capsule
 claw integrate               Merge changes (three-way, codec-aware)
@@ -214,10 +215,12 @@ claw resolve <subcommand>    Manage merge conflicts
 claw agent <subcommand>      Register and manage agent identities
 claw remote <subcommand>     Manage remote repositories
 claw auth <subcommand>       Manage ClawLab auth profiles and tokens
-claw sync <remote>           Sync with a remote repository
+claw sync <remote>           Pull from a remote (shorthand)
+claw sync <subcommand>       Push, pull, or clone
 claw daemon                  Run the gRPC sync server
 claw patch <subcommand>      Create and apply patches directly
 claw git-export              Export to Git format
+claw git-import              Import from Git format
 ```
 
 **No staging area** — by design. `claw snapshot` captures everything atomically. This is a deliberate simplification for agent workflows where partial staging adds complexity without value.
