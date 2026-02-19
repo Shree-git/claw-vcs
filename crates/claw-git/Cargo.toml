@@ -9,3 +9,7 @@ claw-core = { workspace = true }
 claw-store = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
