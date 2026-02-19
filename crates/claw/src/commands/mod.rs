@@ -6,11 +6,13 @@ pub mod checkout;
 pub mod daemon;
 pub mod diff;
 pub mod git_export;
+pub mod git_import;
 pub mod init;
 pub mod integrate;
 pub mod intent;
 pub mod log;
 pub mod patch;
+pub mod policy;
 pub mod remote;
 pub mod resolve;
 pub mod ship;
@@ -31,6 +33,8 @@ pub enum Commands {
     Change(change::ChangeArgs),
     /// Create and apply patches
     Patch(patch::PatchArgs),
+    /// Manage policies
+    Policy(policy::PolicyArgs),
     /// Sync with a remote repository
     Sync(sync::SyncArgs),
     /// Integrate changes (merge)
@@ -55,6 +59,8 @@ pub enum Commands {
     Diff(diff::DiffArgs),
     /// Export to git format
     GitExport(git_export::GitExportArgs),
+    /// Import from git format
+    GitImport(git_import::GitImportArgs),
     /// Show working tree status
     Status(status::StatusArgs),
     /// Show details of an object
@@ -74,6 +80,7 @@ impl Commands {
             Commands::Intent(args) => intent::run(args),
             Commands::Change(args) => change::run(args),
             Commands::Patch(args) => patch::run(args),
+            Commands::Policy(args) => policy::run(args),
             Commands::Sync(args) => sync::run(args).await,
             Commands::Integrate(args) => integrate::run(args),
             Commands::Ship(args) => ship::run(args),
@@ -86,6 +93,7 @@ impl Commands {
             Commands::Log(args) => log::run(args),
             Commands::Diff(args) => diff::run(args),
             Commands::GitExport(args) => git_export::run(args),
+            Commands::GitImport(args) => git_import::run(args),
             Commands::Status(args) => status::run(args),
             Commands::Show(args) => show::run(args),
             Commands::Resolve(args) => resolve::run(args),
