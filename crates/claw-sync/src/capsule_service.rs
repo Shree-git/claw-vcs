@@ -6,6 +6,7 @@ use tonic::{Request, Response, Status};
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
 use claw_core::types::{Capsule, CapsulePublic, Evidence};
+use claw_crypto::capsule::verify_capsule;
 use claw_store::ClawStore;
 
 use crate::proto::capsule::capsule_service_server::CapsuleService;
@@ -94,6 +95,59 @@ fn public_from_proto(p: &crate::proto::objects::CapsulePublic) -> CapsulePublic 
     }
 }
 
+fn verify_capsule_for_revision(capsule: &Capsule, revision_id: &ObjectId) -> (bool, String) {
+    if capsule.revision_id != *revision_id {
+        return (
+            false,
+            "capsule revision mismatch with requested revision".into(),
+        );
+    }
+
+    if capsule.signatures.is_empty() {
+        return (false, "no signatures".into());
+    }
+
+    let mut verified = 0usize;
+    let mut parse_errors = 0usize;
+
+    for sig in &capsule.signatures {
+        let Ok(signer_bytes) = hex::decode(&sig.signer_id) else {
+            parse_errors += 1;
+            continue;
+        };
+        let Ok(public_key) = <[u8; 32]>::try_from(signer_bytes.as_slice()) else {
+            parse_errors += 1;
+            continue;
+        };
+
+        let mut candidate = capsule.clone();
+        candidate.signatures = vec![sig.clone()];
+        if matches!(verify_capsule(&candidate, &public_key), Ok(true)) {
+            verified += 1;
+        }
+    }
+
+    if verified > 0 {
+        (
+            true,
+            format!(
+                "{verified}/{} signature(s) verified cryptographically",
+                capsule.signatures.len()
+            ),
+        )
+    } else if parse_errors > 0 {
+        (
+            false,
+            format!(
+                "no valid signatures ({} malformed signer id(s))",
+                parse_errors
+            ),
+        )
+    } else {
+        (false, "no valid signatures".into())
+    }
+}
+
 #[tonic::async_trait]
 impl CapsuleService for CapsuleServer {
     async fn create(
@@ -143,6 +197,18 @@ impl CapsuleService for CapsuleServer {
             .map_err(|e| Status::internal(e.to_string()))?;
         store
             .set_ref(&format!("capsules/{}", revision_id.to_hex()), &obj_id)
+            .map_err(|e| Status::internal(e.to_string()))?;
+        store
+            .set_ref(
+                &format!("capsules/by-revision/{}", revision_id.to_hex()),
+                &obj_id,
+            )
+            .map_err(|e| Status::internal(e.to_string()))?;
+        store
+            .set_ref(
+                &format!("capsules/by-revision/{}", &revision_id.to_hex()[..16]),
+                &obj_id,
+            )
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(CreateCapsuleResponse {
@@ -216,20 +282,67 @@ impl CapsuleService for CapsuleServer {
             .map_err(|e| Status::internal(e.to_string()))?
         {
             Object::Capsule(c) => {
-                let has_signatures = !c.signatures.is_empty();
-                Ok(Response::new(VerifyCapsuleResponse {
-                    valid: has_signatures,
-                    message: if has_signatures {
-                        format!("{} signature(s) present", c.signatures.len())
-                    } else {
-                        "no signatures".into()
-                    },
-                }))
+                let (valid, message) = verify_capsule_for_revision(&c, &revision_id);
+                Ok(Response::new(VerifyCapsuleResponse { valid, message }))
             }
             _ => Ok(Response::new(VerifyCapsuleResponse {
                 valid: false,
                 message: "object is not a capsule".into(),
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_capsule_for_revision;
+    use claw_core::hash::content_hash;
+    use claw_core::object::TypeTag;
+    use claw_core::types::CapsulePublic;
+    use claw_crypto::capsule::build_capsule;
+    use claw_crypto::keypair::KeyPair;
+
+    fn public_fields() -> CapsulePublic {
+        CapsulePublic {
+            agent_id: "agent-a".to_string(),
+            agent_version: Some("1.0.0".to_string()),
+            toolchain_digest: None,
+            env_fingerprint: None,
+            evidence: vec![],
+        }
+    }
+
+    #[test]
+    fn verify_capsule_for_revision_accepts_valid_signature() {
+        let keypair = KeyPair::generate();
+        let revision_id = content_hash(TypeTag::Revision, b"revision-a");
+        let capsule = build_capsule(&revision_id, public_fields(), None, None, &keypair).unwrap();
+
+        let (valid, _) = verify_capsule_for_revision(&capsule, &revision_id);
+        assert!(valid);
+    }
+
+    #[test]
+    fn verify_capsule_for_revision_rejects_tampering() {
+        let keypair = KeyPair::generate();
+        let revision_id = content_hash(TypeTag::Revision, b"revision-b");
+        let mut capsule =
+            build_capsule(&revision_id, public_fields(), None, None, &keypair).unwrap();
+        capsule.public_fields.agent_id = "tampered".to_string();
+
+        let (valid, _) = verify_capsule_for_revision(&capsule, &revision_id);
+        assert!(!valid);
+    }
+
+    #[test]
+    fn verify_capsule_for_revision_rejects_revision_mismatch() {
+        let keypair = KeyPair::generate();
+        let revision_id = content_hash(TypeTag::Revision, b"revision-c");
+        let other_revision_id = content_hash(TypeTag::Revision, b"revision-d");
+        let capsule = build_capsule(&revision_id, public_fields(), None, None, &keypair).unwrap();
+
+        let (valid, message) = verify_capsule_for_revision(&capsule, &other_revision_id);
+        assert!(!valid);
+        assert!(message.contains("mismatch"));
     }
 }

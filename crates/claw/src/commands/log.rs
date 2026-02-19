@@ -172,9 +172,16 @@ fn walk_log(
 
         // Check for capsule reverse-mapping
         let capsule_id = {
-            let prefix = &id.to_hex()[..16];
+            let full = id.to_hex();
             store
-                .get_ref(&format!("capsules/by-revision/{}", prefix))?
+                .get_ref(&format!("capsules/by-revision/{}", full))?
+                .or_else(|| {
+                    let prefix = &full[..16];
+                    store
+                        .get_ref(&format!("capsules/by-revision/{}", prefix))
+                        .ok()
+                        .flatten()
+                })
                 .map(|cap_id| cap_id.to_string())
         };
 
