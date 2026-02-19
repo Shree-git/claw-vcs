@@ -32,9 +32,9 @@ pub struct HttpSyncClient {
 const OBJECT_BYTES_CHUNK_SIZE: usize = 4_000_000;
 const INLINE_OBJECT_MAX_BYTES: usize = 1_000_000;
 const INLINE_BATCH_MAX_BYTES: usize = 2_500_000;
-const CAP_CHUNKED_OBJECTS_V1: &str = "chunked-objects-v1";
-const CAP_PACK_UPLOAD_V1: &str = "pack-upload-v1";
-const CAP_BATCH_COMPLETE_V1: &str = "batch-complete-v1";
+const CAP_CHUNKED_OBJECTS: &str = "chunked-objects";
+const CAP_PACK_UPLOAD: &str = "pack-upload";
+const CAP_BATCH_COMPLETE: &str = "batch-complete";
 const MAX_CONCURRENT_UPLOADS: usize = 8;
 const MAX_BATCH_SIZE: usize = 500;
 
@@ -122,7 +122,7 @@ impl HttpSyncClient {
 
     fn endpoint(&self, suffix: &str) -> String {
         let repo = urlencoding::encode(&self.repo);
-        format!("{}/v1/repos/{}{}", self.base_url, repo, suffix)
+        format!("{}/sync/repos/{}{}", self.base_url, repo, suffix)
     }
 
     fn request(&self, method: reqwest::Method, url: String) -> reqwest::RequestBuilder {
@@ -167,7 +167,7 @@ impl HttpSyncClient {
         self.server_version = Some(
             health
                 .server_version
-                .unwrap_or_else(|| "clawlab-http-v1".to_string()),
+                .unwrap_or_else(|| "clawlab-http".to_string()),
         );
         self.capabilities_advertised = health.capabilities.is_some();
         self.server_capabilities = health
@@ -480,8 +480,9 @@ impl HttpSyncClient {
                             required.total_chunks,
                         )
                         .await?;
-                    let id = ObjectId::from_hex(&required.object_id)
-                        .map_err(|e| SyncError::TransferFailed(format!("invalid object id: {e}")))?;
+                    let id = ObjectId::from_hex(&required.object_id).map_err(|e| {
+                        SyncError::TransferFailed(format!("invalid object id: {e}"))
+                    })?;
                     Ok(Some(id))
                 }
             });
@@ -583,15 +584,13 @@ impl HttpSyncClient {
                 "pack upload init returned invalid chunkSize=0".to_string(),
             ));
         }
-        let expected_total_chunks = pack_size
-            .checked_add(init.chunk_size - 1)
-            .ok_or_else(|| {
+        let expected_total_chunks =
+            pack_size.checked_add(init.chunk_size - 1).ok_or_else(|| {
                 SyncError::TransferFailed(format!(
                     "invalid pack upload chunk plan: overflow for pack_size={} chunk_size={}",
                     pack_size, init.chunk_size
                 ))
-            })?
-            / init.chunk_size;
+            })? / init.chunk_size;
         if init.total_chunks != expected_total_chunks {
             return Err(SyncError::TransferFailed(format!(
                 "invalid pack upload chunk plan: totalChunks={} expected={} \
@@ -720,7 +719,7 @@ impl HttpSyncClient {
         let url = self.endpoint("/objects:batch-upload");
         let all_ids: HashSet<ObjectId> = ids.iter().copied().collect();
         let mut accepted_ids: HashSet<ObjectId> = HashSet::new();
-        let use_batch_complete = self.server_capabilities.contains(CAP_BATCH_COMPLETE_V1);
+        let use_batch_complete = self.server_capabilities.contains(CAP_BATCH_COMPLETE);
 
         // Retry loop for dependency ordering: inline objects whose parents
         // haven't been stored yet will be rejected and retried.
@@ -810,9 +809,7 @@ impl HttpSyncClient {
 
             // Tier 3: batch-complete all pending uploads in one request.
             if !all_pending_completes.is_empty() {
-                let batch_accepted = self
-                    .batch_complete_uploads(&all_pending_completes)
-                    .await?;
+                let batch_accepted = self.batch_complete_uploads(&all_pending_completes).await?;
                 accepted_ids.extend(batch_accepted);
             }
 
@@ -1002,7 +999,7 @@ impl HttpSyncClient {
     }
 
     // -----------------------------------------------------------------------
-    // Legacy push (inline-only, for servers without chunked-objects-v1)
+    // Legacy push (inline-only, for servers without chunked-objects)
     // -----------------------------------------------------------------------
 
     async fn push_objects_legacy(
@@ -1037,7 +1034,7 @@ impl HttpSyncClient {
             for obj in &pending {
                 if obj.cof_bytes.len() > INLINE_OBJECT_MAX_BYTES {
                     return Err(SyncError::TransferFailed(format!(
-                        "server does not advertise {CAP_CHUNKED_OBJECTS_V1}; \
+                        "server does not advertise {CAP_CHUNKED_OBJECTS}; \
                          cannot push large object {} ({} bytes)",
                         obj.hex,
                         obj.cof_bytes.len()
@@ -1087,9 +1084,7 @@ impl HttpSyncClient {
                         .acquire()
                         .await
                         .map_err(|_| SyncError::TransferFailed("semaphore closed".to_string()))?;
-                    client
-                        .send_upload_batch(&url, batch, &*map, false)
-                        .await
+                    client.send_upload_batch(&url, batch, &*map, false).await
                 });
             }
 
@@ -1314,7 +1309,7 @@ impl SyncTransport for HttpSyncClient {
             server_version: self
                 .server_version
                 .clone()
-                .unwrap_or_else(|| "clawlab-http-v1".to_string()),
+                .unwrap_or_else(|| "clawlab-http".to_string()),
             capabilities: caps,
         })
     }
@@ -1349,9 +1344,7 @@ impl SyncTransport for HttpSyncClient {
 
         // Prefer capability negotiation; if the server doesn't advertise capabilities yet, try
         // chunked first (newer servers) and fall back to legacy.
-        if self.capabilities_advertised
-            && !self.server_capabilities.contains(CAP_CHUNKED_OBJECTS_V1)
-        {
+        if self.capabilities_advertised && !self.server_capabilities.contains(CAP_CHUNKED_OBJECTS) {
             return self.fetch_objects_legacy(store, want, have).await;
         }
 
@@ -1413,16 +1406,14 @@ impl SyncTransport for HttpSyncClient {
 
         // Strategy 1: Pack upload (Tier 1) – single binary payload, fewest HTTP
         // requests. The server unpacks the CLPK and stores all objects at once.
-        if self.server_capabilities.contains(CAP_PACK_UPLOAD_V1) {
+        if self.server_capabilities.contains(CAP_PACK_UPLOAD) {
             return self.push_objects_pack(store, ids).await;
         }
 
         // Strategy 2: Hybrid inline + chunked (Tier 2) – inline small objects
         // to avoid 2 extra HTTP round-trips per object, with chunked upload
         // for large objects and optional batch-complete (Tier 3).
-        if self.capabilities_advertised
-            && self.server_capabilities.contains(CAP_CHUNKED_OBJECTS_V1)
-        {
+        if self.capabilities_advertised && self.server_capabilities.contains(CAP_CHUNKED_OBJECTS) {
             return self.push_objects_hybrid(store, ids).await;
         }
 
