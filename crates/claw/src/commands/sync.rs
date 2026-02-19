@@ -27,7 +27,9 @@ fn require_access_token(token_profile: Option<&str>) -> anyhow::Result<String> {
 #[derive(Args)]
 pub struct SyncArgs {
     #[command(subcommand)]
-    command: SyncCommand,
+    command: Option<SyncCommand>,
+    /// Remote name or address (compatibility form: claw sync <remote>)
+    remote: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -75,6 +77,17 @@ enum SyncCommand {
     },
 }
 
+fn resolve_command(args: SyncArgs) -> SyncCommand {
+    match args.command {
+        Some(command) => command,
+        None => SyncCommand::Pull {
+            remote: args.remote.unwrap_or_else(|| "origin".to_string()),
+            ref_name: "heads/main".to_string(),
+            force: false,
+        },
+    }
+}
+
 async fn connect_from_remote(
     root: &std::path::Path,
     remote_arg: &str,
@@ -101,7 +114,7 @@ async fn connect_from_remote(
 }
 
 pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
-    match args.command {
+    match resolve_command(args) {
         SyncCommand::Push {
             remote,
             ref_name,
@@ -277,4 +290,71 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{resolve_command, SyncArgs, SyncCommand};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: SyncArgs,
+    }
+
+    #[test]
+    fn parse_compat_remote_form() {
+        let cli = TestCli::parse_from(["claw", "origin"]);
+
+        match resolve_command(cli.args) {
+            SyncCommand::Pull {
+                remote,
+                ref_name,
+                force,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(ref_name, "heads/main");
+                assert!(!force);
+            }
+            _ => panic!("expected pull command"),
+        }
+    }
+
+    #[test]
+    fn parse_pull_subcommand_form() {
+        let cli = TestCli::parse_from(["claw", "pull", "--remote", "upstream"]);
+
+        match resolve_command(cli.args) {
+            SyncCommand::Pull {
+                remote,
+                ref_name,
+                force,
+            } => {
+                assert_eq!(remote, "upstream");
+                assert_eq!(ref_name, "heads/main");
+                assert!(!force);
+            }
+            _ => panic!("expected pull command"),
+        }
+    }
+
+    #[test]
+    fn parse_sync_without_remote_defaults_to_origin() {
+        let cli = TestCli::parse_from(["claw"]);
+
+        match resolve_command(cli.args) {
+            SyncCommand::Pull {
+                remote,
+                ref_name,
+                force,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(ref_name, "heads/main");
+                assert!(!force);
+            }
+            _ => panic!("expected pull command"),
+        }
+    }
 }

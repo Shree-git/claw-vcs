@@ -16,6 +16,7 @@ pub struct IntentArgs {
 #[derive(Subcommand)]
 enum IntentCommand {
     /// Create a new intent
+    #[command(alias = "create")]
     New {
         /// Intent title
         #[arg(short, long)]
@@ -39,6 +40,32 @@ enum IntentCommand {
         #[arg(short, long)]
         status: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{IntentArgs, IntentCommand};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: IntentArgs,
+    }
+
+    #[test]
+    fn parse_create_alias_as_new() {
+        let cli = TestCli::parse_from(["claw", "create", "--title", "hello"]);
+
+        match cli.args.command {
+            IntentCommand::New { title, goal } => {
+                assert_eq!(title, "hello");
+                assert_eq!(goal, "");
+            }
+            _ => panic!("expected new command"),
+        }
+    }
 }
 
 pub fn run(args: IntentArgs) -> anyhow::Result<()> {

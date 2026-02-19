@@ -16,6 +16,7 @@ pub struct ChangeArgs {
 #[derive(Subcommand)]
 enum ChangeCommand {
     /// Create a new change
+    #[command(alias = "create")]
     New {
         /// Intent ID this change belongs to
         #[arg(short, long)]
@@ -39,6 +40,31 @@ enum ChangeCommand {
         /// New status
         status: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{ChangeArgs, ChangeCommand};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: ChangeArgs,
+    }
+
+    #[test]
+    fn parse_create_alias_as_new() {
+        let cli = TestCli::parse_from(["claw", "create", "--intent", "01J00000000000000000000000"]);
+
+        match cli.args.command {
+            ChangeCommand::New { intent } => {
+                assert_eq!(intent, "01J00000000000000000000000");
+            }
+            _ => panic!("expected new command"),
+        }
+    }
 }
 
 pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
