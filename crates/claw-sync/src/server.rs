@@ -8,8 +8,8 @@ use claw_core::id::ObjectId;
 use claw_store::ClawStore;
 
 use crate::ancestry::is_ancestor;
-use crate::negotiation::find_reachable_objects;
-use crate::partial_clone::PartialCloneFilter;
+use crate::negotiation::{find_reachable_objects, find_reachable_objects_with_depth};
+use crate::partial_clone::{CapsuleVisibilityFilter, PartialCloneFilter};
 use crate::proto::sync::sync_service_server::SyncService;
 use crate::proto::sync::*;
 
@@ -32,6 +32,11 @@ impl SyncServer {
 /// Convert a proto PartialCloneFilter to our internal filter type.
 fn convert_filter(filter: &crate::proto::sync::PartialCloneFilter) -> PartialCloneFilter {
     PartialCloneFilter {
+        intent_ids: filter
+            .intent_ids
+            .iter()
+            .map(|id| id.to_ascii_uppercase())
+            .collect(),
         path_prefixes: filter.path_prefixes.clone(),
         codec_ids: filter.codec_ids.clone(),
         time_range: if filter.time_range_start > 0 || filter.time_range_end > 0 {
@@ -39,6 +44,7 @@ fn convert_filter(filter: &crate::proto::sync::PartialCloneFilter) -> PartialClo
         } else {
             None
         },
+        capsule_visibility: CapsuleVisibilityFilter::from_proto_value(&filter.capsule_visibility),
         max_depth: if filter.max_depth > 0 {
             Some(filter.max_depth)
         } else {
@@ -132,26 +138,39 @@ impl SyncService for SyncServer {
                 })
                 .collect();
 
-            let want_set = find_reachable_objects(&store, &want_ids);
+            let want_set = find_reachable_objects_with_depth(
+                &store,
+                &want_ids,
+                filter.as_ref().and_then(|f| f.max_depth),
+            );
             let have_set = find_reachable_objects(&store, &have_ids);
 
-            // Send want_set - have_set
-            for id in &want_set {
-                if have_set.contains(id) {
-                    continue;
-                }
+            let mut candidate_ids: Vec<ObjectId> =
+                want_set.difference(&have_set).copied().collect();
+            candidate_ids.sort_by_key(|id| id.to_hex());
+            let mut sent_bytes: u64 = 0;
 
+            // Send filtered candidates in deterministic order.
+            for id in candidate_ids {
                 // Apply partial clone filter if present
                 if let Some(ref f) = filter {
-                    if !f.matches_object(&store, id) {
+                    if !f.matches_object(&store, &id) {
                         continue;
                     }
                 }
 
-                if let Ok(obj) = store.load_object(id) {
+                if let Ok(obj) = store.load_object(&id) {
                     let payload = obj.serialize_payload().unwrap_or_default();
                     let type_tag = obj.type_tag();
                     let cof_data = cof_encode(type_tag, &payload).unwrap_or_default();
+
+                    if let Some(limit) = filter.as_ref().and_then(|f| f.max_bytes) {
+                        let chunk_len = cof_data.len() as u64;
+                        if sent_bytes.saturating_add(chunk_len) > limit {
+                            break;
+                        }
+                        sent_bytes += chunk_len;
+                    }
 
                     let chunk = ObjectChunk {
                         id: Some(crate::proto::common::ObjectId {
@@ -284,5 +303,426 @@ impl SyncService for SyncServer {
             success: true,
             message: "refs updated".to_string(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claw_core::id::{ChangeId, IntentId};
+    use claw_core::object::Object;
+    use claw_core::types::{Blob, Capsule, CapsulePublic, Change, ChangeStatus, Revision};
+    use tokio_stream::StreamExt;
+
+    async fn collect_streamed_ids(
+        response: Response<<SyncServer as SyncService>::FetchObjectsStream>,
+    ) -> Vec<ObjectId> {
+        let mut ids = Vec::new();
+        let mut stream = response.into_inner();
+        while let Some(item) = stream.next().await {
+            let chunk = item.unwrap();
+            if chunk.is_last {
+                break;
+            }
+
+            let id = chunk.id.expect("chunk id");
+            let bytes: [u8; 32] = id.hash.as_slice().try_into().unwrap();
+            ids.push(ObjectId::from_bytes(bytes));
+        }
+        ids
+    }
+
+    #[test]
+    fn convert_filter_maps_new_fields() {
+        let proto = crate::proto::sync::PartialCloneFilter {
+            intent_ids: vec!["01aryz6s41tsv4rrffq69g5fav".to_string()],
+            path_prefixes: vec!["src/".to_string()],
+            time_range_start: 100,
+            time_range_end: 200,
+            codec_ids: vec!["text/line".to_string()],
+            capsule_visibility: "PRIVATE".to_string(),
+            max_bytes: 1234,
+            max_depth: 4,
+        };
+
+        let converted = convert_filter(&proto);
+        assert_eq!(converted.intent_ids, vec!["01ARYZ6S41TSV4RRFFQ69G5FAV"]);
+        assert_eq!(converted.path_prefixes, vec!["src/"]);
+        assert_eq!(converted.codec_ids, vec!["text/line"]);
+        assert_eq!(converted.time_range, Some((100, 200)));
+        assert_eq!(
+            converted.capsule_visibility,
+            Some(CapsuleVisibilityFilter::Private)
+        );
+        assert_eq!(converted.max_bytes, Some(1234));
+        assert_eq!(converted.max_depth, Some(4));
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_enforces_max_depth() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let rev0 = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 1,
+                summary: "r0".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let rev1 = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![rev0],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 2,
+                summary: "r1".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let rev2 = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![rev1],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 3,
+                summary: "r2".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store);
+        let response = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: vec![crate::proto::common::ObjectId {
+                    hash: rev2.as_bytes().to_vec(),
+                }],
+                have: vec![],
+                filter: Some(crate::proto::sync::PartialCloneFilter {
+                    intent_ids: vec![],
+                    path_prefixes: vec![],
+                    time_range_start: 0,
+                    time_range_end: 0,
+                    codec_ids: vec![],
+                    capsule_visibility: String::new(),
+                    max_bytes: 0,
+                    max_depth: 1,
+                }),
+            }))
+            .await
+            .unwrap();
+
+        let ids = collect_streamed_ids(response).await;
+        assert!(ids.contains(&rev2));
+        assert!(ids.contains(&rev1));
+        assert!(!ids.contains(&rev0));
+        assert_eq!(ids.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_enforces_intent_ids() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let intent_keep = IntentId::new();
+        let intent_drop = IntentId::new();
+
+        let change_keep = Change {
+            id: ChangeId::new(),
+            intent_id: intent_keep,
+            head_revision: None,
+            workstream_id: None,
+            status: ChangeStatus::Open,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+        let change_drop = Change {
+            id: ChangeId::new(),
+            intent_id: intent_drop,
+            head_revision: None,
+            workstream_id: None,
+            status: ChangeStatus::Open,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+
+        let change_keep_oid = store
+            .store_object(&Object::Change(change_keep.clone()))
+            .unwrap();
+        let change_drop_oid = store
+            .store_object(&Object::Change(change_drop.clone()))
+            .unwrap();
+
+        store
+            .set_ref(&format!("changes/{}", change_keep.id), &change_keep_oid)
+            .unwrap();
+        store
+            .set_ref(&format!("changes/{}", change_drop.id), &change_drop_oid)
+            .unwrap();
+
+        let rev_keep = store
+            .store_object(&Object::Revision(Revision {
+                change_id: Some(change_keep.id),
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 10,
+                summary: "keep".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let rev_drop = store
+            .store_object(&Object::Revision(Revision {
+                change_id: Some(change_drop.id),
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 11,
+                summary: "drop".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store);
+        let response = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: vec![
+                    crate::proto::common::ObjectId {
+                        hash: rev_keep.as_bytes().to_vec(),
+                    },
+                    crate::proto::common::ObjectId {
+                        hash: rev_drop.as_bytes().to_vec(),
+                    },
+                ],
+                have: vec![],
+                filter: Some(crate::proto::sync::PartialCloneFilter {
+                    intent_ids: vec![intent_keep.to_string().to_ascii_lowercase()],
+                    path_prefixes: vec![],
+                    time_range_start: 0,
+                    time_range_end: 0,
+                    codec_ids: vec![],
+                    capsule_visibility: String::new(),
+                    max_bytes: 0,
+                    max_depth: 0,
+                }),
+            }))
+            .await
+            .unwrap();
+
+        let ids = collect_streamed_ids(response).await;
+        assert!(ids.contains(&rev_keep));
+        assert!(!ids.contains(&rev_drop));
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_enforces_capsule_visibility() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let rev_public = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 1,
+                summary: "public".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let rev_private = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 2,
+                summary: "private".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let capsule_public = store
+            .store_object(&Object::Capsule(Capsule {
+                revision_id: rev_public,
+                public_fields: CapsulePublic {
+                    agent_id: "agent".to_string(),
+                    agent_version: None,
+                    toolchain_digest: None,
+                    env_fingerprint: None,
+                    evidence: vec![],
+                },
+                encrypted_private: None,
+                encryption: String::new(),
+                key_id: None,
+                signatures: vec![],
+            }))
+            .unwrap();
+
+        let capsule_private = store
+            .store_object(&Object::Capsule(Capsule {
+                revision_id: rev_private,
+                public_fields: CapsulePublic {
+                    agent_id: "agent".to_string(),
+                    agent_version: None,
+                    toolchain_digest: None,
+                    env_fingerprint: None,
+                    evidence: vec![],
+                },
+                encrypted_private: Some(vec![1, 2, 3]),
+                encryption: "xchacha20poly1305".to_string(),
+                key_id: None,
+                signatures: vec![],
+            }))
+            .unwrap();
+
+        let rev_public_with_capsule = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: Some(capsule_public),
+                author: "test".to_string(),
+                created_at_ms: 3,
+                summary: "public-with-capsule".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let rev_private_with_capsule = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: Some(capsule_private),
+                author: "test".to_string(),
+                created_at_ms: 4,
+                summary: "private-with-capsule".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store);
+        let response = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: vec![
+                    crate::proto::common::ObjectId {
+                        hash: rev_public_with_capsule.as_bytes().to_vec(),
+                    },
+                    crate::proto::common::ObjectId {
+                        hash: rev_private_with_capsule.as_bytes().to_vec(),
+                    },
+                ],
+                have: vec![],
+                filter: Some(crate::proto::sync::PartialCloneFilter {
+                    intent_ids: vec![],
+                    path_prefixes: vec![],
+                    time_range_start: 0,
+                    time_range_end: 0,
+                    codec_ids: vec![],
+                    capsule_visibility: "public".to_string(),
+                    max_bytes: 0,
+                    max_depth: 0,
+                }),
+            }))
+            .await
+            .unwrap();
+
+        let ids = collect_streamed_ids(response).await;
+        assert!(ids.contains(&rev_public_with_capsule));
+        assert!(ids.contains(&capsule_public));
+        assert!(!ids.contains(&rev_private_with_capsule));
+        assert!(!ids.contains(&capsule_private));
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_enforces_max_bytes_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let blob_small = store
+            .store_object(&Object::Blob(Blob {
+                data: b"small".to_vec(),
+                media_type: None,
+            }))
+            .unwrap();
+        let blob_large = store
+            .store_object(&Object::Blob(Blob {
+                data: vec![42u8; 128],
+                media_type: None,
+            }))
+            .unwrap();
+
+        let mut ordered = vec![blob_small, blob_large];
+        ordered.sort_by_key(|id| id.to_hex());
+
+        let first_obj = store.load_object(&ordered[0]).unwrap();
+        let first_payload = first_obj.serialize_payload().unwrap();
+        let first_cof = cof_encode(first_obj.type_tag(), &first_payload).unwrap();
+        let max_bytes = first_cof.len() as u64;
+
+        let server = SyncServer::new(store);
+        let response = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: vec![
+                    crate::proto::common::ObjectId {
+                        hash: blob_small.as_bytes().to_vec(),
+                    },
+                    crate::proto::common::ObjectId {
+                        hash: blob_large.as_bytes().to_vec(),
+                    },
+                ],
+                have: vec![],
+                filter: Some(crate::proto::sync::PartialCloneFilter {
+                    intent_ids: vec![],
+                    path_prefixes: vec![],
+                    time_range_start: 0,
+                    time_range_end: 0,
+                    codec_ids: vec![],
+                    capsule_visibility: String::new(),
+                    max_bytes,
+                    max_depth: 0,
+                }),
+            }))
+            .await
+            .unwrap();
+
+        let ids = collect_streamed_ids(response).await;
+        assert_eq!(ids, vec![ordered[0]]);
     }
 }

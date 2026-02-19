@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use claw_core::id::ObjectId;
 use claw_store::ClawStore;
@@ -23,6 +23,46 @@ pub fn find_reachable_objects(store: &ClawStore, heads: &[ObjectId]) -> HashSet<
     }
 
     visited
+}
+
+/// Walk the dependency graph from `heads` up to an optional dependency depth.
+///
+/// Depth is measured in edges from each head. A head object is depth 0, its
+/// direct dependencies are depth 1, and so on.
+pub fn find_reachable_objects_with_depth(
+    store: &ClawStore,
+    heads: &[ObjectId],
+    max_depth: Option<u32>,
+) -> HashSet<ObjectId> {
+    let mut visited_depth: HashMap<ObjectId, u32> = HashMap::new();
+    let mut queue: Vec<(ObjectId, u32)> = heads.iter().copied().map(|id| (id, 0)).collect();
+
+    while let Some((id, depth)) = queue.pop() {
+        if let Some(prev) = visited_depth.get(&id) {
+            if *prev <= depth {
+                continue;
+            }
+        }
+        visited_depth.insert(id, depth);
+
+        if max_depth.is_some_and(|limit| depth >= limit) {
+            continue;
+        }
+
+        let obj = match store.load_object(&id) {
+            Ok(obj) => obj,
+            Err(e) => {
+                tracing::warn!("missing object in DAG traversal: {} ({})", id, e);
+                continue;
+            }
+        };
+
+        for dep in obj.dependencies() {
+            queue.push((dep, depth + 1));
+        }
+    }
+
+    visited_depth.into_keys().collect()
 }
 
 fn visit_ordered(

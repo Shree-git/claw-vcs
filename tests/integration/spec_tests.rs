@@ -495,9 +495,11 @@ fn test_partial_clone_filter() {
 
     // Filter by path prefix
     let path_filter = PartialCloneFilter {
+        intent_ids: vec![],
         path_prefixes: vec!["src/".to_string()],
         codec_ids: vec![],
         time_range: None,
+        capsule_visibility: None,
         max_depth: None,
         max_bytes: None,
     };
@@ -506,9 +508,11 @@ fn test_partial_clone_filter() {
 
     // Filter by codec
     let codec_filter = PartialCloneFilter {
+        intent_ids: vec![],
         path_prefixes: vec![],
         codec_ids: vec!["json/tree".to_string()],
         time_range: None,
+        capsule_visibility: None,
         max_depth: None,
         max_bytes: None,
     };
