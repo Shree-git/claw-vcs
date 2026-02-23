@@ -2,7 +2,7 @@ use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 mod auth_store;
-mod commands;
+pub mod commands;
 mod config;
 mod conflict_writer;
 mod diff_render;
@@ -20,7 +20,7 @@ use commands::Commands;
     version,
     about = "Intent-native, agent-native version control"
 )]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
     command: Commands,
 }

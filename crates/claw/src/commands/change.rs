@@ -32,6 +32,9 @@ enum ChangeCommand {
         /// Filter by intent ID
         #[arg(short, long)]
         intent: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Update change status
     Status {
@@ -108,19 +111,43 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
                 println!("  Head revision: {:?}", change.head_revision);
             }
         }
-        ChangeCommand::List { intent } => {
+        ChangeCommand::List { intent, json } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
             let refs = store.list_refs("changes")?;
-            for (_, id) in &refs {
-                if let Ok(Object::Change(change)) = store.load_object(id) {
-                    let matches_intent = intent
-                        .as_ref()
-                        .map(|filter| change.intent_id.to_string() == *filter)
-                        .unwrap_or(true);
-                    if !matches_intent {
-                        continue;
+            let changes: Vec<_> = refs
+                .iter()
+                .filter_map(|(_, id)| {
+                    if let Ok(Object::Change(change)) = store.load_object(id) {
+                        let matches = intent
+                            .as_ref()
+                            .map(|filter| change.intent_id.to_string() == *filter)
+                            .unwrap_or(true);
+                        if matches {
+                            Some(change)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
+                })
+                .collect();
+            if json {
+                let entries: Vec<serde_json::Value> = changes
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "id": c.id.to_string(),
+                            "intent_id": c.intent_id.to_string(),
+                            "status": format!("{:?}", c.status),
+                            "head_revision": c.head_revision.map(|r| r.to_hex()),
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else {
+                for change in &changes {
                     println!(
                         "{} {:?} intent:{}",
                         change.id, change.status, change.intent_id
