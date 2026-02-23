@@ -3,6 +3,7 @@ pub mod auth;
 pub mod branch;
 pub mod change;
 pub mod checkout;
+pub mod completions;
 pub mod daemon;
 pub mod diff;
 pub mod git_export;
@@ -13,13 +14,17 @@ pub mod intent;
 pub mod log;
 pub mod patch;
 pub mod policy;
+pub mod reflog;
 pub mod remote;
 pub mod resolve;
 pub mod ship;
 pub mod show;
 pub mod snapshot;
+pub mod stash;
 pub mod status;
 pub mod sync;
+pub mod tag;
+pub mod workstream;
 
 use clap::Subcommand;
 
@@ -71,6 +76,18 @@ pub enum Commands {
     Remote(remote::RemoteArgs),
     /// Authenticate with ClawLab remotes
     Auth(auth::AuthArgs),
+    /// View the reflog for a branch
+    Reflog(reflog::ReflogArgs),
+    /// Manage tags
+    Tag(tag::TagArgs),
+    /// Clone a remote repository
+    Clone(sync::CloneArgs),
+    /// Stash working tree changes
+    Stash(stash::StashArgs),
+    /// Manage workstreams
+    Workstream(workstream::WorkstreamArgs),
+    /// Generate shell completions
+    Completions(completions::CompletionsArgs),
 }
 
 impl Commands {
@@ -99,6 +116,15 @@ impl Commands {
             Commands::Resolve(args) => resolve::run(args),
             Commands::Remote(args) => remote::run(args),
             Commands::Auth(args) => auth::run(args).await,
+            Commands::Reflog(args) => reflog::run(args),
+            Commands::Tag(args) => tag::run(args),
+            Commands::Clone(args) => sync::run_clone(args).await,
+            Commands::Stash(args) => stash::run(args),
+            Commands::Workstream(args) => workstream::run(args),
+            Commands::Completions(args) => {
+                completions::run(args);
+                Ok(())
+            }
         }
     }
 }

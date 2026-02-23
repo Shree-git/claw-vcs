@@ -31,7 +31,11 @@ enum IntentCommand {
         id: String,
     },
     /// List intents
-    List,
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Update an intent
     Update {
         /// Intent ID (ULID)
@@ -115,11 +119,28 @@ pub fn run(args: IntentArgs) -> anyhow::Result<()> {
                 println!("  Goal: {}", intent.goal);
             }
         }
-        IntentCommand::List => {
+        IntentCommand::List { json } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
             let refs = store.list_refs("intents")?;
-            if refs.is_empty() {
+            if json {
+                let entries: Vec<serde_json::Value> = refs
+                    .iter()
+                    .filter_map(|(_, id)| {
+                        if let Ok(Object::Intent(intent)) = store.load_object(id) {
+                            Some(serde_json::json!({
+                                "id": intent.id.to_string(),
+                                "title": intent.title,
+                                "status": format!("{:?}", intent.status),
+                                "goal": intent.goal,
+                            }))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else if refs.is_empty() {
                 println!("No intents found.");
             } else {
                 for (_name, id) in &refs {

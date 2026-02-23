@@ -8,6 +8,9 @@ use crate::config::find_repo_root;
 pub struct BranchArgs {
     #[command(subcommand)]
     command: Option<BranchCommand>,
+    /// Output as JSON (for branch listing)
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Subcommand)]
@@ -38,7 +41,21 @@ pub fn run(args: BranchArgs) -> anyhow::Result<()> {
             };
 
             let refs = store.list_refs("heads/")?;
-            if refs.is_empty() {
+            if args.json {
+                let entries: Vec<serde_json::Value> = refs
+                    .iter()
+                    .map(|(name, id)| {
+                        let short_name = name.strip_prefix("heads/").unwrap_or(name);
+                        let is_current = current_branch.as_deref() == Some(name.as_str());
+                        serde_json::json!({
+                            "name": short_name,
+                            "current": is_current,
+                            "target": id.to_hex(),
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else if refs.is_empty() {
                 // Show default branch even if no refs exist
                 if let Some(ref branch) = current_branch {
                     let name = branch.strip_prefix("heads/").unwrap_or(branch);

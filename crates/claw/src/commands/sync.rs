@@ -292,6 +292,39 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Top-level clone arguments (for `claw clone <url>`)
+#[derive(Args)]
+pub struct CloneArgs {
+    /// Remote address
+    pub remote: String,
+    /// Transport kind (grpc|clawlab)
+    #[arg(long, default_value = "grpc")]
+    pub kind: String,
+    /// Repository slug for clawlab remotes
+    #[arg(long)]
+    pub repo: Option<String>,
+    /// Auth profile for clawlab remotes
+    #[arg(long)]
+    pub token_profile: Option<String>,
+    /// Local path
+    #[arg(default_value = ".")]
+    pub path: String,
+}
+
+pub async fn run_clone(args: CloneArgs) -> anyhow::Result<()> {
+    run(SyncArgs {
+        command: Some(SyncCommand::Clone {
+            remote: args.remote,
+            kind: args.kind,
+            repo: args.repo,
+            token_profile: args.token_profile,
+            path: args.path,
+        }),
+        remote: None,
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;

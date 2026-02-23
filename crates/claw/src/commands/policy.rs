@@ -44,7 +44,11 @@ enum PolicyCommand {
         id: String,
     },
     /// List policies
-    List,
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 pub fn run(args: PolicyArgs) -> anyhow::Result<()> {
@@ -127,10 +131,32 @@ pub fn run(args: PolicyArgs) -> anyhow::Result<()> {
                 println!("  Min trust score: {score}");
             }
         }
-        PolicyCommand::List => {
+        PolicyCommand::List { json } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
             let refs = store.list_refs("policies")?;
+
+            if json {
+                let entries: Vec<serde_json::Value> = refs
+                    .iter()
+                    .filter_map(|(_, obj_id)| {
+                        if let Ok(Object::Policy(policy)) = store.load_object(obj_id) {
+                            Some(serde_json::json!({
+                                "policy_id": policy.policy_id,
+                                "visibility": format!("{:?}", policy.visibility),
+                                "required_checks": policy.required_checks,
+                                "required_reviewers": policy.required_reviewers,
+                                "sensitive_paths": policy.sensitive_paths,
+                                "quarantine_lane": policy.quarantine_lane,
+                            }))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+                return Ok(());
+            }
 
             if refs.is_empty() {
                 println!("No policies found.");

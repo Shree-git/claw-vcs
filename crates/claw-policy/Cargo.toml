@@ -6,4 +6,5 @@ license.workspace = true
 
 [dependencies]
 claw-core = { workspace = true }
+globset = { workspace = true }
 thiserror = { workspace = true }
