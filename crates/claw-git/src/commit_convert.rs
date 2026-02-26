@@ -9,6 +9,7 @@ pub fn to_git_commit(
     rev_id: &ObjectId,
     change_id: Option<&claw_core::id::ChangeId>,
     intent_id: Option<&claw_core::id::IntentId>,
+    capsule_id: Option<&ObjectId>,
 ) -> Vec<u8> {
     let mut content = String::new();
 
@@ -46,6 +47,12 @@ pub fn to_git_commit(
     }
     if let Some(iid) = intent_id {
         content.push_str(&format!("Claw-Intent: {}\n", iid));
+    }
+    if let Some(capsule) = capsule_id {
+        content.push_str(&format!("Claw-Capsule: {}\n", capsule.to_hex()));
+    }
+    for evidence in &rev.policy_evidence {
+        content.push_str(&format!("Claw-Policy-Evidence: {}\n", evidence));
     }
 
     let header = format!("commit {}\0", content.len());

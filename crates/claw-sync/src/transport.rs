@@ -10,6 +10,7 @@ use crate::SyncError;
 pub enum RemoteTransportConfig {
     Grpc {
         addr: String,
+        bearer_token: Option<String>,
     },
     Http {
         base_url: String,

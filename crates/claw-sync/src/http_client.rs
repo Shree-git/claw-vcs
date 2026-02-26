@@ -50,6 +50,7 @@ struct PreparedObject {
 }
 
 /// Read raw COF bytes from the store without the decode → re-encode cycle.
+#[allow(clippy::result_large_err)]
 fn prepare_objects_raw(
     store: &ClawStore,
     ids: &[ObjectId],
@@ -96,6 +97,7 @@ fn ids_to_proto(ids: impl IntoIterator<Item = ObjectId>) -> Vec<proto::common::O
         .collect()
 }
 
+#[allow(clippy::result_large_err)]
 fn parse_hex_ids(hexes: &[String]) -> Result<Vec<ObjectId>, SyncError> {
     hexes
         .iter()
@@ -787,7 +789,7 @@ impl HttpSyncClient {
                         .await
                         .map_err(|_| SyncError::TransferFailed("semaphore closed".to_string()))?;
                     client
-                        .send_upload_batch(&url, batch, &*map, batch_complete)
+                        .send_upload_batch(&url, batch, &map, batch_complete)
                         .await
                 });
             }
@@ -1084,7 +1086,7 @@ impl HttpSyncClient {
                         .acquire()
                         .await
                         .map_err(|_| SyncError::TransferFailed("semaphore closed".to_string()))?;
-                    client.send_upload_batch(&url, batch, &*map, false).await
+                    client.send_upload_batch(&url, batch, &map, false).await
                 });
             }
 

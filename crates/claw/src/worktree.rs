@@ -3,7 +3,7 @@ use std::path::Path;
 
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
-use claw_core::types::{Blob, FileMode, Tree, TreeEntry};
+use claw_core::types::{validate_tree_entry_name, Blob, FileMode, Tree, TreeEntry};
 use claw_store::ClawStore;
 
 use crate::ignore::IgnoreRules;
@@ -30,6 +30,7 @@ fn scan_dir(
 
     for entry in dir_entries {
         let file_name = entry.file_name().to_string_lossy().to_string();
+        validate_tree_entry_name(&file_name)?;
         let path = entry.path();
         let rel_path = path
             .strip_prefix(repo_root)
@@ -122,9 +123,11 @@ pub fn materialize_tree(
     };
 
     for entry in &tree.entries {
+        validate_tree_entry_name(&entry.name)?;
         let path = target_dir.join(&entry.name);
         match entry.mode {
             FileMode::Directory => {
+                remove_non_directory(&path)?;
                 std::fs::create_dir_all(&path)?;
                 materialize_tree(store, &entry.object_id, &path)?;
             }
@@ -132,8 +135,7 @@ pub fn materialize_tree(
                 let obj = store.load_object(&entry.object_id)?;
                 if let Object::Blob(b) = obj {
                     let target = String::from_utf8_lossy(&b.data);
-                    // Remove existing file/dir if present
-                    let _ = std::fs::remove_file(&path);
+                    remove_path_if_exists(&path)?;
                     #[cfg(unix)]
                     std::os::unix::fs::symlink(target.as_ref(), &path)?;
                     #[cfg(not(unix))]
@@ -143,10 +145,7 @@ pub fn materialize_tree(
             _ => {
                 let obj = store.load_object(&entry.object_id)?;
                 if let Object::Blob(b) = obj {
-                    // Remove dir if file should go here
-                    if path.is_dir() {
-                        std::fs::remove_dir_all(&path)?;
-                    }
+                    remove_path_if_exists(&path)?;
                     std::fs::write(&path, &b.data)?;
                     #[cfg(unix)]
                     if entry.mode == FileMode::Executable {
@@ -160,6 +159,34 @@ pub fn materialize_tree(
         }
     }
     Ok(())
+}
+
+fn remove_non_directory(path: &Path) -> std::io::Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+
+    if metadata.is_dir() {
+        return Ok(());
+    }
+
+    std::fs::remove_file(path)
+}
+
+fn remove_path_if_exists(path: &Path) -> std::io::Result<()> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+
+    if metadata.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
 }
 
 /// Collect all tracked file paths from a tree.

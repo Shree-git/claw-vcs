@@ -72,7 +72,7 @@ fn change_id_from_proto(p: &pc::Ulid) -> Result<ChangeId, CoreError> {
 pub fn serialize_object(obj: &Object) -> Result<Vec<u8>, CoreError> {
     match obj {
         Object::Blob(b) => encode(&blob_to_proto(b)),
-        Object::Tree(t) => encode(&tree_to_proto(t)),
+        Object::Tree(t) => encode(&tree_to_proto(t)?),
         Object::Patch(p) => encode(&patch_to_proto(p)),
         Object::Revision(r) => encode(&revision_to_proto(r)),
         Object::Snapshot(s) => encode(&snapshot_to_proto(s)),
@@ -156,23 +156,25 @@ fn blob_from_proto(p: &po::Blob) -> Result<Blob, CoreError> {
 
 // === Tree ===
 
-fn tree_to_proto(t: &Tree) -> po::Tree {
-    po::Tree {
-        entries: t
-            .entries
-            .iter()
-            .map(|e| po::TreeEntry {
-                name: e.name.clone(),
-                mode: match e.mode {
-                    FileMode::Regular => 0o100644,
-                    FileMode::Executable => 0o100755,
-                    FileMode::Symlink => 0o120000,
-                    FileMode::Directory => 0o040000,
-                },
-                object_id: Some(oid_to_proto(&e.object_id)),
-            })
-            .collect(),
-    }
+fn tree_to_proto(t: &Tree) -> Result<po::Tree, CoreError> {
+    t.validate()?;
+
+    let entries = t
+        .entries
+        .iter()
+        .map(|e| po::TreeEntry {
+            name: e.name.clone(),
+            mode: match e.mode {
+                FileMode::Regular => 0o100644,
+                FileMode::Executable => 0o100755,
+                FileMode::Symlink => 0o120000,
+                FileMode::Directory => 0o040000,
+            },
+            object_id: Some(oid_to_proto(&e.object_id)),
+        })
+        .collect();
+
+    Ok(po::Tree { entries })
 }
 
 fn tree_from_proto(p: &po::Tree) -> Result<Tree, CoreError> {
@@ -191,6 +193,7 @@ fn tree_from_proto(p: &po::Tree) -> Result<Tree, CoreError> {
                     .as_ref()
                     .ok_or_else(|| CoreError::Deserialization("missing object_id".into()))?,
             )?;
+            validate_tree_entry_name(&e.name)?;
             Ok(TreeEntry {
                 name: e.name.clone(),
                 mode,
@@ -198,7 +201,9 @@ fn tree_from_proto(p: &po::Tree) -> Result<Tree, CoreError> {
             })
         })
         .collect::<Result<Vec<_>, CoreError>>()?;
-    Ok(Tree { entries })
+    let tree = Tree { entries };
+    tree.validate()?;
+    Ok(tree)
 }
 
 // === Patch ===

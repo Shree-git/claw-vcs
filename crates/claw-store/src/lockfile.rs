@@ -10,6 +10,9 @@ pub struct LockFile {
 impl LockFile {
     pub fn acquire(target: &Path) -> Result<Self, StoreError> {
         let lock_path = target.with_extension("lock");
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         // Try to create exclusively
         match std::fs::OpenOptions::new()
             .write(true)

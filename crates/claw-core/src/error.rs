@@ -20,6 +20,8 @@ pub enum CoreError {
     Deserialization(String),
     #[error("invalid object ID: {0}")]
     InvalidObjectId(String),
+    #[error("invalid tree entry name: {0}")]
+    InvalidTreeEntryName(String),
     #[error("payload too large: {size} bytes (max {max})")]
     PayloadTooLarge { size: usize, max: usize },
     #[error("io error: {0}")]

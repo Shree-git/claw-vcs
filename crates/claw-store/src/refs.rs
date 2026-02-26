@@ -3,7 +3,69 @@ use claw_core::id::ObjectId;
 use crate::layout::RepoLayout;
 use crate::StoreError;
 
+fn validate_ref_path(name: &str, allow_empty: bool) -> Result<(), StoreError> {
+    use std::path::{Component, Path};
+
+    if name.is_empty() {
+        if allow_empty {
+            return Ok(());
+        }
+        return Err(StoreError::InvalidRefName(name.to_string()));
+    }
+
+    if name.contains('\0') || name.contains('\\') {
+        return Err(StoreError::InvalidRefName(name.to_string()));
+    }
+
+    let path = Path::new(name);
+    if path.is_absolute() {
+        return Err(StoreError::InvalidRefName(name.to_string()));
+    }
+
+    let mut saw_component = false;
+    for component in path.components() {
+        match component {
+            Component::Normal(seg) => {
+                saw_component = true;
+                let seg_str = seg
+                    .to_str()
+                    .ok_or_else(|| StoreError::InvalidRefName(name.to_string()))?;
+                if seg_str.is_empty() || seg_str == "." || seg_str == ".." {
+                    return Err(StoreError::InvalidRefName(name.to_string()));
+                }
+                if seg_str
+                    .chars()
+                    .any(|c| c.is_control() || c == '/' || c == '\\')
+                {
+                    return Err(StoreError::InvalidRefName(name.to_string()));
+                }
+            }
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return Err(StoreError::InvalidRefName(name.to_string()));
+            }
+        }
+    }
+
+    if !saw_component && !allow_empty {
+        return Err(StoreError::InvalidRefName(name.to_string()));
+    }
+
+    if name.contains("//") {
+        return Err(StoreError::InvalidRefName(name.to_string()));
+    }
+
+    Ok(())
+}
+
+pub fn validate_ref_name(name: &str) -> Result<(), StoreError> {
+    validate_ref_path(name, false)
+}
+
 pub fn write_ref(layout: &RepoLayout, name: &str, target: &ObjectId) -> Result<(), StoreError> {
+    validate_ref_name(name)?;
     let path = layout.refs_dir().join(name);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -13,6 +75,7 @@ pub fn write_ref(layout: &RepoLayout, name: &str, target: &ObjectId) -> Result<(
 }
 
 pub fn read_ref(layout: &RepoLayout, name: &str) -> Result<Option<ObjectId>, StoreError> {
+    validate_ref_name(name)?;
     let path = layout.refs_dir().join(name);
     if !path.exists() {
         return Ok(None);
@@ -23,6 +86,7 @@ pub fn read_ref(layout: &RepoLayout, name: &str) -> Result<Option<ObjectId>, Sto
 }
 
 pub fn delete_ref(layout: &RepoLayout, name: &str) -> Result<(), StoreError> {
+    validate_ref_name(name)?;
     let path = layout.refs_dir().join(name);
     if path.exists() {
         std::fs::remove_file(&path)?;
@@ -41,6 +105,7 @@ pub fn update_ref_cas(
     use crate::lockfile::LockFile;
     use crate::reflog;
 
+    validate_ref_name(name)?;
     let ref_path = layout.refs_dir().join(name);
     let _lock = LockFile::acquire(&ref_path)?;
 
@@ -68,6 +133,7 @@ pub fn update_ref_cas(
 }
 
 pub fn list_refs(layout: &RepoLayout, prefix: &str) -> Result<Vec<(String, ObjectId)>, StoreError> {
+    validate_ref_path(prefix, true)?;
     let base = layout.refs_dir().join(prefix);
     if !base.exists() {
         return Ok(Vec::new());
@@ -138,5 +204,51 @@ mod tests {
 
         let refs = list_refs(&layout, "heads").unwrap();
         assert_eq!(refs.len(), 2);
+    }
+
+    #[test]
+    fn rejects_traversal_ref_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = RepoLayout::new(tmp.path());
+        layout.create_dirs().unwrap();
+
+        let id = content_hash(TypeTag::Blob, b"x");
+        let err = write_ref(&layout, "../outside", &id).unwrap_err();
+        assert!(matches!(err, StoreError::InvalidRefName(_)));
+
+        let err = write_ref(&layout, "heads/../main", &id).unwrap_err();
+        assert!(matches!(err, StoreError::InvalidRefName(_)));
+
+        let err = list_refs(&layout, "../../").unwrap_err();
+        assert!(matches!(err, StoreError::InvalidRefName(_)));
+    }
+
+    #[test]
+    fn allows_common_ref_shapes() {
+        validate_ref_name("heads/main").unwrap();
+        validate_ref_name("changes/01J00000000000000000000000").unwrap();
+        validate_ref_name("capsules/by-revision/abcdef0123456789").unwrap();
+        validate_ref_path("", true).unwrap();
+    }
+
+    #[test]
+    fn update_ref_cas_creates_missing_parent_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = RepoLayout::new(tmp.path());
+        layout.create_dirs().unwrap();
+
+        let id = content_hash(TypeTag::Blob, b"policy");
+        update_ref_cas(
+            &layout,
+            "policies/release-gate",
+            None,
+            &id,
+            "policy",
+            "policy create/update",
+        )
+        .unwrap();
+
+        let read_back = read_ref(&layout, "policies/release-gate").unwrap();
+        assert_eq!(read_back, Some(id));
     }
 }

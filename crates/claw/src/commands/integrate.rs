@@ -1,16 +1,18 @@
 use clap::Args;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use claw_core::id::ChangeId;
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
 use claw_core::types::{Capsule, Policy, Revision};
+use claw_crypto::capsule::verify_capsule;
 use claw_merge::emit::merge;
 use claw_patch::CodecRegistry;
-use claw_policy::evaluator::evaluate_policy;
+use claw_policy::{evaluator::evaluate_policy, PolicyContext};
 use claw_store::{ClawStore, HeadState};
 
+use super::agent::AgentRegistration;
 use crate::config::find_repo_root;
 use crate::conflict_writer;
 use crate::merge_state::{self, ConflictEntry, MergeInfo, MergeState};
@@ -30,6 +32,19 @@ pub struct IntegrateArgs {
     /// Merge message
     #[arg(short, long, default_value = "Integrate changes")]
     message: String,
+}
+
+#[derive(Debug, Default)]
+struct AgentRegistry {
+    by_public_key: HashMap<String, String>,
+    by_agent_id: HashMap<String, String>,
+}
+
+#[derive(Debug, Default)]
+struct ProvenanceContext {
+    signer_agent_ids: Vec<String>,
+    signer_key_ids: Vec<String>,
+    trust_score: Option<f32>,
 }
 
 pub fn run(args: IntegrateArgs) -> anyhow::Result<()> {
@@ -54,9 +69,7 @@ pub fn run(args: IntegrateArgs) -> anyhow::Result<()> {
     let left_id = store
         .get_ref(&left_ref)?
         .ok_or_else(|| anyhow::anyhow!("ref not found: {}", left_ref))?;
-    let right_id = store
-        .get_ref(&args.right)?
-        .ok_or_else(|| anyhow::anyhow!("ref not found: {}", args.right))?;
+    let right_id = resolve_revision_ref_or_id(&store, &args.right)?;
 
     enforce_integration_policies(&store, &left_id, &right_id)?;
 
@@ -171,12 +184,36 @@ pub fn run(args: IntegrateArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn resolve_revision_ref_or_id(store: &ClawStore, value: &str) -> anyhow::Result<ObjectId> {
+    if let Some(id) = store.get_ref(value)? {
+        return Ok(id);
+    }
+
+    if let Ok(id) = ObjectId::from_hex(value) {
+        return ensure_revision_id(store, id, value);
+    }
+
+    if let Ok(id) = ObjectId::from_display(value) {
+        return ensure_revision_id(store, id, value);
+    }
+
+    anyhow::bail!("ref not found: {value}")
+}
+
+fn ensure_revision_id(store: &ClawStore, id: ObjectId, source: &str) -> anyhow::Result<ObjectId> {
+    match store.load_object(&id)? {
+        Object::Revision(_) => Ok(id),
+        _ => anyhow::bail!("not a revision: {source}"),
+    }
+}
+
 fn enforce_integration_policies(
     store: &ClawStore,
     left_id: &ObjectId,
     right_id: &ObjectId,
 ) -> anyhow::Result<()> {
     let applicable = collect_applicable_revisions(store, left_id, right_id)?;
+    let agent_registry = load_agent_registry(store)?;
 
     for rev_id in applicable {
         let rev = load_revision(store, &rev_id)?;
@@ -191,9 +228,17 @@ fn enforce_integration_policies(
                 rev_id.to_hex()
             )
         })?;
+        let provenance = verify_capsule_provenance(&capsule, &rev_id, &agent_registry)?;
+        let touched_paths = collect_touched_paths(store, &rev)?;
+        let context = PolicyContext {
+            signer_agent_ids: provenance.signer_agent_ids,
+            signer_key_ids: provenance.signer_key_ids,
+            touched_paths,
+            trust_score: provenance.trust_score,
+        };
 
         for policy in policies {
-            evaluate_policy(&policy, &rev, &capsule).map_err(|err| {
+            evaluate_policy(&policy, &rev, &capsule, &context).map_err(|err| {
                 anyhow::anyhow!(
                     "policy '{}' failed for revision {}: {}",
                     policy.policy_id,
@@ -205,6 +250,166 @@ fn enforce_integration_policies(
     }
 
     Ok(())
+}
+
+fn verify_capsule_provenance(
+    capsule: &Capsule,
+    rev_id: &ObjectId,
+    registry: &AgentRegistry,
+) -> anyhow::Result<ProvenanceContext> {
+    if capsule.revision_id != *rev_id {
+        anyhow::bail!(
+            "capsule revision mismatch: capsule={}, revision={}",
+            capsule.revision_id.to_hex(),
+            rev_id.to_hex()
+        );
+    }
+
+    if capsule.signatures.is_empty() {
+        anyhow::bail!("capsule has no signatures");
+    }
+
+    let mut valid_signers = HashSet::new();
+    let mut malformed_signers = 0usize;
+
+    for sig in &capsule.signatures {
+        let normalized_signer = sig.signer_id.trim().to_ascii_lowercase();
+        let signer_bytes = match hex::decode(&normalized_signer) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                malformed_signers += 1;
+                continue;
+            }
+        };
+        let signer_key: [u8; 32] = match signer_bytes.as_slice().try_into() {
+            Ok(key) => key,
+            Err(_) => {
+                malformed_signers += 1;
+                continue;
+            }
+        };
+
+        let mut candidate = capsule.clone();
+        candidate.signatures = vec![sig.clone()];
+        if matches!(verify_capsule(&candidate, &signer_key), Ok(true)) {
+            valid_signers.insert(normalized_signer);
+        }
+    }
+
+    if valid_signers.is_empty() {
+        if malformed_signers > 0 {
+            anyhow::bail!(
+                "capsule signatures failed verification ({} malformed signer id(s))",
+                malformed_signers
+            );
+        }
+        anyhow::bail!("capsule signatures failed verification");
+    }
+
+    let agent_id = capsule.public_fields.agent_id.trim();
+    if agent_id.is_empty() {
+        anyhow::bail!("capsule public agent_id is empty");
+    }
+    let expected_key = registry
+        .by_agent_id
+        .get(agent_id)
+        .ok_or_else(|| anyhow::anyhow!("capsule agent '{}' is not registered", agent_id))?;
+    if !valid_signers.contains(expected_key) {
+        anyhow::bail!(
+            "capsule signer does not match registered key for agent '{}'",
+            agent_id
+        );
+    }
+
+    let mut signer_key_ids: Vec<String> = valid_signers.into_iter().collect();
+    signer_key_ids.sort();
+
+    let mut signer_agent_ids: Vec<String> = signer_key_ids
+        .iter()
+        .filter_map(|signer| registry.by_public_key.get(signer).cloned())
+        .collect();
+    signer_agent_ids.sort();
+    signer_agent_ids.dedup();
+
+    Ok(ProvenanceContext {
+        signer_agent_ids,
+        signer_key_ids,
+        trust_score: derive_capsule_trust_score(capsule),
+    })
+}
+
+fn derive_capsule_trust_score(capsule: &Capsule) -> Option<f32> {
+    let total = capsule.public_fields.evidence.len();
+    if total == 0 {
+        return None;
+    }
+
+    let passed = capsule
+        .public_fields
+        .evidence
+        .iter()
+        .filter(|e| e.status.eq_ignore_ascii_case("pass"))
+        .count();
+
+    Some(passed as f32 / total as f32)
+}
+
+fn load_agent_registry(store: &ClawStore) -> anyhow::Result<AgentRegistry> {
+    let mut registry = AgentRegistry::default();
+    for (_name, obj_id) in store.list_refs("agents")? {
+        let obj = store.load_object(&obj_id)?;
+        let Object::Blob(blob) = obj else {
+            continue;
+        };
+        let Ok(record) = serde_json::from_slice::<AgentRegistration>(&blob.data) else {
+            continue;
+        };
+        let normalized_key = match normalize_public_key_hex(&record.public_key) {
+            Some(key) => key,
+            None => continue,
+        };
+        registry
+            .by_agent_id
+            .insert(record.agent_id.clone(), normalized_key.clone());
+        registry
+            .by_public_key
+            .insert(normalized_key, record.agent_id);
+    }
+    Ok(registry)
+}
+
+fn normalize_public_key_hex(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    let bytes = hex::decode(&normalized).ok()?;
+    if bytes.len() != 32 {
+        return None;
+    }
+    Some(normalized)
+}
+
+fn collect_touched_paths(store: &ClawStore, rev: &Revision) -> anyhow::Result<Vec<String>> {
+    let mut paths = Vec::new();
+    let mut seen = HashSet::new();
+
+    for patch_id in &rev.patches {
+        let patch_obj = store.load_object(patch_id)?;
+        let patch = match patch_obj {
+            Object::Patch(patch) => patch,
+            _ => anyhow::bail!(
+                "revision patch reference does not point to a patch object: {}",
+                patch_id.to_hex()
+            ),
+        };
+        let path = patch.target_path.trim();
+        if path.is_empty() {
+            continue;
+        }
+        if seen.insert(path.to_string()) {
+            paths.push(path.to_string());
+        }
+    }
+
+    Ok(paths)
 }
 
 fn collect_applicable_revisions(
@@ -423,19 +628,44 @@ impl ObjectExt for Object {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_applicable_revisions, enforce_integration_policies};
+    use super::{
+        collect_applicable_revisions, enforce_integration_policies, resolve_revision_ref_or_id,
+        verify_capsule_provenance, AgentRegistry,
+    };
+    use crate::commands::agent::AgentRegistration;
     use claw_core::id::{ChangeId, IntentId};
     use claw_core::object::Object;
+    use claw_core::types::Blob;
     use claw_core::types::{
-        Capsule, CapsulePublic, Change, ChangeStatus, Intent, IntentStatus, Policy, Revision,
-        Visibility,
+        Change, ChangeStatus, Intent, IntentStatus, Policy, Revision, Visibility,
     };
+    use claw_crypto::capsule::build_capsule;
+    use claw_crypto::keypair::KeyPair;
     use claw_store::ClawStore;
 
     fn test_store() -> (tempfile::TempDir, ClawStore) {
         let tmp = tempfile::tempdir().unwrap();
         let store = ClawStore::init(tmp.path()).unwrap();
         (tmp, store)
+    }
+
+    fn register_agent(store: &ClawStore, name: &str, keypair: &KeyPair) {
+        let now = 1;
+        let record = AgentRegistration {
+            schema_version: 2,
+            agent_id: name.to_string(),
+            agent_version: Some("test".to_string()),
+            public_key: hex::encode(keypair.public_key_bytes()),
+            private_key: None,
+            created_at_ms: now,
+            updated_at_ms: now,
+        };
+        let blob = Object::Blob(Blob {
+            data: serde_json::to_vec(&record).unwrap(),
+            media_type: Some("application/json".to_string()),
+        });
+        let blob_id = store.store_object(&blob).unwrap();
+        store.set_ref(&format!("agents/{name}"), &blob_id).unwrap();
     }
 
     #[test]
@@ -562,20 +792,24 @@ mod tests {
             }))
             .unwrap();
 
-        let capsule_obj = Object::Capsule(Capsule {
-            revision_id: right,
-            public_fields: CapsulePublic {
-                agent_id: "agent".to_string(),
-                agent_version: None,
-                toolchain_digest: None,
-                env_fingerprint: None,
-                evidence: vec![],
-            },
-            encrypted_private: None,
-            encryption: String::new(),
-            key_id: None,
-            signatures: vec![],
-        });
+        let keypair = KeyPair::generate();
+        register_agent(&store, "agent", &keypair);
+        let capsule_obj = Object::Capsule(
+            build_capsule(
+                &right,
+                claw_core::types::CapsulePublic {
+                    agent_id: "agent".to_string(),
+                    agent_version: None,
+                    toolchain_digest: None,
+                    env_fingerprint: None,
+                    evidence: vec![],
+                },
+                None,
+                None,
+                &keypair,
+            )
+            .unwrap(),
+        );
         let capsule_id = store.store_object(&capsule_obj).unwrap();
         store
             .set_ref(
@@ -589,5 +823,92 @@ mod tests {
             err.to_string().contains("missing required check"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn provenance_check_rejects_revision_mismatch() {
+        let keypair = KeyPair::generate();
+        let revision_a = claw_core::hash::content_hash(claw_core::object::TypeTag::Revision, b"a");
+        let revision_b = claw_core::hash::content_hash(claw_core::object::TypeTag::Revision, b"b");
+
+        let capsule = build_capsule(
+            &revision_a,
+            claw_core::types::CapsulePublic {
+                agent_id: "agent".to_string(),
+                agent_version: None,
+                toolchain_digest: None,
+                env_fingerprint: None,
+                evidence: vec![],
+            },
+            None,
+            None,
+            &keypair,
+        )
+        .unwrap();
+
+        let err = verify_capsule_provenance(&capsule, &revision_b, &AgentRegistry::default())
+            .unwrap_err();
+        assert!(err.to_string().contains("capsule revision mismatch"));
+    }
+
+    #[test]
+    fn provenance_check_rejects_unregistered_agent() {
+        let keypair = KeyPair::generate();
+        let revision = claw_core::hash::content_hash(claw_core::object::TypeTag::Revision, b"rev");
+
+        let capsule = build_capsule(
+            &revision,
+            claw_core::types::CapsulePublic {
+                agent_id: "unknown".to_string(),
+                agent_version: None,
+                toolchain_digest: None,
+                env_fingerprint: None,
+                evidence: vec![],
+            },
+            None,
+            None,
+            &keypair,
+        )
+        .unwrap();
+
+        let err =
+            verify_capsule_provenance(&capsule, &revision, &AgentRegistry::default()).unwrap_err();
+        assert!(err.to_string().contains("is not registered"));
+    }
+
+    #[test]
+    fn resolve_revision_ref_or_id_accepts_display_id() {
+        let (_tmp, store) = test_store();
+        let rev_id = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 1,
+                summary: "rev".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let resolved = resolve_revision_ref_or_id(&store, &rev_id.to_string()).unwrap();
+        assert_eq!(resolved, rev_id);
+    }
+
+    #[test]
+    fn resolve_revision_ref_or_id_rejects_non_revision_object() {
+        let (_tmp, store) = test_store();
+        let blob_id = store
+            .store_object(&Object::Blob(Blob {
+                data: b"blob".to_vec(),
+                media_type: None,
+            }))
+            .unwrap();
+
+        let err = resolve_revision_ref_or_id(&store, &blob_id.to_string()).unwrap_err();
+        assert!(err.to_string().contains("not a revision"));
     }
 }

@@ -34,7 +34,7 @@ enum PolicyCommand {
         /// Mark policy as quarantine lane
         #[arg(long)]
         quarantine_lane: bool,
-        /// Optional minimum trust score label
+        /// Optional minimum trust score threshold (e.g. 0.8 or 80%)
         #[arg(long)]
         min_trust_score: Option<String>,
     },
@@ -61,6 +61,9 @@ pub fn run(args: PolicyArgs) -> anyhow::Result<()> {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
             let visibility = parse_visibility(&visibility)?;
+            if let Some(score) = min_trust_score.as_deref() {
+                validate_min_trust_score(score)?;
+            }
 
             let policy = Policy {
                 policy_id: id.clone(),
@@ -170,9 +173,34 @@ fn parse_visibility(value: &str) -> anyhow::Result<Visibility> {
     }
 }
 
+fn validate_min_trust_score(value: &str) -> anyhow::Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("min trust score cannot be empty");
+    }
+
+    let parsed = if let Some(percent) = trimmed.strip_suffix('%') {
+        percent
+            .trim()
+            .parse::<f32>()
+            .map_err(|_| anyhow::anyhow!("invalid percentage trust score '{}'", value))?
+            / 100.0
+    } else {
+        trimmed
+            .parse::<f32>()
+            .map_err(|_| anyhow::anyhow!("invalid trust score '{}'", value))?
+    };
+
+    if !(0.0..=1.0).contains(&parsed) {
+        anyhow::bail!("min trust score '{}' must be between 0 and 1", value);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_visibility;
+    use super::{parse_visibility, validate_min_trust_score};
     use claw_core::types::Visibility;
 
     #[test]
@@ -188,5 +216,13 @@ mod tests {
     #[test]
     fn rejects_unknown_visibility() {
         assert!(parse_visibility("secret").is_err());
+    }
+
+    #[test]
+    fn validates_min_trust_score() {
+        assert!(validate_min_trust_score("0.75").is_ok());
+        assert!(validate_min_trust_score("80%").is_ok());
+        assert!(validate_min_trust_score("1.5").is_err());
+        assert!(validate_min_trust_score("abc").is_err());
     }
 }

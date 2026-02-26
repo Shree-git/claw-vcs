@@ -1,6 +1,7 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 use tonic::{Request, Response, Status};
 
 use claw_core::cof::cof_encode;
@@ -15,17 +16,93 @@ use crate::proto::sync::*;
 
 pub struct SyncServer {
     store: Arc<RwLock<ClawStore>>,
+    limits: Arc<ServerLimits>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SyncServerOptions {
+    pub worker_pool_size: usize,
+    pub queue_capacity: usize,
+    pub backpressure: bool,
+    pub io_timeout: Duration,
+}
+
+impl Default for SyncServerOptions {
+    fn default() -> Self {
+        Self {
+            worker_pool_size: 8,
+            queue_capacity: 1_024,
+            backpressure: true,
+            io_timeout: Duration::from_secs(10),
+        }
+    }
+}
+
+struct ServerLimits {
+    queue: Arc<Semaphore>,
+    workers: Arc<Semaphore>,
+    options: SyncServerOptions,
 }
 
 impl SyncServer {
     pub fn new(store: ClawStore) -> Self {
-        Self {
-            store: Arc::new(RwLock::new(store)),
-        }
+        Self::new_with_options(store, SyncServerOptions::default())
     }
 
     pub fn from_shared(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self::from_shared_with_options(store, SyncServerOptions::default())
+    }
+
+    pub fn new_with_options(store: ClawStore, options: SyncServerOptions) -> Self {
+        Self::from_shared_with_options(Arc::new(RwLock::new(store)), options)
+    }
+
+    pub fn from_shared_with_options(store: Arc<RwLock<ClawStore>>, options: SyncServerOptions) -> Self {
+        let worker_pool_size = options.worker_pool_size.max(1);
+        let total_capacity = worker_pool_size.saturating_add(options.queue_capacity).max(1);
+
+        Self {
+            store,
+            limits: Arc::new(ServerLimits {
+                queue: Arc::new(Semaphore::new(total_capacity)),
+                workers: Arc::new(Semaphore::new(worker_pool_size)),
+                options,
+            }),
+        }
+    }
+
+    fn acquire_queue_permit(&self) -> Result<Option<OwnedSemaphorePermit>, Status> {
+        if !self.limits.options.backpressure {
+            return Ok(None);
+        }
+
+        self.limits
+            .queue
+            .clone()
+            .try_acquire_owned()
+            .map(Some)
+            .map_err(|_| Status::resource_exhausted("server overloaded: queue is full"))
+    }
+
+    async fn run_bounded<F, T>(&self, operation: &'static str, task: F) -> Result<T, Status>
+    where
+        F: std::future::Future<Output = Result<T, Status>>,
+    {
+        let _queue_permit = self.acquire_queue_permit()?;
+        let worker = self.limits.workers.clone();
+        let timeout = self.limits.options.io_timeout;
+
+        let operation_future = async move {
+            let _worker_permit = worker
+                .acquire_owned()
+                .await
+                .map_err(|_| Status::unavailable("server workers are unavailable"))?;
+            task.await
+        };
+
+        tokio::time::timeout(timeout, operation_future)
+            .await
+            .map_err(|_| Status::deadline_exceeded(format!("{operation} timed out")))?
     }
 }
 
@@ -74,34 +151,40 @@ impl SyncService for SyncServer {
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloResponse>, Status> {
-        let _req = request.into_inner();
-        Ok(Response::new(HelloResponse {
-            server_version: "0.1.0".to_string(),
-            capabilities: vec!["partial-clone".to_string()],
-        }))
+        self.run_bounded("hello", async move {
+            let _req = request.into_inner();
+            Ok(Response::new(HelloResponse {
+                server_version: "0.1.0".to_string(),
+                capabilities: vec!["partial-clone".to_string()],
+            }))
+        })
+        .await
     }
 
     async fn advertise_refs(
         &self,
         request: Request<AdvertiseRefsRequest>,
     ) -> Result<Response<AdvertiseRefsResponse>, Status> {
-        let req = request.into_inner();
-        let store = self.store.read().await;
-        let refs = store
-            .list_refs(&req.prefix)
-            .map_err(|e| Status::internal(e.to_string()))?;
+        self.run_bounded("advertise_refs", async move {
+            let req = request.into_inner();
+            let store = self.store.read().await;
+            let refs = store
+                .list_refs(&req.prefix)
+                .map_err(|e| Status::internal(e.to_string()))?;
 
-        let entries = refs
-            .into_iter()
-            .map(|(name, id)| RefEntry {
-                name,
-                target: Some(crate::proto::common::ObjectId {
-                    hash: id.as_bytes().to_vec(),
-                }),
-            })
-            .collect();
+            let entries = refs
+                .into_iter()
+                .map(|(name, id)| RefEntry {
+                    name,
+                    target: Some(crate::proto::common::ObjectId {
+                        hash: id.as_bytes().to_vec(),
+                    }),
+                })
+                .collect();
 
-        Ok(Response::new(AdvertiseRefsResponse { refs: entries }))
+            Ok(Response::new(AdvertiseRefsResponse { refs: entries }))
+        })
+        .await
     }
 
     type FetchObjectsStream = tokio_stream::wrappers::ReceiverStream<Result<ObjectChunk, Status>>;
@@ -113,87 +196,129 @@ impl SyncService for SyncServer {
         let req = request.into_inner();
         let store = self.store.clone();
         let filter = req.filter.as_ref().map(convert_filter);
+        let timeout = self.limits.options.io_timeout;
+        let queue_permit = self.acquire_queue_permit()?;
+        let worker_permit = self
+            .limits
+            .workers
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| Status::unavailable("server workers are unavailable"))?;
 
         let (tx, rx) = tokio::sync::mpsc::channel(64);
 
         tokio::spawn(async move {
-            let store = store.read().await;
+            let _queue_permit = queue_permit;
+            let _worker_permit = worker_permit;
 
-            // Compute want_set = reachable from want_ids
-            let want_ids: Vec<ObjectId> = req
-                .want
-                .iter()
-                .filter_map(|msg| {
-                    let bytes: [u8; 32] = msg.hash.as_slice().try_into().ok()?;
-                    Some(ObjectId::from_bytes(bytes))
-                })
-                .collect();
+            let run_result = tokio::time::timeout(timeout, async {
+                let store = store.read().await;
 
-            let have_ids: Vec<ObjectId> = req
-                .have
-                .iter()
-                .filter_map(|msg| {
-                    let bytes: [u8; 32] = msg.hash.as_slice().try_into().ok()?;
-                    Some(ObjectId::from_bytes(bytes))
-                })
-                .collect();
+                // Compute want_set = reachable from want_ids
+                let want_ids: Vec<ObjectId> = req
+                    .want
+                    .iter()
+                    .filter_map(|msg| {
+                        let bytes: [u8; 32] = msg.hash.as_slice().try_into().ok()?;
+                        Some(ObjectId::from_bytes(bytes))
+                    })
+                    .collect();
 
-            let want_set = find_reachable_objects_with_depth(
-                &store,
-                &want_ids,
-                filter.as_ref().and_then(|f| f.max_depth),
-            );
-            let have_set = find_reachable_objects(&store, &have_ids);
+                let have_ids: Vec<ObjectId> = req
+                    .have
+                    .iter()
+                    .filter_map(|msg| {
+                        let bytes: [u8; 32] = msg.hash.as_slice().try_into().ok()?;
+                        Some(ObjectId::from_bytes(bytes))
+                    })
+                    .collect();
 
-            let mut candidate_ids: Vec<ObjectId> =
-                want_set.difference(&have_set).copied().collect();
-            candidate_ids.sort_by_key(|id| id.to_hex());
-            let mut sent_bytes: u64 = 0;
+                let want_set = find_reachable_objects_with_depth(
+                    &store,
+                    &want_ids,
+                    filter.as_ref().and_then(|f| f.max_depth),
+                );
+                let have_set = find_reachable_objects(&store, &have_ids);
 
-            // Send filtered candidates in deterministic order.
-            for id in candidate_ids {
-                // Apply partial clone filter if present
-                if let Some(ref f) = filter {
-                    if !f.matches_object(&store, &id) {
+                let candidate_set: std::collections::HashSet<ObjectId> =
+                    want_set.difference(&have_set).copied().collect();
+
+                // Apply filter only to root candidates, then include all in-set dependencies
+                // for the selected roots to keep the streamed graph self-contained.
+                let mut root_ids: Vec<ObjectId> = candidate_set
+                    .iter()
+                    .copied()
+                    .filter(|id| filter.as_ref().is_none_or(|f| f.matches_object(&store, id)))
+                    .collect();
+                root_ids.sort_by_key(|id| id.to_hex());
+
+                let mut selected_ids = std::collections::HashSet::new();
+                let mut stack = root_ids;
+                while let Some(id) = stack.pop() {
+                    if !selected_ids.insert(id) {
                         continue;
                     }
-                }
 
-                if let Ok(obj) = store.load_object(&id) {
-                    let payload = obj.serialize_payload().unwrap_or_default();
-                    let type_tag = obj.type_tag();
-                    let cof_data = cof_encode(type_tag, &payload).unwrap_or_default();
-
-                    if let Some(limit) = filter.as_ref().and_then(|f| f.max_bytes) {
-                        let chunk_len = cof_data.len() as u64;
-                        if sent_bytes.saturating_add(chunk_len) > limit {
-                            break;
-                        }
-                        sent_bytes += chunk_len;
-                    }
-
-                    let chunk = ObjectChunk {
-                        id: Some(crate::proto::common::ObjectId {
-                            hash: id.as_bytes().to_vec(),
-                        }),
-                        object_type: type_tag as i32,
-                        data: cof_data,
-                        is_last: false,
+                    let Ok(obj) = store.load_object(&id) else {
+                        continue;
                     };
-                    if tx.send(Ok(chunk)).await.is_err() {
-                        break;
+                    for dep in obj.dependencies() {
+                        if candidate_set.contains(&dep) && !selected_ids.contains(&dep) {
+                            stack.push(dep);
+                        }
                     }
                 }
+
+                let mut candidate_ids: Vec<ObjectId> = selected_ids.into_iter().collect();
+                candidate_ids.sort_by_key(|id| id.to_hex());
+                let mut sent_bytes: u64 = 0;
+
+                // Send candidates in deterministic order.
+                for id in candidate_ids {
+                    if let Ok(obj) = store.load_object(&id) {
+                        let payload = obj.serialize_payload().unwrap_or_default();
+                        let type_tag = obj.type_tag();
+                        let cof_data = cof_encode(type_tag, &payload).unwrap_or_default();
+
+                        if let Some(limit) = filter.as_ref().and_then(|f| f.max_bytes) {
+                            let chunk_len = cof_data.len() as u64;
+                            if sent_bytes.saturating_add(chunk_len) > limit {
+                                break;
+                            }
+                            sent_bytes += chunk_len;
+                        }
+
+                        let chunk = ObjectChunk {
+                            id: Some(crate::proto::common::ObjectId {
+                                hash: id.as_bytes().to_vec(),
+                            }),
+                            object_type: type_tag as i32,
+                            data: cof_data,
+                            is_last: false,
+                        };
+                        if tx.send(Ok(chunk)).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+
+                let _ = tx
+                    .send(Ok(ObjectChunk {
+                        id: None,
+                        object_type: 0,
+                        data: vec![],
+                        is_last: true,
+                    }))
+                    .await;
+            })
+            .await;
+
+            if run_result.is_err() {
+                let _ = tx
+                    .send(Err(Status::deadline_exceeded("fetch_objects timed out")))
+                    .await;
             }
-            // Send final marker
-            let _ = tx
-                .send(Ok(ObjectChunk {
-                    id: None,
-                    object_type: 0,
-                    data: vec![],
-                    is_last: true,
-                }))
-                .await;
         });
 
         Ok(Response::new(tokio_stream::wrappers::ReceiverStream::new(
@@ -205,104 +330,110 @@ impl SyncService for SyncServer {
         &self,
         request: Request<tonic::Streaming<ObjectChunk>>,
     ) -> Result<Response<PushObjectsResponse>, Status> {
-        let mut stream = request.into_inner();
-        let store = self.store.write().await;
-        let mut accepted = Vec::new();
+        self.run_bounded("push_objects", async move {
+            let mut stream = request.into_inner();
+            let store = self.store.write().await;
+            let mut accepted = Vec::new();
 
-        while let Some(chunk) = stream.message().await? {
-            if chunk.is_last {
-                break;
+            while let Some(chunk) = stream.message().await? {
+                if chunk.is_last {
+                    break;
+                }
+
+                if let Some(_id_msg) = &chunk.id {
+                    let (type_tag, payload) = claw_core::cof::cof_decode(&chunk.data)
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                    let obj = claw_core::object::Object::deserialize_payload(type_tag, &payload)
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                    let id = store
+                        .store_object(&obj)
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                    accepted.push(crate::proto::common::ObjectId {
+                        hash: id.as_bytes().to_vec(),
+                    });
+                }
             }
 
-            if let Some(_id_msg) = &chunk.id {
-                let (type_tag, payload) = claw_core::cof::cof_decode(&chunk.data)
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                let obj = claw_core::object::Object::deserialize_payload(type_tag, &payload)
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                let id = store
-                    .store_object(&obj)
-                    .map_err(|e| Status::internal(e.to_string()))?;
-                accepted.push(crate::proto::common::ObjectId {
-                    hash: id.as_bytes().to_vec(),
-                });
-            }
-        }
-
-        Ok(Response::new(PushObjectsResponse {
-            success: true,
-            message: format!("accepted {} objects", accepted.len()),
-            accepted,
-        }))
+            Ok(Response::new(PushObjectsResponse {
+                success: true,
+                message: format!("accepted {} objects", accepted.len()),
+                accepted,
+            }))
+        })
+        .await
     }
 
     async fn update_refs(
         &self,
         request: Request<UpdateRefsRequest>,
     ) -> Result<Response<UpdateRefsResponse>, Status> {
-        let req = request.into_inner();
-        let store = self.store.write().await;
+        self.run_bounded("update_refs", async move {
+            let req = request.into_inner();
+            let store = self.store.write().await;
 
-        // Two-pass: first verify all CAS conditions, then apply
-        // Pass 1: verify
-        for update in &req.updates {
-            let current = store
-                .get_ref(&update.name)
-                .map_err(|e| Status::internal(e.to_string()))?;
+            // Two-pass: first verify all CAS conditions, then apply
+            // Pass 1: verify
+            for update in &req.updates {
+                let current = store
+                    .get_ref(&update.name)
+                    .map_err(|e| Status::internal(e.to_string()))?;
 
-            let expected_old = update
-                .old_target
-                .as_ref()
-                .map(decode_object_id)
-                .transpose()?;
+                let expected_old = update
+                    .old_target
+                    .as_ref()
+                    .map(decode_object_id)
+                    .transpose()?;
 
-            match (&expected_old, &current) {
-                (None, None) => {} // Creating new ref
-                (Some(expected), Some(actual)) if expected == actual => {}
-                (None, Some(_)) if update.force => {} // Force override existing ref
-                _ => {
-                    return Ok(Response::new(UpdateRefsResponse {
-                        success: false,
-                        message: format!(
-                            "CAS conflict on ref '{}': expected {:?}, actual {:?}",
-                            update.name,
-                            expected_old.map(|id| id.to_hex()),
-                            current.map(|id| id.to_hex()),
-                        ),
-                    }));
-                }
-            }
-
-            // FF check: verify new is descendant of old (unless force)
-            if let Some(new_target) = &update.new_target {
-                let new_id = decode_object_id(new_target)?;
-                if let Some(ref old_id) = current {
-                    if !update.force && !is_ancestor(&store, old_id, &new_id) {
+                match (&expected_old, &current) {
+                    (None, None) => {} // Creating new ref
+                    (Some(expected), Some(actual)) if expected == actual => {}
+                    (None, Some(_)) if update.force => {} // Force override existing ref
+                    _ => {
                         return Ok(Response::new(UpdateRefsResponse {
                             success: false,
                             message: format!(
-                                "non-fast-forward update on ref '{}'; use force to override",
-                                update.name
+                                "CAS conflict on ref '{}': expected {:?}, actual {:?}",
+                                update.name,
+                                expected_old.map(|id| id.to_hex()),
+                                current.map(|id| id.to_hex()),
                             ),
                         }));
                     }
                 }
-            }
-        }
 
-        // Pass 2: apply all updates
-        for update in &req.updates {
-            if let Some(new_target) = &update.new_target {
-                let id = decode_object_id(new_target)?;
-                store
-                    .set_ref(&update.name, &id)
-                    .map_err(|e| Status::internal(e.to_string()))?;
+                // FF check: verify new is descendant of old (unless force)
+                if let Some(new_target) = &update.new_target {
+                    let new_id = decode_object_id(new_target)?;
+                    if let Some(ref old_id) = current {
+                        if !update.force && !is_ancestor(&store, old_id, &new_id) {
+                            return Ok(Response::new(UpdateRefsResponse {
+                                success: false,
+                                message: format!(
+                                    "non-fast-forward update on ref '{}'; use force to override",
+                                    update.name
+                                ),
+                            }));
+                        }
+                    }
+                }
             }
-        }
 
-        Ok(Response::new(UpdateRefsResponse {
-            success: true,
-            message: "refs updated".to_string(),
-        }))
+            // Pass 2: apply all updates
+            for update in &req.updates {
+                if let Some(new_target) = &update.new_target {
+                    let id = decode_object_id(new_target)?;
+                    store
+                        .set_ref(&update.name, &id)
+                        .map_err(|e| Status::internal(e.to_string()))?;
+                }
+            }
+
+            Ok(Response::new(UpdateRefsResponse {
+                success: true,
+                message: "refs updated".to_string(),
+            }))
+        })
+        .await
     }
 }
 
@@ -311,7 +442,8 @@ mod tests {
     use super::*;
     use claw_core::id::{ChangeId, IntentId};
     use claw_core::object::Object;
-    use claw_core::types::{Blob, Capsule, CapsulePublic, Change, ChangeStatus, Revision};
+    use claw_core::types::{Blob, Capsule, CapsulePublic, Change, ChangeStatus, Patch, Revision};
+    use std::time::Duration;
     use tokio_stream::StreamExt;
 
     async fn collect_streamed_ids(
@@ -688,7 +820,7 @@ mod tests {
             }))
             .unwrap();
 
-        let mut ordered = vec![blob_small, blob_large];
+        let mut ordered = [blob_small, blob_large];
         ordered.sort_by_key(|id| id.to_hex());
 
         let first_obj = store.load_object(&ordered[0]).unwrap();
@@ -724,5 +856,171 @@ mod tests {
 
         let ids = collect_streamed_ids(response).await;
         assert_eq!(ids, vec![ordered[0]]);
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_keeps_dependencies_of_filtered_roots() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let patch_src = store
+            .store_object(&Object::Patch(Patch {
+                target_path: "src/main.rs".to_string(),
+                codec_id: "text/line".to_string(),
+                base_object: None,
+                result_object: None,
+                ops: vec![],
+                codec_payload: None,
+            }))
+            .unwrap();
+        let patch_docs = store
+            .store_object(&Object::Patch(Patch {
+                target_path: "docs/readme.md".to_string(),
+                codec_id: "text/line".to_string(),
+                base_object: None,
+                result_object: None,
+                ops: vec![],
+                codec_payload: None,
+            }))
+            .unwrap();
+        let revision = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![patch_src, patch_docs],
+                snapshot_base: None,
+                tree: None,
+                capsule_id: None,
+                author: "test".to_string(),
+                created_at_ms: 1,
+                summary: "rev".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store);
+        let response = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: vec![crate::proto::common::ObjectId {
+                    hash: revision.as_bytes().to_vec(),
+                }],
+                have: vec![],
+                filter: Some(crate::proto::sync::PartialCloneFilter {
+                    intent_ids: vec![],
+                    path_prefixes: vec!["src/".to_string()],
+                    time_range_start: 0,
+                    time_range_end: 0,
+                    codec_ids: vec![],
+                    capsule_visibility: String::new(),
+                    max_bytes: 0,
+                    max_depth: 0,
+                }),
+            }))
+            .await
+            .unwrap();
+
+        let ids = collect_streamed_ids(response).await;
+        assert!(ids.contains(&revision));
+        assert!(ids.contains(&patch_src));
+        assert!(ids.contains(&patch_docs));
+    }
+
+    fn make_many_blobs(store: &ClawStore, count: usize) -> Vec<ObjectId> {
+        (0..count)
+            .map(|idx| {
+                store
+                    .store_object(&Object::Blob(Blob {
+                        data: format!("blob-{idx:04}").into_bytes(),
+                        media_type: None,
+                    }))
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_applies_backpressure_when_overloaded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let want_ids = make_many_blobs(&store, 200);
+
+        let server = SyncServer::new_with_options(
+            store,
+            SyncServerOptions {
+                worker_pool_size: 1,
+                queue_capacity: 0,
+                backpressure: true,
+                io_timeout: Duration::from_millis(1_000),
+            },
+        );
+
+        let first = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: want_ids
+                    .iter()
+                    .map(|id| crate::proto::common::ObjectId {
+                        hash: id.as_bytes().to_vec(),
+                    })
+                    .collect(),
+                have: vec![],
+                filter: None,
+            }))
+            .await
+            .unwrap();
+
+        let _held_stream = first.into_inner();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        let overloaded = server
+            .advertise_refs(Request::new(AdvertiseRefsRequest {
+                prefix: String::new(),
+            }))
+            .await
+            .expect_err("second request should hit backpressure");
+
+        assert_eq!(overloaded.code(), tonic::Code::ResourceExhausted);
+    }
+
+    #[tokio::test]
+    async fn waiting_for_worker_honors_io_timeout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let want_ids = make_many_blobs(&store, 200);
+
+        let server = SyncServer::new_with_options(
+            store,
+            SyncServerOptions {
+                worker_pool_size: 1,
+                queue_capacity: 1,
+                backpressure: true,
+                io_timeout: Duration::from_millis(50),
+            },
+        );
+
+        let first = server
+            .fetch_objects(Request::new(FetchObjectsRequest {
+                want: want_ids
+                    .iter()
+                    .map(|id| crate::proto::common::ObjectId {
+                        hash: id.as_bytes().to_vec(),
+                    })
+                    .collect(),
+                have: vec![],
+                filter: None,
+            }))
+            .await
+            .unwrap();
+        let _held_stream = first.into_inner();
+
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        let timed_out = server
+            .advertise_refs(Request::new(AdvertiseRefsRequest {
+                prefix: String::new(),
+            }))
+            .await
+            .expect_err("request should time out while waiting for worker");
+
+        assert_eq!(timed_out.code(), tonic::Code::DeadlineExceeded);
     }
 }

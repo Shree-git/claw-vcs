@@ -94,12 +94,41 @@ impl ChangeService for ChangeServer {
         };
 
         let store = self.store.write().await;
+        let intent_ref = format!("intents/{intent_id}");
+        let intent_obj_id = store
+            .get_ref(&intent_ref)
+            .map_err(|e| Status::internal(e.to_string()))?
+            .ok_or_else(|| Status::not_found(format!("intent not found: {intent_id}")))?;
+        let mut intent = match store
+            .load_object(&intent_obj_id)
+            .map_err(|e| Status::internal(e.to_string()))?
+        {
+            Object::Intent(i) => i,
+            _ => return Err(Status::internal("intent ref points to non-intent object")),
+        };
+
         let obj_id = store
             .store_object(&Object::Change(change.clone()))
             .map_err(|e| Status::internal(e.to_string()))?;
         store
             .set_ref(&format!("changes/{id}"), &obj_id)
             .map_err(|e| Status::internal(e.to_string()))?;
+
+        let change_id_string = id.to_string();
+        if !intent
+            .change_ids
+            .iter()
+            .any(|existing| existing == &change_id_string)
+        {
+            intent.change_ids.push(change_id_string);
+            intent.updated_at_ms = now;
+            let new_intent_obj_id = store
+                .store_object(&Object::Intent(intent))
+                .map_err(|e| Status::internal(e.to_string()))?;
+            store
+                .set_ref(&intent_ref, &new_intent_obj_id)
+                .map_err(|e| Status::internal(e.to_string()))?;
+        }
 
         Ok(Response::new(CreateChangeResponse {
             change: Some(change_to_proto(&change)),
@@ -223,4 +252,105 @@ fn status_matches(s: &ChangeStatus, filter: &str) -> bool {
             | (ChangeStatus::Integrated, "integrated")
             | (ChangeStatus::Abandoned, "abandoned")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claw_core::object::Object;
+    use claw_core::types::{Intent, IntentStatus};
+
+    #[tokio::test]
+    async fn create_rejects_missing_intent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(RwLock::new(ClawStore::init(tmp.path()).unwrap()));
+        let server = ChangeServer::new(store);
+
+        let response = server
+            .create(Request::new(CreateChangeRequest {
+                intent_id: Some(crate::proto::common::Ulid {
+                    data: IntentId::new().as_bytes().to_vec(),
+                }),
+                description: String::new(),
+                author: String::new(),
+            }))
+            .await;
+
+        let err = response.unwrap_err();
+        assert_eq!(err.code(), tonic::Code::NotFound);
+        assert!(err.message().contains("intent not found"));
+    }
+
+    #[tokio::test]
+    async fn create_links_change_to_intent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(RwLock::new(ClawStore::init(tmp.path()).unwrap()));
+
+        let intent_id = IntentId::new();
+        let intent_obj = Object::Intent(Intent {
+            id: intent_id,
+            title: "intent".to_string(),
+            goal: "goal".to_string(),
+            constraints: vec![],
+            acceptance_tests: vec![],
+            links: vec![],
+            policy_refs: vec![],
+            agents: vec![],
+            change_ids: vec![],
+            depends_on: vec![],
+            supersedes: vec![],
+            status: IntentStatus::Open,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        });
+
+        {
+            let store_guard = store.write().await;
+            let intent_obj_id = store_guard.store_object(&intent_obj).unwrap();
+            store_guard
+                .set_ref(&format!("intents/{intent_id}"), &intent_obj_id)
+                .unwrap();
+        }
+
+        let server = ChangeServer::new(store.clone());
+        let create_resp = server
+            .create(Request::new(CreateChangeRequest {
+                intent_id: Some(crate::proto::common::Ulid {
+                    data: intent_id.as_bytes().to_vec(),
+                }),
+                description: String::new(),
+                author: String::new(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        let change_proto = create_resp.change.expect("change");
+        let created_change_id = change_proto
+            .id
+            .expect("change id")
+            .data
+            .as_slice()
+            .try_into()
+            .map(ChangeId::from_bytes)
+            .unwrap();
+
+        let store_guard = store.read().await;
+        let updated_intent_obj_id = store_guard
+            .get_ref(&format!("intents/{intent_id}"))
+            .unwrap()
+            .expect("intent ref");
+        let updated_intent_obj = store_guard.load_object(&updated_intent_obj_id).unwrap();
+        let Object::Intent(updated_intent) = updated_intent_obj else {
+            panic!("updated intent ref should point to intent object");
+        };
+
+        assert!(
+            updated_intent
+                .change_ids
+                .iter()
+                .any(|id| id == &created_change_id.to_string()),
+            "change should be linked from intent"
+        );
+    }
 }

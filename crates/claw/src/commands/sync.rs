@@ -3,25 +3,69 @@ use clap::{Args, Subcommand};
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
 use claw_store::{ClawStore, HeadState};
-use claw_sync::client::SyncClient;
+use claw_sync::client::{RetryPolicy, SyncClient};
+use claw_sync::compat::{compatibility_report, CompatibilityLevel};
 use claw_sync::negotiation::ordered_reachable_objects;
+use claw_sync::proto::sync::HelloResponse;
 use claw_sync::transport::RemoteTransportConfig;
 
 use crate::auth_store;
-use crate::config::find_repo_root;
+use crate::config::{self, find_repo_root};
 use crate::worktree;
 
-use super::remote;
+use super::{remote, RuntimeOptions};
 
-fn require_access_token(token_profile: Option<&str>) -> anyhow::Result<String> {
-    let profile_name = token_profile.unwrap_or("default");
-    auth_store::resolve_access_token(Some(profile_name)).ok_or_else(|| {
-        anyhow::anyhow!(
-            "no token for profile '{}'; run `claw auth login --profile {}`",
-            profile_name,
-            profile_name
-        )
-    })
+const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn resolve_token_profiles(
+    token_profile: Option<&str>,
+    runtime_profile: &str,
+    repo_default_profile: &str,
+) -> Vec<String> {
+    let explicit_profile = token_profile.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(profile) = explicit_profile {
+        return vec![profile.to_string()];
+    }
+
+    let mut profiles = Vec::new();
+    let runtime_profile = runtime_profile.trim();
+    if !runtime_profile.is_empty() {
+        profiles.push(runtime_profile.to_string());
+    }
+
+    let repo_default_profile = repo_default_profile.trim();
+    if !repo_default_profile.is_empty() && !profiles.iter().any(|p| p == repo_default_profile) {
+        profiles.push(repo_default_profile.to_string());
+    }
+
+    if profiles.is_empty() {
+        profiles.push("default".to_string());
+    }
+
+    profiles
+}
+
+fn require_access_token(
+    token_profile: Option<&str>,
+    runtime_profile: &str,
+    repo_default_profile: &str,
+) -> anyhow::Result<String> {
+    let candidates = resolve_token_profiles(token_profile, runtime_profile, repo_default_profile);
+    for profile_name in &candidates {
+        if let Some(token) = auth_store::resolve_access_token(Some(profile_name)) {
+            return Ok(token);
+        }
+    }
+
+    let suggested_profile = candidates
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "default".to_string());
+    anyhow::bail!(
+        "no token found for profiles [{}]; run `claw auth login --profile {}`",
+        candidates.join(", "),
+        suggested_profile
+    );
 }
 
 #[derive(Args)]
@@ -91,16 +135,31 @@ fn resolve_command(args: SyncArgs) -> SyncCommand {
 async fn connect_from_remote(
     root: &std::path::Path,
     remote_arg: &str,
+    runtime: &RuntimeOptions,
 ) -> anyhow::Result<SyncClient> {
     let resolved = remote::resolve_remote(root, remote_arg)?;
+    let cfg = config::load_or_default_config(root)?;
+    let repo_default_profile = config::default_profile(&cfg);
     let transport = match resolved {
-        remote::ResolvedRemote::Grpc { addr } => RemoteTransportConfig::Grpc { addr },
+        remote::ResolvedRemote::Grpc {
+            addr,
+            token_profile,
+        } => {
+            let bearer_token = token_profile
+                .as_deref()
+                .map(|profile| {
+                    require_access_token(Some(profile), &runtime.profile, repo_default_profile)
+                })
+                .transpose()?;
+            RemoteTransportConfig::Grpc { addr, bearer_token }
+        }
         remote::ResolvedRemote::ClawLab {
             base_url,
             repo,
             token_profile,
         } => {
-            let token = require_access_token(token_profile.as_deref())?;
+            let token =
+                require_access_token(token_profile.as_deref(), &runtime.profile, repo_default_profile)?;
             RemoteTransportConfig::Http {
                 base_url,
                 repo,
@@ -109,11 +168,52 @@ async fn connect_from_remote(
         }
     };
 
-    let client = SyncClient::connect_with_transport(transport).await?;
+    let retry_policy = RetryPolicy {
+        idempotent_only: cfg.retries.idempotent_only,
+        max_attempts: cfg.retries.max_attempts,
+        base_backoff_ms: cfg.retries.base_backoff_ms,
+        max_backoff_ms: cfg.retries.max_backoff_ms,
+        jitter: cfg.retries.jitter,
+    };
+
+    let client = SyncClient::connect_with_transport_and_retry(transport, retry_policy).await?;
     Ok(client)
 }
 
-pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
+fn check_remote_compatibility(remote: &str, hello: &HelloResponse) -> anyhow::Result<()> {
+    let report = compatibility_report(CLI_VERSION, &hello.server_version);
+    match report.level {
+        CompatibilityLevel::Full => Ok(()),
+        CompatibilityLevel::Limited => {
+            eprintln!(
+                "compatibility check: limited support for {remote} (local {local}, remote {remote_ver}); N/N-1 compatibility applies, but prefer matching versions for best results",
+                local = report.local,
+                remote_ver = report.remote,
+            );
+            Ok(())
+        }
+        CompatibilityLevel::Unsupported => anyhow::bail!(
+            "compatibility check failed for {remote}: local claw version '{local}' is incompatible with remote version '{remote_ver}'; use matching major version and at most one minor difference (N/N-1), or retry without --compat-check",
+            local = report.local,
+            remote_ver = report.remote,
+        ),
+    }
+}
+
+async fn maybe_check_compatibility(
+    runtime: &RuntimeOptions,
+    remote: &str,
+    client: &mut SyncClient,
+) -> anyhow::Result<()> {
+    if runtime.compat_check {
+        let hello = client.hello().await?;
+        check_remote_compatibility(remote, &hello)?;
+    }
+
+    Ok(())
+}
+
+pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
     match resolve_command(args) {
         SyncCommand::Push {
             remote,
@@ -122,7 +222,8 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
         } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let mut client = connect_from_remote(&root, &remote).await?;
+            let mut client = connect_from_remote(&root, &remote, runtime).await?;
+            maybe_check_compatibility(runtime, &remote, &mut client).await?;
 
             let local_id = store
                 .get_ref(&ref_name)?
@@ -155,7 +256,8 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
         } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let mut client = connect_from_remote(&root, &remote).await?;
+            let mut client = connect_from_remote(&root, &remote, runtime).await?;
+            maybe_check_compatibility(runtime, &remote, &mut client).await?;
 
             let remote_refs = client.advertise_refs("").await?;
             let remote_target = remote_refs
@@ -216,26 +318,60 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
         } => {
             let root = std::path::Path::new(&path);
             let store = ClawStore::init(root)?;
+            let cfg = config::load_or_default_config(root)?;
+            let repo_default_profile = config::default_profile(&cfg);
+            let retry_policy = RetryPolicy {
+                idempotent_only: cfg.retries.idempotent_only,
+                max_attempts: cfg.retries.max_attempts,
+                base_backoff_ms: cfg.retries.base_backoff_ms,
+                max_backoff_ms: cfg.retries.max_backoff_ms,
+                jitter: cfg.retries.jitter,
+            };
             let mut client = match kind.as_str() {
-                "grpc" => SyncClient::connect(&remote).await?,
+                "grpc" => {
+                    let bearer_token = token_profile
+                        .as_deref()
+                        .map(|profile| {
+                            require_access_token(Some(profile), &runtime.profile, repo_default_profile)
+                        })
+                        .transpose()?;
+                    SyncClient::connect_with_transport_and_retry(
+                        RemoteTransportConfig::Grpc {
+                            addr: remote.clone(),
+                            bearer_token,
+                        },
+                        retry_policy,
+                    )
+                    .await?
+                }
                 "clawlab" => {
                     let repo_slug = repo.clone().ok_or_else(|| {
                         anyhow::anyhow!(
                             "--repo is required for --kind clawlab (example: acme/widgets)"
                         )
                     })?;
-                    let token = require_access_token(token_profile.as_deref())?;
-                    SyncClient::connect_with_transport(RemoteTransportConfig::Http {
-                        base_url: remote.clone(),
-                        repo: repo_slug,
-                        bearer_token: Some(token),
-                    })
+                    let token = require_access_token(
+                        token_profile.as_deref(),
+                        &runtime.profile,
+                        repo_default_profile,
+                    )?;
+                    SyncClient::connect_with_transport_and_retry(
+                        RemoteTransportConfig::Http {
+                            base_url: remote.clone(),
+                            repo: repo_slug,
+                            bearer_token: Some(token),
+                        },
+                        retry_policy,
+                    )
                     .await?
                 }
                 other => anyhow::bail!("unsupported --kind: {other} (expected grpc|clawlab)"),
             };
 
-            let _hello = client.hello().await?;
+            let hello = client.hello().await?;
+            if runtime.compat_check {
+                check_remote_compatibility(&remote, &hello)?;
+            }
             let remote_refs = client.advertise_refs("").await?;
 
             let want: Vec<_> = remote_refs.iter().map(|(_, id)| *id).collect();
@@ -266,6 +402,7 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
                 "grpc" => remote::RemoteEntry {
                     kind: Some("grpc".to_string()),
                     url: Some(remote.clone()),
+                    token_profile: token_profile.clone(),
                     ..remote::RemoteEntry::default()
                 },
                 "clawlab" => remote::RemoteEntry {
@@ -296,7 +433,11 @@ pub async fn run(args: SyncArgs) -> anyhow::Result<()> {
 mod tests {
     use clap::Parser;
 
-    use super::{resolve_command, SyncArgs, SyncCommand};
+    use super::{
+        check_remote_compatibility, resolve_command, resolve_token_profiles, SyncArgs,
+        SyncCommand, CLI_VERSION,
+    };
+    use claw_sync::proto::sync::HelloResponse;
 
     #[derive(Parser)]
     struct TestCli {
@@ -356,5 +497,66 @@ mod tests {
             }
             _ => panic!("expected pull command"),
         }
+    }
+
+    #[test]
+    fn compat_check_accepts_matching_version() {
+        let hello = HelloResponse {
+            server_version: CLI_VERSION.to_string(),
+            capabilities: vec!["partial-clone".to_string()],
+        };
+
+        check_remote_compatibility("origin", &hello).expect("expected compatible versions");
+    }
+
+    #[test]
+    fn compat_check_accepts_n_minus_one_minor_version() {
+        let mut parts = CLI_VERSION.split('.');
+        let major: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+        let minor: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+        let n_minus_one = minor.saturating_sub(1);
+        let hello = HelloResponse {
+            server_version: format!("{major}.{n_minus_one}.99"),
+            capabilities: vec!["partial-clone".to_string()],
+        };
+
+        check_remote_compatibility("origin", &hello)
+            .expect("N/N-1 compatibility should be accepted");
+    }
+
+    #[test]
+    fn compat_check_rejects_unsupported_version_gap() {
+        let hello = HelloResponse {
+            server_version: "9.9.9".to_string(),
+            capabilities: vec!["partial-clone".to_string()],
+        };
+
+        let err = check_remote_compatibility("origin", &hello).expect_err("expected mismatch");
+        let message = err.to_string();
+        assert!(message.contains("compatibility check failed"));
+        assert!(message.contains("incompatible"));
+        assert!(message.contains("N/N-1"));
+        assert!(message.contains("--compat-check"));
+    }
+
+    #[test]
+    fn resolve_token_profiles_prefers_explicit_profile() {
+        let profiles = resolve_token_profiles(Some("team-ci"), "prod", "default");
+
+        assert_eq!(profiles, vec!["team-ci"]);
+    }
+
+    #[test]
+    fn resolve_token_profiles_uses_runtime_then_repo_default_when_omitted() {
+        let profiles = resolve_token_profiles(None, "prod", "default");
+
+        assert_eq!(profiles, vec!["prod", "default"]);
+    }
+
+    #[test]
+    fn resolve_token_profiles_deduplicates_runtime_and_repo_default() {
+        let profiles = resolve_token_profiles(None, "default", "default");
+
+        assert_eq!(profiles, vec!["default"]);
     }
 }

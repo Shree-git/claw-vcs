@@ -21,5 +21,5 @@ pub use policy::{Policy, Visibility};
 pub use reflog::{RefLog, RefLogEntry};
 pub use revision::Revision;
 pub use snapshot::Snapshot;
-pub use tree::{FileMode, Tree, TreeEntry};
+pub use tree::{validate_tree_entry_name, FileMode, Tree, TreeEntry};
 pub use workstream::Workstream;

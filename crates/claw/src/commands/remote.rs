@@ -25,7 +25,7 @@ enum RemoteCommand {
         /// Repository slug for clawlab remotes
         #[arg(long)]
         repo: Option<String>,
-        /// Auth profile for clawlab remotes
+        /// Auth profile for transport bearer token (grpc/clawlab)
         #[arg(long)]
         token_profile: Option<String>,
     },
@@ -62,6 +62,7 @@ pub(crate) struct RemoteEntry {
 pub enum ResolvedRemote {
     Grpc {
         addr: String,
+        token_profile: Option<String>,
     },
     ClawLab {
         base_url: String,
@@ -103,6 +104,7 @@ fn run_add(
         "grpc" => RemoteEntry {
             kind: Some("grpc".to_string()),
             url: Some(url.to_string()),
+            token_profile,
             ..RemoteEntry::default()
         },
         "clawlab" => {
@@ -139,8 +141,16 @@ fn run_list() -> anyhow::Result<()> {
 
     for (name, entry) in &config.remotes {
         match normalize_entry(entry.clone())? {
-            ResolvedRemote::Grpc { addr } => {
-                println!("{}\tgrpc\t{}", name, addr);
+            ResolvedRemote::Grpc {
+                addr,
+                token_profile,
+            } => {
+                println!(
+                    "{}\tgrpc\t{}\t{}",
+                    name,
+                    addr,
+                    token_profile.unwrap_or_else(|| "-".to_string())
+                );
             }
             ResolvedRemote::ClawLab {
                 base_url,
@@ -206,7 +216,10 @@ fn normalize_entry(entry: RemoteEntry) -> anyhow::Result<ResolvedRemote> {
                 .url
                 .or(entry.base_url)
                 .ok_or_else(|| anyhow::anyhow!("missing grpc url in remote entry"))?;
-            Ok(ResolvedRemote::Grpc { addr })
+            Ok(ResolvedRemote::Grpc {
+                addr,
+                token_profile: entry.token_profile,
+            })
         }
         "clawlab" => {
             let base_url = entry
@@ -231,6 +244,7 @@ pub fn resolve_remote(root: &Path, remote_arg: &str) -> anyhow::Result<ResolvedR
     if remote_arg.contains("://") || remote_arg.contains("localhost") {
         return Ok(ResolvedRemote::Grpc {
             addr: remote_arg.to_string(),
+            token_profile: None,
         });
     }
 
@@ -258,7 +272,13 @@ mod tests {
         };
 
         match normalize_entry(entry).unwrap() {
-            ResolvedRemote::Grpc { addr } => assert_eq!(addr, "http://localhost:50051"),
+            ResolvedRemote::Grpc {
+                addr,
+                token_profile,
+            } => {
+                assert_eq!(addr, "http://localhost:50051");
+                assert!(token_profile.is_none());
+            }
             _ => panic!("expected grpc"),
         }
     }

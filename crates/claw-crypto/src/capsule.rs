@@ -19,38 +19,22 @@ pub fn build_capsule(
         _ => None,
     };
 
-    // Build signing payload: revision_id || public_hash || encrypted_hash
-    let public_bytes = serde_json::to_vec(&public_fields)
-        .map_err(|e| CryptoError::SigningFailed(e.to_string()))?;
-    let public_hash = blake3::hash(&public_bytes);
-
-    let mut sign_payload = Vec::new();
-    sign_payload.extend_from_slice(revision_id.as_bytes());
-    sign_payload.extend_from_slice(public_hash.as_bytes());
-    if let Some(enc) = &encrypted_private {
-        let enc_hash = blake3::hash(enc);
-        sign_payload.extend_from_slice(enc_hash.as_bytes());
-    }
-
-    let sig = sign::sign(signing_keypair, &sign_payload);
-
     let encryption = if encryption_key.is_some() {
         "xchacha20poly1305".to_string()
     } else {
         String::new()
     };
 
-    Ok(Capsule {
+    let mut capsule = Capsule {
         revision_id: *revision_id,
         public_fields,
         encrypted_private,
         encryption,
         key_id: None,
-        signatures: vec![CapsuleSignature {
-            signer_id: hex::encode(sig.signer_id),
-            signature: sig.signature,
-        }],
-    })
+        signatures: vec![],
+    };
+    append_capsule_signature(&mut capsule, signing_keypair)?;
+    Ok(capsule)
 }
 
 pub fn verify_capsule(capsule: &Capsule, public_key: &[u8; 32]) -> Result<bool, CryptoError> {
@@ -59,19 +43,59 @@ pub fn verify_capsule(capsule: &Capsule, public_key: &[u8; 32]) -> Result<bool, 
         .first()
         .ok_or_else(|| CryptoError::VerificationFailed("no signature".into()))?;
 
-    let public_bytes = serde_json::to_vec(&capsule.public_fields)
-        .map_err(|e| CryptoError::VerificationFailed(e.to_string()))?;
+    let sign_payload = capsule_signing_payload(capsule)?;
+
+    crate::verify::verify(public_key, &sign_payload, &sig.signature)
+}
+
+pub fn append_capsule_signature(
+    capsule: &mut Capsule,
+    signing_keypair: &KeyPair,
+) -> Result<(), CryptoError> {
+    let sign_payload = capsule_signing_payload(capsule)?;
+    let sig = sign::sign(signing_keypair, &sign_payload);
+    let signer_id = hex::encode(sig.signer_id);
+
+    if capsule
+        .signatures
+        .iter()
+        .any(|existing| existing.signer_id.eq_ignore_ascii_case(&signer_id))
+    {
+        return Ok(());
+    }
+
+    capsule.signatures.push(CapsuleSignature {
+        signer_id,
+        signature: sig.signature,
+    });
+    Ok(())
+}
+
+pub fn capsule_signing_payload(capsule: &Capsule) -> Result<Vec<u8>, CryptoError> {
+    signing_payload(
+        &capsule.revision_id,
+        &capsule.public_fields,
+        capsule.encrypted_private.as_deref(),
+    )
+    .map_err(|e| CryptoError::VerificationFailed(e.to_string()))
+}
+
+fn signing_payload(
+    revision_id: &ObjectId,
+    public_fields: &CapsulePublic,
+    encrypted_private: Option<&[u8]>,
+) -> Result<Vec<u8>, serde_json::Error> {
+    let public_bytes = serde_json::to_vec(public_fields)?;
     let public_hash = blake3::hash(&public_bytes);
 
     let mut sign_payload = Vec::new();
-    sign_payload.extend_from_slice(capsule.revision_id.as_bytes());
+    sign_payload.extend_from_slice(revision_id.as_bytes());
     sign_payload.extend_from_slice(public_hash.as_bytes());
-    if let Some(enc) = &capsule.encrypted_private {
+    if let Some(enc) = encrypted_private {
         let enc_hash = blake3::hash(enc);
         sign_payload.extend_from_slice(enc_hash.as_bytes());
     }
-
-    crate::verify::verify(public_key, &sign_payload, &sig.signature)
+    Ok(sign_payload)
 }
 
 #[cfg(test)]
@@ -141,5 +165,17 @@ mod tests {
         // Wrong key can't decrypt
         let wrong_key = [100u8; 32];
         assert!(encrypt::decrypt(&wrong_key, capsule.encrypted_private.as_ref().unwrap()).is_err());
+    }
+
+    #[test]
+    fn append_capsule_signature_adds_second_signer() {
+        let kp1 = KeyPair::generate();
+        let kp2 = KeyPair::generate();
+        let rev_id = content_hash(TypeTag::Revision, b"test revision");
+
+        let mut capsule = build_capsule(&rev_id, test_public(), None, None, &kp1).unwrap();
+        append_capsule_signature(&mut capsule, &kp2).unwrap();
+
+        assert_eq!(capsule.signatures.len(), 2);
     }
 }

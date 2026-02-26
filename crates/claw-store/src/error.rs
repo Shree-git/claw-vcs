@@ -21,4 +21,6 @@ pub enum StoreError {
     Index(String),
     #[error("ref CAS conflict: expected {expected}, actual {actual}")]
     RefCasConflict { expected: String, actual: String },
+    #[error("invalid ref name: {0}")]
+    InvalidRefName(String),
 }

@@ -43,6 +43,7 @@ enum ChangeCommand {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use clap::Parser;
 
@@ -77,6 +78,16 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
                 .as_millis() as u64;
 
             let intent_id = IntentId::from_string(&intent)?;
+            let intent_ref = format!("intents/{intent_id}");
+            let intent_obj_id = store
+                .get_ref(&intent_ref)?
+                .ok_or_else(|| anyhow::anyhow!("intent not found: {intent_id}"))?;
+            let intent_obj = store.load_object(&intent_obj_id)?;
+            let mut intent_obj = match intent_obj {
+                Object::Intent(intent) => intent,
+                _ => anyhow::bail!("ref does not point to an intent object: {intent_ref}"),
+            };
+
             let change = Change {
                 id: ChangeId::new(),
                 intent_id,
@@ -89,6 +100,18 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
 
             let id = store.store_object(&Object::Change(change.clone()))?;
             store.set_ref(&format!("changes/{}", change.id), &id)?;
+
+            let change_id_string = change.id.to_string();
+            if !intent_obj
+                .change_ids
+                .iter()
+                .any(|existing| existing == &change_id_string)
+            {
+                intent_obj.change_ids.push(change_id_string);
+                intent_obj.updated_at_ms = now;
+                let new_intent_obj_id = store.store_object(&Object::Intent(intent_obj))?;
+                store.set_ref(&intent_ref, &new_intent_obj_id)?;
+            }
 
             println!("Created change: {}", change.id);
             println!("  Intent: {intent}");

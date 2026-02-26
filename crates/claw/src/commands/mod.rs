@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod agent;
 pub mod auth;
 pub mod branch;
@@ -7,11 +8,14 @@ pub mod daemon;
 pub mod diff;
 pub mod git_export;
 pub mod git_import;
+mod git_notes;
+pub mod git_roundtrip;
 pub mod init;
 pub mod integrate;
 pub mod intent;
 pub mod log;
 pub mod patch;
+pub mod plugin;
 pub mod policy;
 pub mod remote;
 pub mod resolve;
@@ -23,8 +27,23 @@ pub mod sync;
 
 use clap::Subcommand;
 
+#[derive(Clone, Debug)]
+pub enum ErrorFormat {
+    Human,
+    Json,
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimeOptions {
+    pub profile: String,
+    pub compat_check: bool,
+    pub error_format: ErrorFormat,
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Administrative operations for production deployments
+    Admin(admin::AdminArgs),
     /// Initialize a new claw repository
     Init(init::InitArgs),
     /// Manage intents
@@ -33,6 +52,8 @@ pub enum Commands {
     Change(change::ChangeArgs),
     /// Create and apply patches
     Patch(patch::PatchArgs),
+    /// Manage external plugins
+    Plugin(plugin::PluginArgs),
     /// Manage policies
     Policy(policy::PolicyArgs),
     /// Sync with a remote repository
@@ -61,6 +82,8 @@ pub enum Commands {
     GitExport(git_export::GitExportArgs),
     /// Import from git format
     GitImport(git_import::GitImportArgs),
+    /// Verify claw -> git -> claw roundtrip integrity
+    GitRoundtrip(git_roundtrip::GitRoundtripArgs),
     /// Show working tree status
     Status(status::StatusArgs),
     /// Show details of an object
@@ -74,19 +97,21 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> anyhow::Result<()> {
+    pub async fn run(self, runtime: &RuntimeOptions) -> anyhow::Result<()> {
         match self {
+            Commands::Admin(args) => admin::run(args, runtime),
             Commands::Init(args) => init::run(args),
             Commands::Intent(args) => intent::run(args),
             Commands::Change(args) => change::run(args),
             Commands::Patch(args) => patch::run(args),
+            Commands::Plugin(args) => plugin::run(args).await,
             Commands::Policy(args) => policy::run(args),
-            Commands::Sync(args) => sync::run(args).await,
+            Commands::Sync(args) => sync::run(args, runtime).await,
             Commands::Integrate(args) => integrate::run(args),
             Commands::Ship(args) => ship::run(args),
             Commands::Agent(args) => agent::run(args),
-            Commands::Daemon(args) => daemon::run(args).await,
-            Commands::Serve(args) => daemon::run(args).await,
+            Commands::Daemon(args) => daemon::run(args, runtime).await,
+            Commands::Serve(args) => daemon::run(args, runtime).await,
             Commands::Snapshot(args) => snapshot::run(args),
             Commands::Checkout(args) => checkout::run(args),
             Commands::Branch(args) => branch::run(args),
@@ -94,6 +119,7 @@ impl Commands {
             Commands::Diff(args) => diff::run(args),
             Commands::GitExport(args) => git_export::run(args),
             Commands::GitImport(args) => git_import::run(args),
+            Commands::GitRoundtrip(args) => git_roundtrip::run(args),
             Commands::Status(args) => status::run(args),
             Commands::Show(args) => show::run(args),
             Commands::Resolve(args) => resolve::run(args),

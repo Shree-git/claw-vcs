@@ -86,6 +86,7 @@ impl<'a> GitExporter<'a> {
             rev_id,
             rev.change_id.as_ref(),
             intent_id.as_ref(),
+            rev.capsule_id.as_ref(),
         );
         let sha1 = git_sha1(&commit_data);
         self.write_git_object(git_dir, &sha1, &commit_data)?;

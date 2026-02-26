@@ -9,6 +9,26 @@ publish = false
 name = "spec_tests"
 path = "spec_tests.rs"
 
+[[test]]
+name = "ops_artifacts_tests"
+path = "ops_artifacts_tests.rs"
+
+[[test]]
+name = "chaos_tests"
+path = "chaos_tests.rs"
+
+[[test]]
+name = "daemon_http_contract_tests"
+path = "daemon_http_contract_tests.rs"
+
+[[test]]
+name = "cross_version_runtime_tests"
+path = "cross_version_runtime_tests.rs"
+
+[[test]]
+name = "load_soak_tests"
+path = "load_soak_tests.rs"
+
 [dependencies]
 claw-core = { workspace = true }
 claw-store = { workspace = true }
@@ -20,3 +40,6 @@ claw-sync = { workspace = true }
 claw-git = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }

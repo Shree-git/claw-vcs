@@ -2,6 +2,7 @@ pub mod ancestry;
 pub mod capsule_service;
 pub mod change_service;
 pub mod client;
+pub mod compat;
 pub mod error;
 pub mod event_service;
 pub mod http_client;

@@ -143,6 +143,8 @@ fn resolve_tree(
         id
     } else if let Ok(id) = ObjectId::from_hex(ref_name) {
         id
+    } else if let Ok(id) = ObjectId::from_display(ref_name) {
+        id
     } else {
         anyhow::bail!("cannot resolve: {}", ref_name);
     };
@@ -162,5 +164,40 @@ fn load_blob_data(store: &ClawStore, id: Option<&ObjectId>) -> Vec<u8> {
             _ => vec![],
         },
         None => vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_tree;
+    use claw_core::object::Object;
+    use claw_core::types::{Revision, Tree};
+    use claw_store::ClawStore;
+
+    #[test]
+    fn resolve_tree_accepts_display_object_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+
+        let tree_id = store
+            .store_object(&Object::Tree(Tree { entries: vec![] }))
+            .unwrap();
+        let revision_id = store
+            .store_object(&Object::Revision(Revision {
+                change_id: None,
+                parents: vec![],
+                patches: vec![],
+                snapshot_base: None,
+                tree: Some(tree_id),
+                capsule_id: None,
+                author: "tester".to_string(),
+                created_at_ms: 0,
+                summary: "test".to_string(),
+                policy_evidence: vec![],
+            }))
+            .unwrap();
+
+        let resolved = resolve_tree(&store, Some(&revision_id.to_string()), false).unwrap();
+        assert_eq!(resolved, Some(tree_id));
     }
 }
