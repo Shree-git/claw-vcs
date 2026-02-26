@@ -1,0 +1,79 @@
+name: Contract Diff Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  contract-diff:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect contract and release-doc changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          list-files: json
+          filters: |
+            contract:
+              - docs/reference/public-interface-manifest.md
+              - docs/reference/compatibility-matrix.json
+              - docs/reference/deprecation-policy.md
+            release_docs:
+              - docs/reference/release-checklist.md
+              - docs/reference/release-governance.md
+              - CHANGELOG.md
+
+      - name: Build machine-readable contract diff summary
+        id: summary
+        shell: bash
+        run: |
+          contract_changed='${{ steps.changes.outputs.contract }}'
+          release_docs_changed='${{ steps.changes.outputs.release_docs }}'
+          contract_files='${{ steps.changes.outputs.contract_files }}'
+          release_files='${{ steps.changes.outputs.release_docs_files }}'
+
+          if [[ "$contract_changed" == "true" && "$release_docs_changed" != "true" ]]; then
+            rule_violated=true
+          else
+            rule_violated=false
+          fi
+
+          jq -n \
+            --argjson contract_changed "$contract_changed" \
+            --argjson release_docs_changed "$release_docs_changed" \
+            --argjson changed_contract_files "$contract_files" \
+            --argjson changed_release_files "$release_files" \
+            --argjson rule_violated "$rule_violated" \
+            '{
+              contract_changed: $contract_changed,
+              release_docs_changed: $release_docs_changed,
+              changed_contract_files: $changed_contract_files,
+              changed_release_files: $changed_release_files,
+              rule_violated: $rule_violated
+            }' > contract-diff-summary.json
+
+          echo "rule_violated=$rule_violated" >> "$GITHUB_OUTPUT"
+
+      - name: Upload contract diff summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-diff-summary
+          path: contract-diff-summary.json
+
+      - name: Enforce release-governance update for contract changes
+        if: steps.summary.outputs.rule_violated == 'true'
+        shell: bash
+        run: |
+          echo "::error title=Contract change requires release docs update::Detected changes to public contract artifacts (public-interface-manifest.md, compatibility-matrix.json, or deprecation-policy.md) without corresponding updates to release governance files. Update at least one of: docs/reference/release-checklist.md, docs/reference/release-governance.md, or CHANGELOG.md (if present)."
+          exit 1

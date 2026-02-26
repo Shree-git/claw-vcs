@@ -1,0 +1,32 @@
+pipeline {
+  agent any
+
+  options {
+    timeout(time: 10, unit: 'MINUTES')
+  }
+
+  environment {
+    CLAW_TIMEOUT_MS = '30000'
+    CLAW_SANDBOX_PROFILE = 'ci-restricted'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Verify Plugin Protocol v1') {
+      steps {
+        sh 'claw --version'
+        sh '''
+          claw plugin check \
+            --protocol 1 \
+            --plugin ./plugins/example-plugin \
+            --timeout-ms "$CLAW_TIMEOUT_MS"
+        '''
+      }
+    }
+  }
+}

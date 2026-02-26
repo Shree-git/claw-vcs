@@ -1,0 +1,23 @@
+stages:
+  - verify
+
+plugin_protocol_v1:
+  stage: verify
+  image: ubuntu:24.04
+  timeout: 10m
+  variables:
+    CLAW_TIMEOUT_MS: "30000"
+    CLAW_SANDBOX_PROFILE: "ci-restricted"
+  before_script:
+    - apt-get update -y
+    - apt-get install -y curl
+    - claw --version
+  script:
+    - >
+      claw plugin check
+      --protocol 1
+      --plugin ./plugins/example-plugin
+      --timeout-ms "$CLAW_TIMEOUT_MS"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

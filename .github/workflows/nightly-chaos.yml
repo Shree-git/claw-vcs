@@ -1,0 +1,29 @@
+name: Nightly Chaos
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-chaos-drills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CHAOS_MODE: deterministic
+      RUST_TEST_THREADS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run deterministic chaos suite
+        run: cargo test -p claw-integration-tests --test chaos_tests -- --test-threads=1
+
+      - name: Run deterministic stress subset
+        run: cargo test -p claw-integration-tests --test ops_artifacts_tests -- --test-threads=1

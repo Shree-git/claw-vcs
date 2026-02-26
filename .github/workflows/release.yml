@@ -15,7 +15,7 @@
 
 name: Release
 permissions:
-  "contents": "write"
+  "contents": "read"
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -45,8 +45,26 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  quality:
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    permissions:
+      contents: write
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
@@ -93,6 +111,7 @@ jobs:
     # Let the initial task tell us to not run (currently very blunt)
     needs:
       - plan
+      - quality
     if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
     strategy:
       fail-fast: false
@@ -169,6 +188,7 @@ jobs:
   build-global-artifacts:
     needs:
       - plan
+      - quality
       - build-local-artifacts
     runs-on: "ubuntu-22.04"
     env:
@@ -211,14 +231,92 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+
+  security-audit-gate:
+    if: ${{ needs.plan.outputs.publishing == 'true' }}
+    needs:
+      - plan
+      - quality
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo audit
+        run: cargo audit
+
+  contract-tests-gate:
+    if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    needs:
+      - plan
+      - quality
+      - build-local-artifacts
+      - build-global-artifacts
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Fetch ops artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Run contract tests
+        run: |
+          cargo test -p claw -- --nocapture
+          cargo test -p claw-integration-tests --test spec_tests
+          cargo test -p claw-integration-tests --test ops_artifacts_tests
+
+  compatibility-matrix-gate:
+    if: ${{ needs.plan.outputs.publishing == 'true' }}
+    needs:
+      - plan
+      - quality
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - macos-latest
+          - windows-latest
+    name: compatibility-matrix-gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo check
+        run: cargo check --workspace --all-targets
+      - name: Cargo test
+        run: cargo test --workspace --all-targets
   # Determines if we should publish/announce
   host:
+    permissions:
+      contents: write
+      id-token: write
     needs:
+      - quality
       - plan
       - build-local-artifacts
       - build-global-artifacts
+      - security-audit-gate
+      - contract-tests-gate
+      - compatibility-matrix-gate
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    if: ${{ always() && needs.quality.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.security-audit-gate.result == 'success' && needs.contract-tests-gate.result == 'success' && needs.compatibility-matrix-gate.result == 'success' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -266,6 +364,31 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t artifacts_to_sign < <(
+            find artifacts -type f \
+              ! -name '*.sig' \
+              ! -name '*.pem' \
+              | sort
+          )
+
+          if [[ ${#artifacts_to_sign[@]} -eq 0 ]]; then
+            echo "No release artifacts found to sign" >&2
+            exit 1
+          fi
+
+          for artifact in "${artifacts_to_sign[@]}"; do
+            cosign sign-blob --yes \
+              --output-signature "${artifact}.sig" \
+              --output-certificate "${artifact}.pem" \
+              "$artifact"
+          done
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"

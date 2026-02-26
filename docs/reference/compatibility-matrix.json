@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "1.0",
+  "lastUpdated": "2026-02-26",
+  "components": {
+    "cli": {
+      "versioning": "semver",
+      "publicStability": "stable"
+    },
+    "daemon": {
+      "versioning": "semver",
+      "publicStability": "beta"
+    },
+    "policySchema": {
+      "versioning": "integer",
+      "publicStability": "stable"
+    },
+    "storageFormat": {
+      "versioning": "integer",
+      "publicStability": "stable"
+    }
+  },
+  "supportLevels": [
+    "full",
+    "limited",
+    "read-only",
+    "unsupported"
+  ],
+  "releases": [
+    {
+      "name": "N",
+      "cliVersion": "0.1.x",
+      "daemonVersion": "0.1.x",
+      "policySchemaVersion": 1,
+      "storageFormatVersion": 1,
+      "compatibility": [
+        {
+          "targetRelease": "N",
+          "support": "full",
+          "notes": "Baseline compatibility set."
+        }
+      ]
+    },
+    {
+      "name": "N+1",
+      "cliVersion": "0.2.x",
+      "daemonVersion": "0.2.x",
+      "policySchemaVersion": 2,
+      "storageFormatVersion": 2,
+      "compatibility": [
+        {
+          "targetRelease": "N+1",
+          "support": "full",
+          "notes": "Native compatibility set."
+        },
+        {
+          "targetRelease": "N",
+          "support": "limited",
+          "notes": "Supported for rolling upgrades and mixed-fleet operation."
+        }
+      ]
+    },
+    {
+      "name": "N+2",
+      "cliVersion": "0.3.x",
+      "daemonVersion": "0.3.x",
+      "policySchemaVersion": 3,
+      "storageFormatVersion": 3,
+      "compatibility": [
+        {
+          "targetRelease": "N+2",
+          "support": "full",
+          "notes": "Native compatibility set."
+        },
+        {
+          "targetRelease": "N+1",
+          "support": "limited",
+          "notes": "Transitional support for one release window."
+        },
+        {
+          "targetRelease": "N",
+          "support": "read-only",
+          "notes": "Access allowed for migration/export only."
+        }
+      ]
+    }
+  ],
+  "relationshipRules": [
+    {
+      "id": "cli-daemon-major-match",
+      "description": "CLI and daemon must share the same major version for full support.",
+      "match": {
+        "cliMajorEqualsDaemonMajor": true
+      },
+      "resultingSupport": "full"
+    },
+    {
+      "id": "policy-forward-one",
+      "description": "A component may read policy schema up to one version ahead but cannot write it.",
+      "match": {
+        "policySchemaDelta": 1
+      },
+      "resultingSupport": "read-only"
+    },
+    {
+      "id": "storage-forward-none",
+      "description": "Storage format is not forward compatible for writes.",
+      "match": {
+        "storageFormatDeltaGreaterThan": 0
+      },
+      "resultingSupport": "unsupported"
+    },
+    {
+      "id": "storage-backward-one",
+      "description": "One-version backward storage reads are allowed during migration.",
+      "match": {
+        "storageFormatDelta": -1
+      },
+      "resultingSupport": "read-only"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/infinite-apps/claw
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  name: default
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 10001
+
+securityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  grpcPort: 50051
+  healthPort: 50052
+
+daemon:
+  listen: "0.0.0.0:50051"
+  healthListen: "0.0.0.0:50052"
+  extraArgs: []
+
+probes:
+  readiness:
+    enabled: true
+    type: httpGet
+    path: /v1/health/ready
+    port: health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    type: httpGet
+    path: /v1/health/live
+    port: health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+pdb:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: null
+
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: null

@@ -1,0 +1,36 @@
+name: Cross-Version Runtime
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-version-runtime-integration:
+    name: Cross-Version Runtime Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cross-version runtime integration tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test -p claw-integration-tests --test cross_version_runtime_tests --locked 2>&1 | tee cross-version-runtime-test.log
+
+      - name: Upload cross-version runtime test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-version-runtime-test-log
+          path: cross-version-runtime-test.log
+          if-no-files-found: ignore

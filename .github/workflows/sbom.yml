@@ -1,0 +1,44 @@
+name: SBOM
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cyclonedx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+
+      - name: Generate CycloneDX SBOM (JSON)
+        run: cargo cyclonedx --workspace --all-features --format json
+
+      - name: Generate CycloneDX SBOM (XML)
+        run: cargo cyclonedx --workspace --all-features --format xml
+
+      - name: Collect SBOM files
+        shell: bash
+        run: |
+          mkdir -p sbom-artifacts
+          find . -type f \( -name "*.cdx.json" -o -name "*.cdx.xml" -o -name "bom.json" -o -name "bom.xml" \) -exec cp {} sbom-artifacts/ \;
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonedx-sbom-${{ github.sha }}
+          path: sbom-artifacts/
+          if-no-files-found: error

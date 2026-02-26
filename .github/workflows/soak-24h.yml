@@ -1,0 +1,64 @@
+name: 24h Soak Load
+
+on:
+  schedule:
+    # Weekly run at 02:00 UTC on Sundays.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      duration_hours:
+        description: "Optional soak duration in hours (default: 24)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  soak-load:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 1500
+    env:
+      RUST_TEST_THREADS: "1"
+      TZ: UTC
+      LC_ALL: C
+      LANG: C
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run deterministic soak/load loop
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            DURATION_HOURS=24
+          else
+            INPUT_DURATION="${{ github.event.inputs.duration_hours }}"
+            DURATION_HOURS="${INPUT_DURATION:-24}"
+          fi
+
+          if ! [[ "${DURATION_HOURS}" =~ ^[0-9]+$ ]] || [[ "${DURATION_HOURS}" -lt 1 ]]; then
+            echo "duration_hours must be a positive integer"
+            exit 1
+          fi
+
+          DURATION_SECONDS=$((DURATION_HOURS * 3600))
+          END_TIME=$((SECONDS + DURATION_SECONDS))
+          ITERATION=1
+
+          while [[ "${SECONDS}" -lt "${END_TIME}" ]]; do
+            echo "[iteration ${ITERATION}] Running load_soak_tests"
+            cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1
+
+            echo "[iteration ${ITERATION}] Running chaos_tests"
+            cargo test -p claw-integration-tests --test chaos_tests -- --test-threads=1
+
+            ITERATION=$((ITERATION + 1))
+          done

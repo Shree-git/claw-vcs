@@ -1,0 +1,30 @@
+name: Claw Plugin Check (Starter)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  plugin-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLAW_TIMEOUT_MS: "30000"
+      CLAW_SANDBOX_PROFILE: ci-restricted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Claw CLI
+        run: |
+          # Replace with your install method (package manager, release binary, etc.)
+          claw --version
+
+      - name: Run plugin protocol check
+        run: |
+          # Replace command/args with your plugin entrypoint.
+          claw plugin check \
+            --protocol 1 \
+            --plugin ./plugins/example-plugin \
+            --timeout-ms "$CLAW_TIMEOUT_MS"

@@ -1,0 +1,42 @@
+name: Contract Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-tests:
+    name: Contract test suites
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run contract tests
+        run: |
+          cargo test -p claw -- --nocapture
+          cargo test -p claw-integration-tests --test spec_tests
+          cargo test -p claw-integration-tests --test ops_artifacts_tests
+          cargo test -p claw-integration-tests --test daemon_http_contract_tests
+          cargo test -p claw-integration-tests --test cross_version_runtime_tests
+          cargo test -p claw-integration-tests --test load_soak_tests

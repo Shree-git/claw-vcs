@@ -82,6 +82,13 @@ Policy {
 
 Policies are stored in the repo and travel with it. Integration can be gated: "this revision's capsule must have evidence that all required checks passed." Fork the repo and the policies come with it.
 
+Current enforcement highlights:
+
+- `required_reviewers` are matched against verified capsule signer identities (agent IDs or key IDs).
+- `sensitive_paths` require encrypted capsule private fields when touched.
+- `quarantine_lane` blocks automated integration when sensitive paths are touched.
+- `min_trust_score` supports `0.0-1.0` or percent formats (for example `0.85`, `85%`) and is evaluated from capsule evidence pass ratio.
+
 ## Architecture
 
 Claw is written in Rust and organized as a workspace of focused crates:
@@ -185,6 +192,8 @@ Partial clone filters let you fetch selectively:
 
 `claw daemon` (or `claw serve`) runs a long-lived gRPC server exposing services for intents, changes, capsules, workstreams, events, and sync. Agents connect programmatically — create intents, submit changes, stream events in real-time. Git has no equivalent.
 
+For production deployments, daemon auth can be enabled with `--auth-token` (explicit bearer token) or `--auth-profile` (reuse token from `claw auth` profile).
+
 ### Cryptography
 
 | Primitive | Algorithm | Purpose |
@@ -203,7 +212,7 @@ claw intent <subcommand>     Create and manage intents
 claw change <subcommand>     Create and manage changes
 claw policy <subcommand>     Create and manage integration policies
 claw snapshot -m "msg"       Record the working tree atomically
-claw ship --intent <id>      Finalize a change and produce a capsule
+claw ship --intent <id>      Finalize a change and produce a capsule (supports --co-sign)
 claw integrate               Merge changes (three-way, codec-aware)
 claw branch <subcommand>     List, create, or delete branches
 claw checkout <branch>       Switch branches or restore working tree
@@ -219,8 +228,9 @@ claw sync <remote>           Pull from a remote (shorthand)
 claw sync <subcommand>       Push, pull, or clone
 claw daemon                  Run the gRPC sync server
 claw patch <subcommand>      Create and apply patches directly
-claw git-export              Export to Git format
-claw git-import              Import from Git format
+claw git-export              Export to Git format (supports --all-heads, --git-notes)
+claw git-import              Import from Git format (supports --all-branches, --read-notes)
+claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 ```
 
 **No staging area** — by design. `claw snapshot` captures everything atomically. This is a deliberate simplification for agent workflows where partial staging adds complexity without value.
@@ -355,6 +365,17 @@ If you already have Rust installed, you can install directly with cargo:
 ```bash
 cargo install --git https://github.com/shree-git/claw.git --package claw --locked
 ```
+
+## Documentation
+
+- Full operator docs: [docs/README.md](docs/README.md)
+- Production readiness checklist: [docs/reference/production-readiness-checklist.md](docs/reference/production-readiness-checklist.md)
+- Quickstart: [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
+- Production install: [docs/operations/production-install.md](docs/operations/production-install.md)
+- Upgrade and rollback: [docs/operations/upgrade-and-rollback.md](docs/operations/upgrade-and-rollback.md)
+- Disaster recovery: [docs/operations/disaster-recovery.md](docs/operations/disaster-recovery.md)
+- Troubleshooting: [docs/operations/troubleshooting.md](docs/operations/troubleshooting.md)
+- Runbooks index: [docs/runbooks/README.md](docs/runbooks/README.md)
 
 ## Project status
 
