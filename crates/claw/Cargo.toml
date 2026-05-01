@@ -46,7 +46,7 @@ sha2 = { workspace = true }
 urlencoding = { workspace = true }
 webbrowser = { workspace = true }
 rand = { workspace = true }
-prometheus = "0.13"
+prometheus = { version = "0.13", default-features = false }
 
 [dev-dependencies]
 tempfile = { workspace = true }

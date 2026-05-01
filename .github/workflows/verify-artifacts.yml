@@ -174,7 +174,7 @@ jobs:
 
             if [[ -n "$RELEASE_TAG" ]]; then
               repo_identity_pattern="${GITHUB_REPOSITORY}"
-              if [[ "$GITHUB_REPOSITORY" == "Shree-git/claw-vcs" ]]; then
+              if [[ "$GITHUB_REPOSITORY" == "Shree-git/claw" || "$GITHUB_REPOSITORY" == "Shree-git/claw-vcs" ]]; then
                 repo_identity_pattern="Shree-git/(claw|claw-vcs)"
               fi
 
