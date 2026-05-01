@@ -508,7 +508,10 @@ mod tests {
             },
         );
 
-        let hello = client.hello().await.expect("hello should eventually succeed");
+        let hello = client
+            .hello()
+            .await
+            .expect("hello should eventually succeed");
         assert_eq!(hello.server_version, "0.1.0");
     }
 

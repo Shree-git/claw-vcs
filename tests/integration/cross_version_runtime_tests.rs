@@ -152,7 +152,10 @@ async fn hello_runtime_same_version_is_classified_as_same_version() {
     let mut client = SyncClient::connect(&server.endpoint)
         .await
         .expect("connect runtime gRPC client");
-    let hello = client.hello().await.expect("invoke hello over gRPC runtime");
+    let hello = client
+        .hello()
+        .await
+        .expect("invoke hello over gRPC runtime");
 
     let classification = classify_runtime_compatibility("0.1.0", &hello.server_version);
     assert_eq!(classification, CompatibilityClassification::SameVersion);
@@ -168,7 +171,10 @@ async fn hello_runtime_one_step_mismatch_is_classified_as_limited_compatibility(
     let mut client = SyncClient::connect(&server.endpoint)
         .await
         .expect("connect runtime gRPC client");
-    let hello = client.hello().await.expect("invoke hello over gRPC runtime");
+    let hello = client
+        .hello()
+        .await
+        .expect("invoke hello over gRPC runtime");
 
     let classification = classify_runtime_compatibility("0.1.0", &hello.server_version);
     assert_eq!(

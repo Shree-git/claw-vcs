@@ -4,10 +4,10 @@ use claw_sync::proto::sync::{
     AdvertiseRefsRequest, AdvertiseRefsResponse, FetchObjectsRequest, HelloRequest, HelloResponse,
     ObjectChunk, PushObjectsResponse, UpdateRefsRequest, UpdateRefsResponse,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Semaphore, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
@@ -32,12 +32,10 @@ impl LoadState {
         let now = self.inflight.fetch_add(1, Ordering::SeqCst) + 1;
         let mut max = self.max_inflight.load(Ordering::SeqCst);
         while now > max {
-            match self.max_inflight.compare_exchange(
-                max,
-                now,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
+            match self
+                .max_inflight
+                .compare_exchange(max, now, Ordering::SeqCst, Ordering::SeqCst)
+            {
                 Ok(_) => break,
                 Err(observed) => max = observed,
             }
@@ -239,7 +237,10 @@ async fn burst_load_uses_explicit_overload_handling_and_remains_bounded() {
     }
 
     assert_eq!(ok + overloaded, burst);
-    assert!(overloaded > 0, "burst must trigger explicit overload responses");
+    assert!(
+        overloaded > 0,
+        "burst must trigger explicit overload responses"
+    );
     assert_eq!(server.state.accepted.load(Ordering::SeqCst), ok);
     assert_eq!(server.state.rejected.load(Ordering::SeqCst), overloaded);
     assert!(

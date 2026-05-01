@@ -57,9 +57,14 @@ impl SyncServer {
         Self::from_shared_with_options(Arc::new(RwLock::new(store)), options)
     }
 
-    pub fn from_shared_with_options(store: Arc<RwLock<ClawStore>>, options: SyncServerOptions) -> Self {
+    pub fn from_shared_with_options(
+        store: Arc<RwLock<ClawStore>>,
+        options: SyncServerOptions,
+    ) -> Self {
         let worker_pool_size = options.worker_pool_size.max(1);
-        let total_capacity = worker_pool_size.saturating_add(options.queue_capacity).max(1);
+        let total_capacity = worker_pool_size
+            .saturating_add(options.queue_capacity)
+            .max(1);
 
         Self {
             store,

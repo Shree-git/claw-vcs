@@ -5,6 +5,8 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.30.3"
+# This repo intentionally customizes the generated release CI and WiX template.
+allow-dirty = ["ci", "msi"]
 # CI backends to support
 ci = "github"
 # What to run on pull requests (plan = validate config without building release artifacts)

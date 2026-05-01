@@ -130,7 +130,11 @@ async fn run_check(args: CheckArgs) -> anyhow::Result<()> {
                     message
                 );
             }
-            anyhow::bail!("plugin initialize failed{}: {}", format_error_code(code), message);
+            anyhow::bail!(
+                "plugin initialize failed{}: {}",
+                format_error_code(code),
+                message
+            );
         }
     }
 }
@@ -146,7 +150,10 @@ fn format_error_code(code: Option<String>) -> String {
     }
 }
 
-fn validate_initialize_response(line: &str, request_id: &str) -> anyhow::Result<InitializeResponse> {
+fn validate_initialize_response(
+    line: &str,
+    request_id: &str,
+) -> anyhow::Result<InitializeResponse> {
     let value: Value = serde_json::from_str(line).context("response is not valid JSON")?;
     let obj = value
         .as_object()

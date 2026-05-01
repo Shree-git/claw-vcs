@@ -31,8 +31,8 @@ use claw_sync::proto::workstream::workstream_service_server::WorkstreamServiceSe
 use claw_sync::server::{SyncServer, SyncServerOptions};
 use claw_sync::workstream_service::WorkstreamServer;
 
-use crate::commands::RuntimeOptions;
 use crate::auth_store;
+use crate::commands::RuntimeOptions;
 use crate::config::{self, find_repo_root};
 
 #[derive(Args)]
@@ -87,11 +87,17 @@ impl tonic::service::Interceptor for BearerAuthInterceptor {
         match provided {
             Some(value) if value == self.expected_header.as_ref() => Ok(request),
             Some(_) => {
-                self.metrics.auth_failures.with_label_values(&["invalid"]).inc();
+                self.metrics
+                    .auth_failures
+                    .with_label_values(&["invalid"])
+                    .inc();
                 Err(Status::unauthenticated("invalid bearer token"))
             }
             None => {
-                self.metrics.auth_failures.with_label_values(&["missing"]).inc();
+                self.metrics
+                    .auth_failures
+                    .with_label_values(&["missing"])
+                    .inc();
                 Err(Status::unauthenticated("missing bearer token"))
             }
         }
@@ -136,8 +142,10 @@ impl DaemonMetrics {
             "Duration of policy evaluations",
         ))?;
         let queue_depth = IntGauge::new("claw_daemon_queue_depth", "Current daemon queue depth")?;
-        let worker_pool_size_gauge =
-            IntGauge::new("claw_daemon_worker_pool_size", "Configured daemon worker pool size")?;
+        let worker_pool_size_gauge = IntGauge::new(
+            "claw_daemon_worker_pool_size",
+            "Configured daemon worker pool size",
+        )?;
 
         registry.register(Box::new(request_latency.clone()))?;
         registry.register(Box::new(auth_failures.clone()))?;
@@ -420,7 +428,9 @@ fn verify_backup_integrity(root: &Path, backup_id: &str) -> anyhow::Result<()> {
     let manifest_path = base.join("manifest.json");
     let snapshot_root = base.join("snapshot");
     let manifest: BackupManifest = serde_json::from_slice(&std::fs::read(&manifest_path)?)
-        .map_err(|err| anyhow::anyhow!("invalid backup manifest {}: {err}", manifest_path.display()))?;
+        .map_err(|err| {
+            anyhow::anyhow!("invalid backup manifest {}: {err}", manifest_path.display())
+        })?;
 
     for entry in manifest.files {
         let path = snapshot_root.join(&entry.path);
@@ -721,8 +731,8 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-    use tonic::service::Interceptor;
     use tonic::metadata::MetadataValue;
+    use tonic::service::Interceptor;
 
     fn test_metrics() -> Arc<DaemonMetrics> {
         Arc::new(DaemonMetrics::new(8).expect("create test metrics"))
@@ -806,7 +816,8 @@ mod tests {
 
     #[test]
     fn extract_request_id_uses_header_when_present() {
-        let req = "GET /v1/health/live HTTP/1.1\r\nHost: localhost\r\nX-Request-Id: abc-123\r\n\r\n";
+        let req =
+            "GET /v1/health/live HTTP/1.1\r\nHost: localhost\r\nX-Request-Id: abc-123\r\n\r\n";
         assert_eq!(extract_request_id(req), "abc-123");
     }
 
@@ -846,7 +857,10 @@ mod tests {
         let (status_line, body) = exercise_health_handler(request).await;
 
         assert_eq!(status_line, "HTTP/1.1 200 OK");
-        assert_eq!(body.get("request_id").and_then(Value::as_str), Some("req-test-123"));
+        assert_eq!(
+            body.get("request_id").and_then(Value::as_str),
+            Some("req-test-123")
+        );
     }
 
     #[tokio::test]
@@ -867,7 +881,8 @@ mod tests {
     #[test]
     fn auth_failure_metrics_increment_for_missing_and_invalid_bearer() {
         let metrics = test_metrics();
-        let mut interceptor = BearerAuthInterceptor::new("correct-token".to_string(), metrics.clone());
+        let mut interceptor =
+            BearerAuthInterceptor::new("correct-token".to_string(), metrics.clone());
 
         let missing = interceptor.call(Request::new(()));
         assert!(missing.is_err());
@@ -880,7 +895,13 @@ mod tests {
         let invalid = interceptor.call(invalid_req);
         assert!(invalid.is_err());
 
-        assert_eq!(metrics.auth_failures.with_label_values(&["missing"]).get(), 1);
-        assert_eq!(metrics.auth_failures.with_label_values(&["invalid"]).get(), 1);
+        assert_eq!(
+            metrics.auth_failures.with_label_values(&["missing"]).get(),
+            1
+        );
+        assert_eq!(
+            metrics.auth_failures.with_label_values(&["invalid"]).get(),
+            1
+        );
     }
 }

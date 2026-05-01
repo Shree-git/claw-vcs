@@ -77,9 +77,7 @@ impl SyncService for ChaosSyncService {
                 tokio::spawn(async move {
                     let _ = tx.send(Ok(Self::blob_chunk(b"first chunk"))).await;
                     let _ = tx
-                        .send(Err(Status::unavailable(
-                            "daemon interrupted during fetch",
-                        )))
+                        .send(Err(Status::unavailable("daemon interrupted during fetch")))
                         .await;
                 });
             }
@@ -180,7 +178,10 @@ async fn daemon_interruption_during_fetch_is_reported_deterministically() {
     let service = ChaosSyncService::new(ChaosMode::InterruptDuringFetch);
 
     let result = fetch_and_store(&service, &local_store).await;
-    assert!(result.is_err(), "fetch should fail after daemon interruption");
+    assert!(
+        result.is_err(),
+        "fetch should fail after daemon interruption"
+    );
 
     let err = result.expect_err("fetch should return interruption error");
     assert_eq!(err.code(), tonic::Code::Unavailable);
@@ -190,7 +191,11 @@ async fn daemon_interruption_during_fetch_is_reported_deterministically() {
     );
 
     let stored = local_store.list_object_ids().expect("list stored objects");
-    assert_eq!(stored.len(), 1, "exactly one chunk should persist before error");
+    assert_eq!(
+        stored.len(),
+        1,
+        "exactly one chunk should persist before error"
+    );
 }
 
 #[tokio::test]
@@ -201,7 +206,11 @@ async fn latency_spike_path_times_out_with_bounded_runtime() {
         delay: Duration::from_millis(200),
     });
 
-    let timed = tokio::time::timeout(Duration::from_millis(50), fetch_and_store(&service, &local_store)).await;
+    let timed = tokio::time::timeout(
+        Duration::from_millis(50),
+        fetch_and_store(&service, &local_store),
+    )
+    .await;
 
     assert!(timed.is_err(), "fetch should hit timeout on latency spike");
 
@@ -267,8 +276,14 @@ async fn missing_object_during_traversal_is_skipped_and_stream_completes() {
 
     let (ids, saw_last) = collect_fetch_ids(response).await;
     assert!(saw_last, "stream should finish with terminal marker");
-    assert!(ids.contains(&revision_id), "revision should still be streamed");
-    assert!(ids.contains(&tree_id), "available dependency should be streamed");
+    assert!(
+        ids.contains(&revision_id),
+        "revision should still be streamed"
+    );
+    assert!(
+        ids.contains(&tree_id),
+        "available dependency should be streamed"
+    );
     assert!(
         !ids.contains(&blob_id),
         "missing blob should be skipped gracefully"

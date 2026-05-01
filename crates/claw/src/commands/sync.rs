@@ -22,7 +22,9 @@ fn resolve_token_profiles(
     runtime_profile: &str,
     repo_default_profile: &str,
 ) -> Vec<String> {
-    let explicit_profile = token_profile.map(str::trim).filter(|value| !value.is_empty());
+    let explicit_profile = token_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     if let Some(profile) = explicit_profile {
         return vec![profile.to_string()];
     }
@@ -158,8 +160,11 @@ async fn connect_from_remote(
             repo,
             token_profile,
         } => {
-            let token =
-                require_access_token(token_profile.as_deref(), &runtime.profile, repo_default_profile)?;
+            let token = require_access_token(
+                token_profile.as_deref(),
+                &runtime.profile,
+                repo_default_profile,
+            )?;
             RemoteTransportConfig::Http {
                 base_url,
                 repo,
@@ -332,7 +337,11 @@ pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()>
                     let bearer_token = token_profile
                         .as_deref()
                         .map(|profile| {
-                            require_access_token(Some(profile), &runtime.profile, repo_default_profile)
+                            require_access_token(
+                                Some(profile),
+                                &runtime.profile,
+                                repo_default_profile,
+                            )
                         })
                         .transpose()?;
                     SyncClient::connect_with_transport_and_retry(
@@ -434,8 +443,8 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        check_remote_compatibility, resolve_command, resolve_token_profiles, SyncArgs,
-        SyncCommand, CLI_VERSION,
+        check_remote_compatibility, resolve_command, resolve_token_profiles, SyncArgs, SyncCommand,
+        CLI_VERSION,
     };
     use claw_sync::proto::sync::HelloResponse;
 
