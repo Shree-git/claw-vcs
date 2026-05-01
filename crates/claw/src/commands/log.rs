@@ -70,7 +70,7 @@ pub fn run(args: LogArgs) -> anyhow::Result<()> {
     }
 
     // Sort by timestamp descending
-    entries.sort_by(|a, b| b.created_at_ms.cmp(&a.created_at_ms));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.created_at_ms));
     entries.truncate(args.limit);
 
     if args.json {
