@@ -11,8 +11,8 @@ Thanks for your interest in contributing.
 ## Local Setup
 
 ```bash
-git clone https://github.com/shree-git/claw.git
-cd claw
+git clone https://github.com/shree-git/claw-vcs.git
+cd claw-vcs
 cargo build
 ```
 

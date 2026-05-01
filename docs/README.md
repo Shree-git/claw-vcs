@@ -1,6 +1,6 @@
-# Claw Operator Documentation
+# Claw VCS Operator Documentation
 
-This tree is for teams running Claw in production, especially self-hosted daemon deployments.
+This tree is for teams evaluating or running experimental self-hosted Claw deployments. Treat the guidance here as an operator baseline for `v0.1.x`, not as a claim of production maturity across every subsystem.
 
 ## Start here
 

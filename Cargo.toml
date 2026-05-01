@@ -18,9 +18,9 @@ edition = "2021"
 version = "0.1.0"
 license = "MIT"
 authors = ["Claw contributors"]
-description = "Intent-native, agent-native version control."
-homepage = "https://github.com/shree-git/claw"
-repository = "https://github.com/shree-git/claw"
+description = "Claw VCS: intent-native, agent-native version control."
+homepage = "https://github.com/shree-git/claw-vcs"
+repository = "https://github.com/shree-git/claw-vcs"
 
 [workspace.dependencies]
 # Hashing & encoding

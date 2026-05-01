@@ -14,7 +14,7 @@ Claw is currently pre-1.0. Security fixes are applied to:
 
 Please report vulnerabilities privately through GitHub Security Advisories:
 
-- [https://github.com/Shree-git/claw/security/advisories/new](https://github.com/Shree-git/claw/security/advisories/new)
+- [https://github.com/Shree-git/claw-vcs/security/advisories/new](https://github.com/Shree-git/claw-vcs/security/advisories/new)
 
 Do not open a public GitHub issue for security vulnerabilities.
 

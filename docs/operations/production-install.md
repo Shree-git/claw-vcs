@@ -1,6 +1,6 @@
 # Production Install
 
-This guide installs Claw for a self-hosted enterprise baseline.
+This guide installs Claw for an experimental self-hosted baseline. Use it for evaluation environments, prototypes, and controlled rollouts while `v0.1.x` hardens.
 
 ## Deployment model
 
@@ -12,6 +12,7 @@ This guide installs Claw for a self-hosted enterprise baseline.
 ## Host prerequisites
 
 - Claw binary installed and on `PATH`.
+- If you expect prebuilt binaries or installers, confirm the tagged release assets exist before using this guide.
 - Stable storage for repository checkout plus `.claw/`.
 - Service account with read/write access to the repository directory.
 - Network controls allowing only approved clients to daemon port.

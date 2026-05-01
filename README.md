@@ -1,8 +1,10 @@
-# Claw
+# Claw VCS
 
 **Intent-native, agent-native version control.**
 
 Claw is a version control system built for a world where AI agents write code alongside humans. It tracks *why* changes were made — not just *what* changed — and provides cryptographic proof of who did the work and what checks they passed.
+
+> Status: `v0.1.x` experimental. Claw is usable for local exploration, prototypes, and feedback, but it is not yet positioned as the sole source of truth for production repositories.
 
 ```
 claw init
@@ -259,12 +261,11 @@ claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 
 ## Install
 
-Claw ships prebuilt binaries for macOS, Linux, and Windows in GitHub Releases, so you **do not**
-need Rust/cargo to get started.
+Tagged releases may ship prebuilt binaries for macOS, Linux, and Windows in GitHub Releases. If a release or install channel is not published yet for the version you want, build from source instead.
 
 ### macOS
 
-**Homebrew (recommended)**
+**Homebrew (when the tap is published for this release)**
 
 ```bash
 brew install shree-git/homebrew-tap/claw
@@ -277,42 +278,42 @@ brew tap shree-git/homebrew-tap
 brew install claw
 ```
 
-**Installer script (no Homebrew)**
+**Installer script (when release assets are published)**
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
 **Manual download**
 
-Grab the latest macOS archive from [GitHub Releases](https://github.com/shree-git/claw/releases),
+Grab the latest macOS archive from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
 extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
 
 Install to a custom location:
 
 ```bash
 CLAW_HOME="$HOME/.claw" \
-  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw/releases/latest/download/claw-installer.sh | sh
+  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
 ### Linux
 
-**Installer script (recommended)**
+**Installer script (when release assets are published)**
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
 **Manual download**
 
-Grab the latest Linux archive from [GitHub Releases](https://github.com/shree-git/claw/releases),
+Grab the latest Linux archive from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
 extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
 
 Install to a custom location:
 
 ```bash
 CLAW_HOME="$HOME/.claw" \
-  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw/releases/latest/download/claw-installer.sh | sh
+  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
 Notes:
@@ -321,22 +322,22 @@ Notes:
 
 ### Windows
 
-**WinGet (recommended)**
+**WinGet (when the package has been published)**
 
 ```powershell
 winget install ShreeGit.Claw
 ```
 
-If you don't see the package yet, it's not published to WinGet for this release.
+If you don't see the package yet, it has not been published to WinGet for this release.
 
-**MSI (manual)**
+**MSI (when published in GitHub Releases)**
 
 Download the latest `.msi` from GitHub Releases and run it. The installer adds `claw` to `PATH`.
 
 **PowerShell installer (no MSI)**
 
 ```powershell
-iwr -useb https://github.com/shree-git/claw/releases/latest/download/claw-installer.ps1 | iex
+iwr -useb https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.ps1 | iex
 ```
 
 ### Build from source (any OS)
@@ -346,8 +347,8 @@ generally **don't** need to install Protocol Buffers tooling. If you want to for
 `protoc`, set `PROTOC=/path/to/protoc` before building.
 
 ```bash
-git clone https://github.com/shree-git/claw.git
-cd claw
+git clone https://github.com/shree-git/claw-vcs.git
+cd claw-vcs
 cargo build --release -p claw
 ./target/release/claw --help
 ```
@@ -363,7 +364,7 @@ cargo test --workspace
 If you already have Rust installed, you can install directly with cargo:
 
 ```bash
-cargo install --git https://github.com/shree-git/claw.git --package claw --locked
+cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked
 ```
 
 ## Documentation
@@ -379,7 +380,7 @@ cargo install --git https://github.com/shree-git/claw.git --package claw --locke
 
 ## Project status
 
-Claw is **v0.1.0** — early and evolving. The core object model, storage engine, patch system, cryptographic layer, policy engine, sync protocol, and CLI are implemented. Contributions and feedback are welcome.
+Claw is **v0.1.0** — early and evolving. The core object model, storage engine, patch system, cryptographic layer, policy engine, sync protocol, and CLI are implemented, but some public surfaces and operational paths are still experimental. Contributions and feedback are welcome.
 
 ## License
 

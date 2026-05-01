@@ -1,6 +1,6 @@
 # Compatibility Reference
 
-This page defines the current compatibility baseline for production operators.
+This page defines the current compatibility baseline for operators evaluating or running experimental Claw deployments.
 
 ## Versioning posture
 
@@ -34,7 +34,7 @@ This page defines the current compatibility baseline for production operators.
 
 ## Platform compatibility
 
-- Prebuilt binaries are published for macOS, Linux, and Windows.
+- Tagged releases may publish prebuilt binaries for macOS, Linux, and Windows.
 - Self-hosted daemon baseline assumes Linux service operation, but protocol behavior is platform-independent.
 
 ## Self-hosted topology compatibility

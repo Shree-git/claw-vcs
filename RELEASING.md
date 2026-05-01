@@ -1,6 +1,6 @@
 # Releasing Claw
 
-This repo uses `cargo-dist` to build and publish:
+When release infrastructure is configured, this repo uses `cargo-dist` to build and publish:
 
 - GitHub Release artifacts (archives, checksums)
 - `claw-installer.sh` + `claw-installer.ps1`
@@ -19,9 +19,9 @@ Make sure it has a default branch (for example, commit a README) so Actions can 
 
 ### 2) Add GitHub Actions secret for the tap
 
-In the `shree-git/claw` repo, add a secret:
+In the `shree-git/claw-vcs` repo, add a secret:
 
-- `HOMEBREW_TAP_TOKEN`: a classic PAT with write access to `shree-git/homebrew-tap`
+- `HOMEBREW_TAP_TOKEN`: a token with the minimum write access required for `shree-git/homebrew-tap`
 
 ## Cutting a release
 
@@ -45,4 +45,4 @@ High-level steps:
 2. Use `wingetcreate new` pointing at the MSI URL.
 3. Submit the generated manifests as a PR to `microsoft/winget-pkgs`.
 
-After the first acceptance, we can automate updates on each release tag.
+After the first acceptance, you can automate updates on each release tag.

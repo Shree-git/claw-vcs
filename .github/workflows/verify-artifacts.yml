@@ -173,11 +173,16 @@ jobs:
             echo "Verifying $artifact"
 
             if [[ -n "$RELEASE_TAG" ]]; then
+              repo_identity_pattern="${GITHUB_REPOSITORY}"
+              if [[ "$GITHUB_REPOSITORY" == "Shree-git/claw-vcs" ]]; then
+                repo_identity_pattern="Shree-git/(claw|claw-vcs)"
+              fi
+
               cosign verify-blob \
                 --signature "$sig_file" \
                 --certificate "$cert_file" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-                --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${RELEASE_TAG}$" \
+                --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/.github/workflows/.*@refs/tags/${RELEASE_TAG}$" \
                 "$artifact"
             else
               cosign verify-blob \
