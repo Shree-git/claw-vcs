@@ -256,6 +256,7 @@ pub fn load_or_default_config(root: &Path) -> anyhow::Result<ClawConfigV1> {
     Ok(parsed)
 }
 
+#[allow(dead_code)]
 pub fn save_config(root: &Path, config: &ClawConfigV1) -> anyhow::Result<()> {
     let path = config_file_path(root);
     if let Some(parent) = path.parent() {

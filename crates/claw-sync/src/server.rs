@@ -76,6 +76,7 @@ impl SyncServer {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn acquire_queue_permit(&self) -> Result<Option<OwnedSemaphorePermit>, Status> {
         if !self.limits.options.backpressure {
             return Ok(None);

@@ -174,7 +174,7 @@ fn compatibility_matrix_json_is_valid_and_has_required_keys() {
     }
 
     assert!(
-        !(release_name_to_index.contains_key("N+2") && !release_name_to_index.contains_key("N+1")),
+        !release_name_to_index.contains_key("N+2") || release_name_to_index.contains_key("N+1"),
         "release N+2 requires N+1 to be present"
     );
 
