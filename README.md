@@ -4,7 +4,7 @@
 
 Claw is a version control system built for a world where AI agents write code alongside humans. It tracks *why* changes were made — not just *what* changed — and provides cryptographic proof of who did the work and what checks they passed.
 
-> Status: `v0.1.x` experimental. Claw is usable for local exploration, prototypes, and feedback, but it is not yet positioned as the sole source of truth for production repositories.
+> Status: `v0.1.x` early production rollout. Claw is usable for controlled self-hosted deployments and real operator feedback, but teams should keep rollback, backup, and migration validation in place before treating it as the sole system of record.
 
 ```
 claw init
@@ -261,11 +261,11 @@ claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 
 ## Install
 
-Tagged releases may ship prebuilt binaries for macOS, Linux, and Windows in GitHub Releases. If a release or install channel is not published yet for the version you want, build from source instead.
+Tagged releases publish prebuilt binaries for macOS, Linux, and Windows in GitHub Releases. The current supported install channels are Homebrew, direct release downloads, shell/PowerShell installer scripts, and the Windows MSI. WinGet is being added separately.
 
 ### macOS
 
-**Homebrew (when the tap is published for this release)**
+**Homebrew**
 
 ```bash
 brew install shree-git/homebrew-tap/claw
@@ -278,7 +278,7 @@ brew tap shree-git/homebrew-tap
 brew install claw
 ```
 
-**Installer script (when release assets are published)**
+**Installer script**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
@@ -298,7 +298,7 @@ CLAW_HOME="$HOME/.claw" \
 
 ### Linux
 
-**Installer script (when release assets are published)**
+**Installer script**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
@@ -322,15 +322,15 @@ Notes:
 
 ### Windows
 
-**WinGet (when the package has been published)**
+**WinGet**
 
 ```powershell
-winget install ShreeGit.Claw
+winget install ClawContributors.ClawVCS
 ```
 
-If you don't see the package yet, it has not been published to WinGet for this release.
+WinGet support is pending review in the upstream Microsoft repository. Until that lands, use the MSI or PowerShell installer below.
 
-**MSI (when published in GitHub Releases)**
+**MSI**
 
 Download the latest `.msi` from GitHub Releases and run it. The installer adds `claw` to `PATH`.
 
@@ -380,7 +380,7 @@ cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --l
 
 ## Project status
 
-Claw is **v0.1.0** — early and evolving. The core object model, storage engine, patch system, cryptographic layer, policy engine, sync protocol, and CLI are implemented, but some public surfaces and operational paths are still experimental. Contributions and feedback are welcome.
+Claw is **v0.1.0** and now ships as a real release line with signed artifacts, Homebrew distribution, Windows MSI packaging, operator docs, rollback guidance, and production preflight checks. The support boundary is still intentionally narrow: prefer controlled self-hosted rollouts, pin versions per environment, and validate upgrades before broad adoption.
 
 ## License
 

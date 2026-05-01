@@ -1,6 +1,6 @@
 # Compatibility Reference
 
-This page defines the current compatibility baseline for operators evaluating or running experimental Claw deployments.
+This page defines the current compatibility baseline for operators running controlled production Claw deployments.
 
 ## Versioning posture
 

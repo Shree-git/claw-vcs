@@ -1,6 +1,6 @@
 # Claw VCS Operator Documentation
 
-This tree is for teams evaluating or running experimental self-hosted Claw deployments. Treat the guidance here as an operator baseline for `v0.1.x`, not as a claim of production maturity across every subsystem.
+This tree is for teams evaluating or running self-hosted Claw deployments. Treat the guidance here as the supported operator baseline for `v0.1.x` controlled production rollouts, with a deliberately narrow support boundary rather than a claim of broad platform maturity.
 
 ## Start here
 
