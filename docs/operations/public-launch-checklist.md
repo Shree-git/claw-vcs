@@ -17,8 +17,13 @@ Status as of 2026-05-11:
   `ai-agents`, `cli`, `developer-tools`, `provenance`, `rust`,
   `version-control`, `git`, `sigstore`, `slsa`, `supply-chain-security`, and
   `vcs`.
+- Package-name checks on 2026-05-11:
+  `claw-vcs` was not published on crates.io, `claw` was occupied by an
+  unrelated crates.io crate, the planned WinGet manifest path
+  `ShreeGit.ClawVCS` was absent from `microsoft/winget-pkgs`, and
+  `Formula/claw.rb` exists in `Shree-git/homebrew-tap`.
 - Suggested repository labels are tracked in `.github/labels.yml`.
-- Remaining external checks: package/name reservation, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
+- Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
 
 ## Repository Identity
 

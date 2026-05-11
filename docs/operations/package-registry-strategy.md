@@ -5,9 +5,9 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 | Channel | Status | Notes |
 |---|---|---|
 | GitHub Releases | live | `v0.1.0` exists with archives, checksums, signatures, installers, and MSI. A new launch-hardening release still needs clean-environment verification. |
-| Homebrew | live | Formula exists in `shree-git/homebrew-tap`; verify formula after it points at the launch-hardening release. |
-| crates.io | planned | Reserve `claw-vcs` if available; avoid implying `cargo install claw` until published. |
-| WinGet | planned | Planned package id: `ShreeGit.ClawVCS`; first publish requires manual PR to `microsoft/winget-pkgs`. |
+| Homebrew | live | Formula exists as `Formula/claw.rb` in `shree-git/homebrew-tap`; verify formula after it points at the launch-hardening release. Homebrew core did not have a `claw` formula in the local `brew info claw` check on 2026-05-11. |
+| crates.io | planned | Checked on 2026-05-11: `claw-vcs` returned 404 from the crates.io crate API, while `claw` is occupied by an unrelated crate. Reserve `claw-vcs` before documenting a crates.io install path. |
+| WinGet | planned | Planned package id: `ShreeGit.ClawVCS`; checked on 2026-05-11 and no manifest path exists in `microsoft/winget-pkgs`. First publish requires manual PR to `microsoft/winget-pkgs`. |
 | Windows MSI | live | `v0.1.0` MSI exists; verify on Windows for the launch-hardening release. |
 | Shell installer | live | `v0.1.0` shell installer exists; keep non-pipe manual download path documented and verify the launch-hardening release. |
 | PowerShell installer | live | `v0.1.0` PowerShell installer exists; keep non-pipe manual download path documented and verify on Windows. |
