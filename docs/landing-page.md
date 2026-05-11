@@ -52,6 +52,7 @@ claw integrate --right heads/dark-mode
 
 ## Primary Routes
 
+- Static landing entrypoint: `docs/index.html`
 - New contributor: `docs/persona/contributor.md`
 - Agent integrator: `docs/persona/agent-integrator.md`
 - Platform operator: `docs/persona/platform-operator.md`

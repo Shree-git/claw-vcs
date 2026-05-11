@@ -5,6 +5,7 @@ This tree is for teams evaluating or running self-hosted Claw deployments. Treat
 ## Start here
 
 - [Quickstart](getting-started/quickstart.md)
+- [Static landing page](index.html)
 - [Landing page](landing-page.md)
 - [Concepts](concepts/index.md)
 - [Workflows](workflows/index.md)

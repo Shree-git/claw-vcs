@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Claw VCS</title>
+    <meta
+      name="description"
+      content="Intent-native version control for human and AI code. Claw VCS keeps intent, evidence, provenance, and policy in the repository."
+    >
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23101418'/%3E%3Cpath d='M18 44V20h8v17h20v7z' fill='%2379c0ff'/%3E%3C/svg%3E"
+    >
+    <meta property="og:title" content="Claw VCS">
+    <meta
+      property="og:description"
+      content="Intent. Evidence. Provenance. Version control for human and AI code."
+    >
+    <meta property="og:type" content="website">
+    <meta
+      property="og:image"
+      content="https://raw.githubusercontent.com/Shree-git/claw-vcs/main/docs/assets/social-preview.svg"
+    >
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Claw VCS">
+    <meta
+      name="twitter:description"
+      content="Intent. Evidence. Provenance. Version control for human and AI code."
+    >
+    <meta
+      name="twitter:image"
+      content="https://raw.githubusercontent.com/Shree-git/claw-vcs/main/docs/assets/social-preview.svg"
+    >
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #101418;
+        --muted: #56616d;
+        --line: #d7dde3;
+        --panel: #f5f7f8;
+        --accent: #0f766e;
+        --accent-2: #a35f00;
+        --surface: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: var(--surface);
+        line-height: 1.5;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.16em;
+      }
+
+      header,
+      main,
+      footer {
+        width: min(1120px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 72px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        font-size: 0.95rem;
+      }
+
+      .brand {
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 0.82fr);
+        gap: 48px;
+        align-items: center;
+        min-height: calc(100vh - 190px);
+        padding: 56px 0;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 720px;
+        font-size: clamp(3rem, 8vw, 6.4rem);
+        line-height: 0.95;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        font-size: 1.28rem;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lede {
+        margin-top: 24px;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: clamp(1.15rem, 2vw, 1.55rem);
+      }
+
+      .status {
+        display: inline-flex;
+        margin-bottom: 24px;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--accent-2);
+        font-size: 0.92rem;
+        font-weight: 650;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 32px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid var(--ink);
+        border-radius: 8px;
+        background: var(--ink);
+        color: #ffffff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .button.secondary {
+        background: var(--surface);
+        color: var(--ink);
+      }
+
+      .preview {
+        width: 100%;
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+
+      .preview img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+
+      .band {
+        border-top: 1px solid var(--line);
+        padding: 52px 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .item {
+        min-height: 168px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .item p,
+      .split p,
+      footer p {
+        color: var(--muted);
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        gap: 32px;
+      }
+
+      pre {
+        overflow: auto;
+        margin: 0;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101418;
+        color: #f5f7f8;
+        font: 0.94rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      footer {
+        padding: 36px 0 48px;
+        border-top: 1px solid var(--line);
+      }
+
+      @media (max-width: 820px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 18px 0;
+        }
+
+        .hero,
+        .grid,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          min-height: auto;
+          padding: 34px 0 22px;
+        }
+
+        .band {
+          padding: 32px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">Claw VCS</div>
+      <nav aria-label="Primary">
+        <a href="https://github.com/Shree-git/claw-vcs#readme">README</a>
+        <a href="getting-started/quickstart.md">Quickstart</a>
+        <a href="security/threat-model.md">Threat Model</a>
+        <a href="security/verifying-releases.md">Verify Releases</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <div class="status">v0.1 experimental</div>
+          <h1 id="hero-title">Claw VCS</h1>
+          <p class="lede">
+            Intent-native version control for human and AI code. Claw keeps
+            intent, changes, revisions, signed evidence, capsules, and policy in
+            the repository so agent-authored work can be reviewed offline.
+          </p>
+          <div class="actions" aria-label="Primary actions">
+            <a class="button" href="getting-started/quickstart.md">Start locally</a>
+            <a class="button secondary" href="https://github.com/Shree-git/claw-vcs/blob/main/examples/basic-demo/scripts/demo.sh">View demo script</a>
+          </div>
+        </div>
+        <figure class="preview">
+          <img
+            src="assets/social-preview.svg"
+            alt="Claw VCS social preview reading Intent. Evidence. Provenance."
+            width="1280"
+            height="640"
+          >
+        </figure>
+      </section>
+
+      <section class="band" aria-labelledby="proof-title">
+        <div class="grid">
+          <div class="item">
+            <h2 id="proof-title">Intent</h2>
+            <p>
+              Work starts with a structured reason, not just a diff. Intents
+              connect goals, changes, policies, and evidence.
+            </p>
+          </div>
+          <div class="item">
+            <h2>Evidence</h2>
+            <p>
+              Capsules bind claimed checks, runner metadata, signatures, and
+              revision IDs so policy can fail closed.
+            </p>
+          </div>
+          <div class="item">
+            <h2>Provenance</h2>
+            <p>
+              Objects, refs, policies, and signed claims live in the repository,
+              not only in a hosted build system.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band split" aria-labelledby="demo-title">
+        <div>
+          <h2 id="demo-title">Run The First Demo</h2>
+          <p>
+            The basic demo creates an intent, records a change, attaches a
+            policy, ships evidence, and integrates a branch.
+          </p>
+        </div>
+        <pre><code>cargo build -p claw --locked
+CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh</code></pre>
+      </section>
+
+      <section class="band split" aria-labelledby="trust-title">
+        <div>
+          <h2 id="trust-title">What It Proves</h2>
+          <p>
+            Claw can verify that a key signed a capsule claiming specific
+            evidence for a specific revision.
+          </p>
+        </div>
+        <div>
+          <p>
+            A signature does not prove the claim is true. Trust still depends on
+            runner integrity, key management, policy configuration, and human
+            judgment. Claw makes those assumptions visible in source history.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Claw VCS is suitable for local exploration, demos, and design feedback.
+        It is not yet recommended as the sole source of truth for production
+        repositories.
+      </p>
+    </footer>
+  </body>
+</html>
