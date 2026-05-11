@@ -32,19 +32,26 @@ In the `shree-git/claw-vcs` repo, add a secret:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 cargo audit --deny warnings
 cargo deny check
+cargo vet
 ```
 
-4. Run a fuzz smoke test when `cargo-fuzz` is installed:
+4. Compile and smoke-test fuzz targets:
 
 ```bash
-cargo fuzz list
+cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
 ```
 
-5. Run a release dry-run if supported by the local `cargo-dist` version.
+5. Run a release dry-run if supported by the local `cargo-dist` version:
+
+```bash
+cargo dist plan
+```
+
 6. Commit the version and changelog update.
 7. Create and push a git tag in the form `vX.Y.Z` (example: `v0.1.0`).
 
