@@ -5,15 +5,15 @@ Agent keys identify who signed capsules and evidence. Treat them as production c
 ## Current command surface
 
 ```bash
+claw agent keygen --name build-agent-01
 claw agent register --name build-agent-01 --version "2026-05-11"
+claw agent register --name hosted-agent --public-key <hex-ed25519-public-key>
 claw agent rotate --name build-agent-01 --version "2026-05-12"
+claw agent rotate --name hosted-agent --public-key <replacement-public-key>
 claw agent revoke --name build-agent-01 --reason "runner compromise"
 claw agent list
 claw agent status build-agent-01
 ```
-
-The current CLI does not have standalone `claw agent keygen` or `--public-key`
-registration flags.
 
 `claw agent register` generates or repairs a local Ed25519 signing key and
 stores public registration metadata in the repository under `refs/agents/`. The
@@ -22,6 +22,11 @@ Re-running `register` for the same active name updates the version and keeps the
 same valid local key when possible. If the local key is missing or mismatched,
 the CLI generates a replacement key and updates the stored public registration.
 Use `rotate` when replacing a key is intentional.
+
+Use `claw agent keygen --name <agent>` to provision a local key without changing
+repository trust. Use `claw agent register --public-key <hex>` or
+`claw agent rotate --public-key <hex>` for agents whose private keys are managed
+outside the current machine.
 
 ## Rotate
 
@@ -34,7 +39,8 @@ Use this operational procedure:
 3. Preview with `claw agent rotate --name <name> --version <new-version>
    --dry-run`.
 4. Run `claw agent rotate --name <name> --version <new-version>` on the runner
-   that should own the new key.
+   that should own the new key, or use `--public-key <hex>` for externally
+   managed keys.
 5. Run `claw agent status <name>` and confirm the key is `verified`.
 6. Ship a small test capsule with `claw ship --intent <intent-id>
    --revision-ref heads/<branch> --agent <name> --evidence smoke=pass`.

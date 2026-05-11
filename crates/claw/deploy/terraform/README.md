@@ -17,7 +17,7 @@ Set variables at apply time:
 terraform apply \
   -var='namespace=claw-system' \
   -var='release_name=claw' \
-  -var='image_repository=ghcr.io/infinite-apps/claw' \
+  -var='image_repository=ghcr.io/shree-git/claw-vcs' \
   -var='image_tag=v0.1.0' \
   -var='values_files=["../helm/claw/values.yaml"]'
 ```

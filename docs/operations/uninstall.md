@@ -11,7 +11,9 @@ brew untap shree-git/homebrew-tap
 
 ## Windows MSI
 
-Use Windows Settings, Control Panel, or:
+Use Windows Settings or Control Panel.
+
+After a WinGet manifest is accepted upstream, the package can also be removed with:
 
 ```powershell
 winget uninstall ShreeGit.ClawVCS

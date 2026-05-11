@@ -70,22 +70,7 @@ slsa
 developer-tools
 ```
 
-Suggested labels:
-
-```text
-good first issue
-help wanted
-docs
-security
-protocol
-git-interop
-needs-design
-known-limitation
-bug
-enhancement
-policy
-capsules
-```
+Suggested labels are tracked in [`.github/labels.yml`](../../.github/labels.yml).
 
 ## Social Preview
 

@@ -8,6 +8,8 @@ This guide installs Claw for the supported self-hosted `v0.1.x` production basel
 - Repository data is local under `.claw/` in the repo root.
 - Clients connect through `claw sync` using gRPC remotes.
 - Auth is bearer-token based (`authorization: Bearer <token>`).
+- Non-local production gRPC binds require auth and TLS. Non-local health/metrics
+  binds require an explicit `--allow-public-health` opt-in.
 
 ## Host prerequisites
 
@@ -41,7 +43,13 @@ claw admin preflight
 5. Start daemon:
 
 ```bash
-claw daemon --listen 0.0.0.0:50051 --auth-profile default
+claw daemon \
+  --listen 0.0.0.0:50051 \
+  --health-listen 0.0.0.0:50052 \
+  --allow-public-health \
+  --auth-profile default \
+  --tls-cert /etc/claw/tls/server.pem \
+  --tls-key /etc/claw/tls/server-key.pem
 ```
 
 ## Service manager example (systemd)
@@ -56,7 +64,7 @@ Type=simple
 User=claw
 Group=claw
 WorkingDirectory=/srv/claw/repo
-ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --auth-profile default
+ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --health-listen 0.0.0.0:50052 --allow-public-health --auth-profile default --tls-cert /etc/claw/tls/server.pem --tls-key /etc/claw/tls/server-key.pem
 Restart=always
 RestartSec=2
 

@@ -6,7 +6,7 @@ pinned client and daemon versions, backups, and rollback practice.
 ## Get help
 
 - Bugs: open a GitHub issue with the bug report form.
-- Usage questions: open a GitHub discussion or issue tagged `question`.
+- Usage questions: open a GitHub discussion or use the question issue form.
 - Docs gaps: open a docs issue or send a docs PR.
 - Demo problems: include the output from `examples/basic-demo/scripts/demo.sh`
   and the value of `CLAW_BIN`.
@@ -71,7 +71,7 @@ Out of scope for public support in `v0.1.x`:
 
 Claw VCS is experimental and does not have staffed support coverage.
 
-- Security reports: best-effort acknowledgement within 7 days.
+- Security reports: best-effort acknowledgement within 72 hours, matching [SECURITY.md](SECURITY.md).
 - Reproducible crash, data integrity, or release verification bugs: triage as soon as maintainer time allows.
 - General usage questions and feature requests: no guaranteed response time.
 - Public holidays, travel, and launch work can delay responses.

@@ -28,12 +28,19 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: {{ .Values.state.mountPath | quote }}
+          env:
+            - name: CLAW_REPO
+              value: {{ .Values.state.mountPath | quote }}
           args:
             - daemon
             - --listen
             - {{ .Values.daemon.listen | quote }}
             - --health-listen
             - {{ .Values.daemon.healthListen | quote }}
+            {{- if .Values.daemon.allowPublicHealth }}
+            - --allow-public-health
+            {{- end }}
             {{- range .Values.daemon.extraArgs }}
             - {{ . | quote }}
             {{- end }}
@@ -81,9 +88,14 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: state
+              mountPath: {{ .Values.state.mountPath | quote }}
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-%s-state" .Release.Name .Chart.Name) .Values.state.existingClaim }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -46,6 +46,8 @@ jobs:
             > rendered-helm.yaml
           grep -q '^kind: Deployment' rendered-helm.yaml
           grep -q '^kind: Service' rendered-helm.yaml
+          grep -q '^kind: PersistentVolumeClaim' rendered-helm.yaml
+          grep -q -- '--allow-public-health' rendered-helm.yaml
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -65,7 +67,7 @@ jobs:
 
       - name: Systemd template sanity
         run: |
-          grep -q '^ExecStart={{ \.BinaryPath }} daemon --listen {{ \.ListenAddr }} --health-listen {{ \.HealthListenAddr }}$' \
+          grep -q '^ExecStart={{ \.BinaryPath }} daemon --listen {{ \.ListenAddr }} --health-listen {{ \.HealthListenAddr }} {{ \.ExtraArgs }}$' \
             crates/claw/deploy/systemd/claw-daemon.service.tpl
           grep -q '^ReadWritePaths={{ \.StateDirectory }}$' \
             crates/claw/deploy/systemd/claw-daemon.service.tpl

@@ -14,6 +14,9 @@ message CreateCapsuleRequest {
   claw.common.ObjectId revision_id = 1;
   claw.objects.CapsulePublic public_fields = 2;
   bytes private_data = 3;
+  repeated claw.objects.CapsuleRecipient recipients = 4;
+  string encryption = 5;
+  string key_id = 6;
 }
 
 message CreateCapsuleResponse {

@@ -11,6 +11,10 @@ This page defines launch-hardening behavior for daemon and sync security surface
 - `--auth-principal`, `--auth-role`, and repeated `--auth-scope` configure the daemon authorization grant attached to the bearer token. The default role is `admin` for compatibility.
 - `--client-ca-cert <path>` enables required client certificate verification for the gRPC listener. It must be used with `--tls-cert` and `--tls-key`.
 - `claw sync` can connect to TLS and mTLS gRPC remotes with `--tls-ca-cert`, `--tls-domain`, `--client-cert`, and `--client-key`. Client certificates require both the certificate and key.
+- The HTTP health listener serves `/v1/health/*` and `/v1/metrics`. In the
+  production profile, binding that listener beyond localhost requires
+  `--allow-public-health` because the endpoint is intentionally unauthenticated
+  for probes.
 
 ## Daemon Authorization
 
@@ -58,6 +62,11 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 
 - `claw agent register --name <agent>` generates or verifies a local Ed25519
   signing key and stores public registration metadata in the repo.
+- `claw agent keygen --name <agent>` provisions a local key without changing
+  repository trust.
+- `claw agent register --public-key <hex>` and
+  `claw agent rotate --public-key <hex>` trust externally managed keys without
+  importing private material.
 - `claw agent rotate --name <agent>` replaces the trusted public key and local
   signing key for an existing agent.
 - `claw agent revoke --name <agent>` marks the registration as revoked. Revoked
@@ -88,6 +97,6 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 Known limitations:
 
 - Local unauthenticated daemon usage still uses allow-all authorization for compatibility. Shared daemon deployments should enable bearer authentication and configure role/scope grants.
-- Capsule private field disclosure requires both a matching recipient principal and `capsules:private-read`; callers without both receive public capsule fields only.
+- Capsule private field disclosure requires both a matching recipient principal and `capsules:private-read`; callers without both receive public capsule fields only. Capsule private data without recipient envelopes is rejected on daemon create and redacted if encountered in stored legacy data.
 - Evidence freshness is enforced by policy only when `require_fresh_evidence`
   is enabled on the policy object.

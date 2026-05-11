@@ -50,6 +50,9 @@ pub struct DaemonArgs {
     /// HTTP health listen address
     #[arg(long, default_value = "[::1]:50052")]
     health_listen: String,
+    /// Allow unauthenticated health and metrics endpoints to bind outside localhost in production
+    #[arg(long)]
+    allow_public_health: bool,
     /// Use stdio instead of TCP (for embedded use)
     #[arg(long)]
     stdio: bool,
@@ -768,6 +771,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     let addr: SocketAddr = args.listen.parse()?;
     let health_addr: SocketAddr = args.health_listen.parse()?;
     let non_local_bind = !is_local_bind_addr(&addr);
+    let non_local_health_bind = !is_local_bind_addr(&health_addr);
 
     if auth_token.is_none() {
         let profile = config::default_profile(&cfg);
@@ -802,6 +806,11 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
                 "non-local bind requires TLS; provide --tls-cert/--tls-key or set tls.cert_path/tls.key_path in .claw/config.toml"
             );
         }
+    }
+    if non_local_health_bind && enforce_prod_profile && !args.allow_public_health {
+        anyhow::bail!(
+            "non-local health bind exposes unauthenticated health and metrics; use --allow-public-health to opt in"
+        );
     }
 
     let shared_store = Arc::new(RwLock::new(store));
@@ -1178,6 +1187,7 @@ mod tests {
             tls_cert: None,
             tls_key: None,
             client_ca_cert: None,
+            allow_public_health: false,
         };
 
         let authorizer = build_sync_authorizer(&args, args.auth_token.as_deref())

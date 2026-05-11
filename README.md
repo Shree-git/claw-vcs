@@ -383,13 +383,13 @@ Notes:
 
 ### Windows
 
-**WinGet**
+**WinGet (planned)**
+
+WinGet support is planned. Until a manifest is accepted in the upstream Microsoft repository, use the MSI or PowerShell installer below.
 
 ```powershell
 winget install ShreeGit.ClawVCS
 ```
-
-WinGet support is planned. Until a manifest is accepted in the upstream Microsoft repository, use the MSI or PowerShell installer below.
 
 **MSI**
 

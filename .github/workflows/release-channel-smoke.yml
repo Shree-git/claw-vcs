@@ -70,11 +70,13 @@ jobs:
           binary="$(find archive-smoke -type f -name claw | head -n 1)"
           test -n "$binary"
           "$binary" --version
+          "$binary" doctor
           mkdir -p archive-smoke/repo
           (
             cd archive-smoke/repo
             "$binary" init
             "$binary" status
+            "$binary" doctor
           )
           (
             cd archive-smoke/repo
@@ -100,6 +102,14 @@ jobs:
           mkdir -p "$HOME"
           bash release-assets/claw-installer.sh
           "$HOME/.local/bin/claw" --version
+          "$HOME/.local/bin/claw" doctor
+          mkdir -p "$RUNNER_TEMP/linux-installer-repo"
+          (
+            cd "$RUNNER_TEMP/linux-installer-repo"
+            "$HOME/.local/bin/claw" init
+            "$HOME/.local/bin/claw" status
+            "$HOME/.local/bin/claw" doctor
+          )
 
   macos-release-smoke:
     needs: release-metadata
@@ -135,11 +145,13 @@ jobs:
           binary="$(find archive-smoke -type f -name claw | head -n 1)"
           test -n "$binary"
           "$binary" --version
+          "$binary" doctor
           mkdir -p archive-smoke/repo
           (
             cd archive-smoke/repo
             "$binary" init
             "$binary" status
+            "$binary" doctor
           )
 
       - name: Installer script smoke
@@ -149,6 +161,14 @@ jobs:
           mkdir -p "$HOME"
           bash release-assets/claw-installer.sh
           "$HOME/.local/bin/claw" --version
+          "$HOME/.local/bin/claw" doctor
+          mkdir -p "$RUNNER_TEMP/macos-installer-repo"
+          (
+            cd "$RUNNER_TEMP/macos-installer-repo"
+            "$HOME/.local/bin/claw" init
+            "$HOME/.local/bin/claw" status
+            "$HOME/.local/bin/claw" doctor
+          )
 
       - name: Homebrew smoke
         run: |
@@ -158,6 +178,14 @@ jobs:
           brew tap shree-git/homebrew-tap
           brew install claw
           claw --version
+          claw doctor
+          mkdir -p "$RUNNER_TEMP/homebrew-repo"
+          (
+            cd "$RUNNER_TEMP/homebrew-repo"
+            claw init
+            claw status
+            claw doctor
+          )
 
   windows-release-smoke:
     needs: release-metadata
@@ -207,10 +235,12 @@ jobs:
             throw "claw.exe not found in zip archive"
           }
           & $binary.FullName --version
+          & $binary.FullName doctor
           New-Item -ItemType Directory -Force zip-smoke\repo | Out-Null
           Push-Location zip-smoke\repo
           & $binary.FullName init
           & $binary.FullName status
+          & $binary.FullName doctor
           Pop-Location
 
       - name: PowerShell installer smoke
@@ -228,6 +258,14 @@ jobs:
             throw "installed claw.exe not found after PowerShell installer"
           }
           & $binary --version
+          & $binary doctor
+          $repo = Join-Path $env:RUNNER_TEMP "powershell-installer-repo"
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          Push-Location $repo
+          & $binary init
+          & $binary status
+          & $binary doctor
+          Pop-Location
 
       - name: MSI smoke
         shell: pwsh
@@ -242,6 +280,14 @@ jobs:
             throw "MSI-installed claw.exe not found at $binary"
           }
           & $binary --version
+          & $binary doctor
+          $repo = Join-Path $env:RUNNER_TEMP "msi-repo"
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          Push-Location $repo
+          & $binary init
+          & $binary status
+          & $binary doctor
+          Pop-Location
 
   cargo-install-git-smoke:
     runs-on: ubuntu-22.04
@@ -258,9 +304,11 @@ jobs:
           root="$RUNNER_TEMP/claw-cargo-install"
           cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked --root "$root"
           "$root/bin/claw" --version
+          "$root/bin/claw" doctor
           mkdir -p "$RUNNER_TEMP/claw-cargo-install-repo"
           (
             cd "$RUNNER_TEMP/claw-cargo-install-repo"
             "$root/bin/claw" init
             "$root/bin/claw" status
+            "$root/bin/claw" doctor
           )

@@ -5,7 +5,7 @@ use tonic::{Request, Response, Status};
 
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
-use claw_core::types::{Capsule, CapsulePublic, Evidence};
+use claw_core::types::{Capsule, CapsulePublic, CapsuleRecipient, Evidence};
 use claw_crypto::capsule::verify_capsule;
 use claw_store::ClawStore;
 
@@ -159,6 +159,16 @@ fn public_from_proto(
     })
 }
 
+fn recipient_from_proto(r: &crate::proto::objects::CapsuleRecipient) -> CapsuleRecipient {
+    CapsuleRecipient {
+        recipient_id: r.recipient_id.clone(),
+        key_id: r.key_id.clone(),
+        algorithm: r.algorithm.clone(),
+        ephemeral_public_key: r.ephemeral_public_key.clone(),
+        encrypted_content_key: r.encrypted_content_key.clone(),
+    }
+}
+
 fn verify_capsule_for_revision(capsule: &Capsule, revision_id: &ObjectId) -> (bool, String) {
     if capsule.revision_id != *revision_id {
         return (
@@ -221,7 +231,7 @@ fn capsule_for_principal(
     principal: Option<&str>,
     can_read_private: bool,
 ) -> Capsule {
-    if capsule.encrypted_private.is_none() || capsule.recipients.is_empty() {
+    if capsule.encrypted_private.is_none() {
         return capsule.clone();
     }
 
@@ -275,6 +285,16 @@ impl CapsuleService for CapsuleServer {
                 env_fingerprint: None,
                 evidence: vec![],
             });
+        let recipients = req
+            .recipients
+            .iter()
+            .map(recipient_from_proto)
+            .collect::<Vec<_>>();
+        if !req.private_data.is_empty() && recipients.is_empty() {
+            return Err(Status::invalid_argument(
+                "private_data requires at least one capsule recipient envelope",
+            ));
+        }
 
         let capsule = Capsule {
             revision_id,
@@ -284,9 +304,13 @@ impl CapsuleService for CapsuleServer {
             } else {
                 Some(req.private_data)
             },
-            encryption: String::new(),
-            key_id: None,
-            recipients: vec![],
+            encryption: req.encryption,
+            key_id: if req.key_id.is_empty() {
+                None
+            } else {
+                Some(req.key_id)
+            },
+            recipients,
             signatures: vec![],
         };
 
@@ -507,5 +531,20 @@ mod tests {
 
         assert_eq!(visible.encrypted_private, capsule.encrypted_private);
         assert_eq!(visible.recipients.len(), 1);
+    }
+
+    #[test]
+    fn capsule_private_fields_without_recipients_are_redacted() {
+        let mut capsule = recipient_capsule();
+        capsule.recipients.clear();
+
+        let redacted = capsule_for_principal(&capsule, Some("runner-a"), true);
+
+        assert!(redacted.encrypted_private.is_none());
+        assert!(redacted.recipients.is_empty());
+        assert_eq!(
+            redacted.public_fields.agent_id,
+            capsule.public_fields.agent_id
+        );
     }
 }

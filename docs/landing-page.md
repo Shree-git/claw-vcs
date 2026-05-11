@@ -42,7 +42,7 @@ claw integrate --right heads/dark-mode
 
 ## What To Show In Demo Media
 
-- The 12 object primitives: intent, change, revision, capsule, policy, and refs
+- Key concepts such as intent, change, revision, capsule, policy, and refs
   should be visible in command output or narration.
 - A small agent registration flow with `claw agent register --name`.
 - A capsule created by `claw ship`.

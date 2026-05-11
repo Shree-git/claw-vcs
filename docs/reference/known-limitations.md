@@ -51,12 +51,13 @@ Claw VCS is v0.1 experimental software. It is appropriate for local exploration,
 ## Agent Key Lifecycle
 
 - Agent registration creates or repairs local signing keys.
+- `claw agent keygen` can provision a local signing key without registering it.
+- `claw agent register --public-key` and `claw agent rotate --public-key` can
+  trust externally managed Ed25519 public keys.
 - `claw agent rotate` replaces the trusted public key and local signing key for
   an existing agent.
 - `claw agent revoke` blocks future `claw ship --agent <name>` use and removes
   the registration from integration provenance trust checks.
-- The current CLI does not import caller-supplied public keys and does not have
-  a standalone `agent keygen` command.
 - Revocation does not rewrite old capsules or invalidate historical signatures;
   it changes future trust decisions.
 

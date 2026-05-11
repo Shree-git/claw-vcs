@@ -31,7 +31,7 @@ variable "values_files" {
 variable "image_repository" {
   description = "Container image repository to deploy."
   type        = string
-  default     = "ghcr.io/infinite-apps/claw"
+  default     = "ghcr.io/shree-git/claw-vcs"
 }
 
 variable "image_tag" {

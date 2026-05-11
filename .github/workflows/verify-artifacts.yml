@@ -64,12 +64,13 @@ jobs:
         if: ${{ steps.source.outputs.release_tag != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
 
-          gh release download "$RELEASE_TAG" --dir artifacts
+          gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir artifacts
 
       - name: Verify signatures and certificates
         env:

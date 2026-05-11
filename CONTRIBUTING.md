@@ -30,9 +30,11 @@ Run all of the following and ensure they pass:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 ```
+
+These are the minimum local checks. CI also runs rustdoc, dependency policy checks, CLI contract tests, example smoke scripts, deployment validation, SAST, and release artifact checks where applicable.
 
 ## Pull Request Expectations
 
