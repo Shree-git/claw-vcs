@@ -467,7 +467,7 @@ See [uninstall instructions](docs/operations/uninstall.md) for Homebrew, MSI, ma
 - Full operator docs: [docs/README.md](docs/README.md)
 - Production readiness checklist: [docs/reference/production-readiness-checklist.md](docs/reference/production-readiness-checklist.md)
 - Quickstart: [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
-- Basic demo: [examples/basic-demo/README.md](examples/basic-demo/README.md)
+- Basic demo: [scripts/demo.sh](scripts/demo.sh) and [examples/basic-demo/README.md](examples/basic-demo/README.md)
 - Backup/restore demo: [examples/backup-restore/README.md](examples/backup-restore/README.md)
 - Demo media: [examples/demo-media/README.md](examples/demo-media/README.md)
 - Production install: [docs/operations/production-install.md](docs/operations/production-install.md)
