@@ -12,7 +12,7 @@ This document defines which interfaces are public and what stability guarantees 
 
 | Surface | Scope | Stability | Contract for Operators |
 |---|---|---|---|
-| CLI command surface | User-facing commands, flags, positional arguments, exit codes, and non-debug stdout/stderr formats | Stable | Existing command paths and flag meanings are preserved across patch/minor updates in the same major line. |
+| CLI command surface | User-facing commands, flags, positional arguments, exit codes, and non-debug stdout/stderr formats | Stable | Existing command paths and flag meanings are preserved across patch/minor updates in the same major line. Stable exit codes are documented in `docs/cli/exit-codes.md`. |
 | Daemon HTTP API | Versioned HTTP endpoints, request/response JSON/text shape, status code semantics, auth headers | Beta | Canonical schema artifact is `docs/reference/daemon-http-openapi-v1.json`; current v1 surface includes `/v1/health/live`, `/v1/health/ready`, `/v1/health/deps`, and `/v1/metrics` (Prometheus text). Endpoint behavior may change between minor releases, with release-note callouts and migration instructions. |
 | Policy schema | Policy document keys, value types, validation rules, and schema version negotiation | Stable | Existing valid policies remain valid for N and N+1. Validation changes are additive unless a deprecation cycle completes. |
 | Git interop contract | Mapping between Claw and Git refs/objects, clone/fetch/push interoperability rules, conflict behavior for bridge operations | Experimental | Behavior can change as interoperability matures; pin CLI + daemon versions for automation using this surface. |
@@ -24,6 +24,15 @@ The following are implementation details and may change without notice:
 - Internal crate/module APIs in `crates/*`
 - On-disk temporary files and cache layouts not marked as storage format contracts
 - Debug log field names and tracing spans
+
+## CLI Diagnostics
+
+The CLI diagnostic contract covers both process exit codes and the global JSON error envelope.
+
+- Exit codes are stable and documented in `docs/cli/exit-codes.md`.
+- Machine-readable errors are emitted with `claw --error-format json <command>`.
+- The JSON error envelope has stable top-level keys: `code`, `message`, `request_id`, `remediation`, `exit_code`, and `details`.
+- Successful `--json` output is command-specific and documented in each command reference page.
 
 ## Change Control Expectations
 
