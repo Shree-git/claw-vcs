@@ -176,6 +176,118 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
 }
 
 #[test]
+fn agent_revoke_blocks_ship_until_rotation() {
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("agent-revoke-rotate");
+
+    let intent = env.run_ok(
+        &repo,
+        [
+            "intent",
+            "create",
+            "--title",
+            "Agent lifecycle",
+            "--goal",
+            "Exercise explicit agent key revocation",
+        ],
+    );
+    let intent_id = intent.value_after("Created intent: ");
+    let change = env.run_ok(&repo, ["change", "create", "--intent", intent_id.as_str()]);
+    let change_id = change.value_after("Created change: ");
+
+    env.write_file(&repo.join("README.md"), "agent lifecycle\n");
+    env.run_ok(
+        &repo,
+        [
+            "snapshot",
+            "-m",
+            "tracked revision",
+            "--change",
+            change_id.as_str(),
+        ],
+    );
+
+    env.run_ok(&repo, ["agent", "register", "--name", "ci-agent"]);
+
+    let dry_revoke = env.run_ok(
+        &repo,
+        [
+            "agent",
+            "revoke",
+            "--name",
+            "ci-agent",
+            "--reason",
+            "compromised",
+            "--dry-run",
+        ],
+    );
+    assert!(dry_revoke.stdout.contains("Dry run: would revoke agent"));
+
+    let active = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(active.stdout.contains("Status: active"));
+
+    env.run_ok(
+        &repo,
+        [
+            "agent",
+            "revoke",
+            "--name",
+            "ci-agent",
+            "--reason",
+            "compromised",
+        ],
+    );
+    let revoked = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(revoked.stdout.contains("Status: revoked"));
+    assert!(revoked.stdout.contains("compromised"));
+
+    let blocked = env.run_fail(
+        &repo,
+        [
+            "ship",
+            "--intent",
+            intent_id.as_str(),
+            "--agent",
+            "ci-agent",
+            "--evidence",
+            "test=pass",
+        ],
+    );
+    assert!(blocked
+        .combined_output()
+        .contains("agent 'ci-agent' is revoked"));
+
+    env.run_ok(
+        &repo,
+        [
+            "agent",
+            "rotate",
+            "--name",
+            "ci-agent",
+            "--version",
+            "rotated",
+        ],
+    );
+    let rotated = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(rotated.stdout.contains("Status: active"));
+    assert!(rotated.stdout.contains("Version: rotated"));
+
+    let shipped = env.run_ok(
+        &repo,
+        [
+            "ship",
+            "--intent",
+            intent_id.as_str(),
+            "--agent",
+            "ci-agent",
+            "--evidence",
+            "test=pass",
+        ],
+    );
+    assert!(shipped.stdout.contains("Capsule: "));
+}
+
+#[test]
 fn checkout_requires_force_when_worktree_is_dirty() {
     let env = CliTestEnv::new();
     let repo = env.init_repo("checkout-safety");

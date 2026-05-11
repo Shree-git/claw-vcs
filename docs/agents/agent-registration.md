@@ -30,13 +30,28 @@ Expected `claw agent status <name>` output includes `Key: ... (verified)`.
 ## Rotate or replace identities
 
 When an agent key is rotated, keep old signed capsules readable and verifiable.
-The current CLI rotates implicitly when the local key is missing or mismatched
-and `claw agent register --name <agent>` is run again. There is no standalone
-`agent rotate` command.
+Use the explicit rotate command when replacement is intentional:
+
+```bash
+claw agent rotate --name release-bot --version "2026-05-12"
+```
+
+The CLI may still repair an active registration if the local key is missing or
+mismatched, but planned rotations should use `agent rotate` so the operator
+intent is visible in the command history.
 
 Create a replacement identity when the automation principal changes. Reuse the
 same identity only when it is the same principal with a new key or version.
 Update policy reviewer IDs if policies pin public key IDs.
+
+Revoke an identity when the runner or key should no longer be trusted:
+
+```bash
+claw agent revoke --name release-bot --reason "runner compromise"
+```
+
+Revocation blocks future signing through `claw ship --agent release-bot` and
+removes that registration from integration provenance trust checks.
 
 ## Naming
 

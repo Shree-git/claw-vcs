@@ -58,11 +58,14 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 
 - `claw agent register --name <agent>` generates or verifies a local Ed25519
   signing key and stores public registration metadata in the repo.
+- `claw agent rotate --name <agent>` replaces the trusted public key and local
+  signing key for an existing agent.
+- `claw agent revoke --name <agent>` marks the registration as revoked. Revoked
+  agents cannot sign new capsules through `claw ship`, and integration
+  provenance checks omit revoked agent records from the trusted registry.
 - Private agent keys live under `~/.claw/agent-keys/`, outside the repository.
 - Do not commit private agent keys, auth tokens, TLS private keys, or support
   bundles without review.
-- There is no current `agent revoke` command. Remove trust through policy,
-  integration denylists, and runner credential rotation.
 - Old signatures remain useful for attribution even after the signer is no
   longer trusted for future policy decisions.
 

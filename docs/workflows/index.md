@@ -24,6 +24,7 @@ steps live under `docs/operations/` and `docs/runbooks/`.
 | Start implementation attempt | `claw change create` |
 | Record work | `claw snapshot --change <change-id> -m <message>` |
 | Register automation signer | `claw agent register --name <agent> --version <version>` |
+| Rotate or revoke signer | `claw agent rotate --name <agent>`, `claw agent revoke --name <agent>` |
 | Ship with evidence | `claw ship --intent <intent-id> --revision-ref heads/<branch> --evidence name=pass` |
 | Merge work | `claw integrate --right heads/<branch>` |
 | Create policy object | `claw policy create --id <policy-id> --check <name>` |

@@ -39,4 +39,12 @@ Agents can use the daemon for sync, events, intents, changes, capsules, and work
 
 ## Rotate or Revoke
 
-There is no standalone `agent keygen`, `agent rotate`, or `agent revoke` command in v0.1. Rotate by registering a replacement agent identity, updating policies to trust the new signer, and auditing capsules signed by the old identity.
+```bash
+claw agent rotate --name demo-agent --version "2026-05-12"
+claw agent revoke --name demo-agent --reason "runner compromise"
+```
+
+Rotation replaces the trusted public key and local signing key for that agent ID.
+Revocation marks the registration as untrusted for future signing and integration
+decisions. In both cases, audit capsules signed by the previous key before
+trusting affected revisions.

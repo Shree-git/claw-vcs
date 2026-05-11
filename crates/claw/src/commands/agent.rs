@@ -26,6 +26,30 @@ enum AgentCommand {
         #[arg(short, long)]
         version: Option<String>,
     },
+    /// Rotate an agent signing key and trust the replacement key
+    Rotate {
+        /// Agent ID
+        #[arg(short, long)]
+        name: String,
+        /// Replacement agent version metadata
+        #[arg(short, long)]
+        version: Option<String>,
+        /// Validate and print the planned rotation without writing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Revoke an agent registration for future policy decisions
+    Revoke {
+        /// Agent ID
+        #[arg(short, long)]
+        name: String,
+        /// Human-readable revocation reason
+        #[arg(long)]
+        reason: Option<String>,
+        /// Validate and print the planned revocation without writing it
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show agent status
     Status {
         /// Agent name
@@ -47,8 +71,23 @@ pub(crate) struct AgentRegistration {
     pub public_key: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub private_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revocation_reason: Option<String>,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
+}
+
+impl AgentRegistration {
+    pub(crate) fn is_revoked(&self) -> bool {
+        self.revoked_at_ms.is_some()
+    }
+
+    fn public_key_prefix(&self) -> &str {
+        let end = self.public_key.len().min(16);
+        &self.public_key[..end]
+    }
 }
 
 enum AgentRecordState {
@@ -224,6 +263,8 @@ fn new_registration(
             agent_version: version,
             public_key: hex::encode(keypair.public_key_bytes()),
             private_key: None,
+            revoked_at_ms: None,
+            revocation_reason: None,
             created_at_ms: now,
             updated_at_ms: now,
         },
@@ -237,6 +278,11 @@ pub(crate) fn ensure_registered_signing_agent(
 ) -> anyhow::Result<AgentRegistration> {
     match read_agent_record(store, name)? {
         AgentRecordState::Registered(mut record) => {
+            if record.is_revoked() {
+                anyhow::bail!(
+                    "agent '{name}' is revoked; run `claw agent rotate --name {name}` to trust a replacement key"
+                );
+            }
             if !ensure_local_key_for_registration(&record, name)? {
                 // Existing metadata without local key: rotate to a new local-only private key.
                 let (mut rotated, keypair) = new_registration(name, record.agent_version.clone())?;
@@ -285,6 +331,11 @@ pub fn run(args: AgentArgs) -> anyhow::Result<()> {
 
             let (record, id, created) = match read_agent_record(&store, &name)? {
                 AgentRecordState::Registered(mut existing) => {
+                    if existing.is_revoked() {
+                        anyhow::bail!(
+                            "agent '{name}' is revoked; run `claw agent rotate --name {name}` to trust a replacement key"
+                        );
+                    }
                     if let Some(v) = requested_version.clone() {
                         existing.agent_version = Some(v);
                     }
@@ -324,10 +375,106 @@ pub fn run(args: AgentArgs) -> anyhow::Result<()> {
             } else {
                 println!("Updated agent: {name}");
             }
-            if let Some(v) = record.agent_version {
+            if let Some(v) = record.agent_version.as_deref() {
                 println!("  Version: {v}");
             }
-            println!("  Public key: {}", &record.public_key[..16]);
+            println!("  Public key: {}", record.public_key_prefix());
+            println!("  Object: {id}");
+        }
+        AgentCommand::Rotate {
+            name,
+            version,
+            dry_run,
+        } => {
+            let root = find_repo_root()?;
+            let store = ClawStore::open(&root)?;
+            let current = match read_agent_record(&store, &name)? {
+                AgentRecordState::Registered(record) => record,
+                AgentRecordState::Legacy(_) => {
+                    anyhow::bail!(
+                        "agent '{name}' uses a legacy registration; run `claw agent register --name {name}` before rotating"
+                    )
+                }
+                AgentRecordState::Missing => {
+                    anyhow::bail!("agent '{name}' is not registered; run `claw agent register --name {name}` first")
+                }
+            };
+
+            let replacement_version = version.clone().or(current.agent_version.clone());
+            if dry_run {
+                println!("Dry run: would rotate agent: {name}");
+                println!("  Current public key: {}", current.public_key_prefix());
+                if current.is_revoked() {
+                    println!("  Current status: revoked");
+                }
+                if let Some(v) = replacement_version {
+                    println!("  Replacement version: {v}");
+                }
+                println!("  Repository and local key store were not modified.");
+                return Ok(());
+            }
+
+            let (mut rotated, keypair) = new_registration(&name, replacement_version)?;
+            rotated.created_at_ms = current.created_at_ms;
+            rotated.updated_at_ms = now_ms()?;
+            rotated.revoked_at_ms = None;
+            rotated.revocation_reason = None;
+            save_local_agent_key(&name, &keypair)?;
+            let id = store_agent_registration(&store, &name, &rotated)?;
+
+            println!("Rotated agent: {name}");
+            println!("  Previous public key: {}", current.public_key_prefix());
+            println!("  New public key: {}", rotated.public_key_prefix());
+            if let Some(v) = rotated.agent_version.as_deref() {
+                println!("  Version: {v}");
+            }
+            println!("  Object: {id}");
+        }
+        AgentCommand::Revoke {
+            name,
+            reason,
+            dry_run,
+        } => {
+            let root = find_repo_root()?;
+            let store = ClawStore::open(&root)?;
+            let mut record = match read_agent_record(&store, &name)? {
+                AgentRecordState::Registered(record) => record,
+                AgentRecordState::Legacy(_) => {
+                    anyhow::bail!(
+                        "agent '{name}' uses a legacy registration; re-register before revoking"
+                    )
+                }
+                AgentRecordState::Missing => anyhow::bail!("agent '{name}' is not registered"),
+            };
+
+            if dry_run {
+                println!("Dry run: would revoke agent: {name}");
+                println!("  Public key: {}", record.public_key_prefix());
+                if let Some(reason) = reason.as_deref() {
+                    println!("  Reason: {reason}");
+                }
+                println!("  Repository was not modified.");
+                return Ok(());
+            }
+
+            if record.is_revoked() {
+                println!("Agent already revoked: {name}");
+                if let Some(reason) = record.revocation_reason.as_deref() {
+                    println!("  Reason: {reason}");
+                }
+                return Ok(());
+            }
+
+            record.revoked_at_ms = Some(now_ms()?);
+            record.revocation_reason = reason;
+            record.updated_at_ms = now_ms()?;
+            let id = store_agent_registration(&store, &name, &record)?;
+
+            println!("Revoked agent: {name}");
+            println!("  Public key: {}", record.public_key_prefix());
+            if let Some(reason) = record.revocation_reason.as_deref() {
+                println!("  Reason: {reason}");
+            }
             println!("  Object: {id}");
         }
         AgentCommand::Status { name } => {
@@ -344,10 +491,17 @@ pub fn run(args: AgentArgs) -> anyhow::Result<()> {
                         }
                         println!(
                             "  Key: {} ({})",
-                            &agent.public_key[..16],
+                            agent.public_key_prefix(),
                             if key_ok { "verified" } else { "invalid" }
                         );
-                        println!("  Status: active");
+                        if agent.is_revoked() {
+                            println!("  Status: revoked");
+                            if let Some(reason) = agent.revocation_reason.as_deref() {
+                                println!("  Revocation reason: {reason}");
+                            }
+                        } else {
+                            println!("  Status: active");
+                        }
                     }
                     AgentRecordState::Legacy(agent) => {
                         println!("Agent: {}", agent.agent_id);
@@ -378,10 +532,15 @@ pub fn run(args: AgentArgs) -> anyhow::Result<()> {
                         Ok(AgentRecordState::Registered(agent)) => {
                             let key_ok = registration_keypair(&agent, agent_name).is_ok();
                             println!(
-                                "{} v{} key:{}",
+                                "{} v{} key:{} status:{}",
                                 agent.agent_id,
                                 agent.agent_version.as_deref().unwrap_or("?"),
-                                if key_ok { "verified" } else { "invalid" }
+                                if key_ok { "verified" } else { "invalid" },
+                                if agent.is_revoked() {
+                                    "revoked"
+                                } else {
+                                    "active"
+                                }
                             );
                         }
                         Ok(AgentRecordState::Legacy(agent)) => {
@@ -405,4 +564,84 @@ pub fn run(args: AgentArgs) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{AgentArgs, AgentCommand, AgentRegistration};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: AgentArgs,
+    }
+
+    #[test]
+    fn parses_rotate_dry_run() {
+        let cli = TestCli::parse_from([
+            "claw",
+            "rotate",
+            "--name",
+            "ci-agent",
+            "--version",
+            "2026-05-11",
+            "--dry-run",
+        ]);
+
+        match cli.args.command {
+            AgentCommand::Rotate {
+                name,
+                version,
+                dry_run,
+            } => {
+                assert_eq!(name, "ci-agent");
+                assert_eq!(version.as_deref(), Some("2026-05-11"));
+                assert!(dry_run);
+            }
+            _ => panic!("expected rotate command"),
+        }
+    }
+
+    #[test]
+    fn parses_revoke_reason_and_dry_run() {
+        let cli = TestCli::parse_from([
+            "claw",
+            "revoke",
+            "--name",
+            "ci-agent",
+            "--reason",
+            "compromised",
+            "--dry-run",
+        ]);
+
+        match cli.args.command {
+            AgentCommand::Revoke {
+                name,
+                reason,
+                dry_run,
+            } => {
+                assert_eq!(name, "ci-agent");
+                assert_eq!(reason.as_deref(), Some("compromised"));
+                assert!(dry_run);
+            }
+            _ => panic!("expected revoke command"),
+        }
+    }
+
+    #[test]
+    fn registration_revocation_defaults_to_active_for_legacy_json() {
+        let json = r#"{
+            "schema_version": 2,
+            "agent_id": "ci-agent",
+            "public_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "created_at_ms": 1,
+            "updated_at_ms": 1
+        }"#;
+
+        let record: AgentRegistration = serde_json::from_str(json).unwrap();
+        assert!(!record.is_revoked());
+        assert!(record.revocation_reason.is_none());
+    }
 }

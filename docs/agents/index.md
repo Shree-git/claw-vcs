@@ -42,6 +42,7 @@ list` shows the compact form `key:verified`.
 
 - Agent registration generates or repairs local keys; it does not import a
   caller-provided public key.
-- There is no first-class `agent revoke` command yet.
+- Agent rotation and revocation are supported for repository registrations, but
+  there is no standalone `agent keygen` command yet.
 - Policy enforcement depends on policies referenced by intents. Creating a
   policy object does not attach it to every intent.

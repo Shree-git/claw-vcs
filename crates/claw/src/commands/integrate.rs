@@ -401,6 +401,9 @@ fn load_agent_registry(store: &ClawStore) -> anyhow::Result<AgentRegistry> {
         let Ok(record) = serde_json::from_slice::<AgentRegistration>(&blob.data) else {
             continue;
         };
+        if record.is_revoked() {
+            continue;
+        }
         let normalized_key = match normalize_public_key_hex(&record.public_key) {
             Some(key) => key,
             None => continue,
@@ -666,8 +669,8 @@ impl ObjectExt for Object {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_applicable_revisions, enforce_integration_policies, resolve_revision_ref_or_id,
-        verify_capsule_provenance, AgentRegistry, IntegrateArgs,
+        collect_applicable_revisions, enforce_integration_policies, load_agent_registry,
+        resolve_revision_ref_or_id, verify_capsule_provenance, AgentRegistry, IntegrateArgs,
     };
     use crate::commands::agent::AgentRegistration;
     use clap::Parser;
@@ -709,6 +712,8 @@ mod tests {
             agent_version: Some("test".to_string()),
             public_key: hex::encode(keypair.public_key_bytes()),
             private_key: None,
+            revoked_at_ms: None,
+            revocation_reason: None,
             created_at_ms: now,
             updated_at_ms: now,
         };
@@ -718,6 +723,33 @@ mod tests {
         });
         let blob_id = store.store_object(&blob).unwrap();
         store.set_ref(&format!("agents/{name}"), &blob_id).unwrap();
+    }
+
+    #[test]
+    fn agent_registry_skips_revoked_registrations() {
+        let (_tmp, store) = test_store();
+        let keypair = KeyPair::generate();
+        let record = AgentRegistration {
+            schema_version: 2,
+            agent_id: "agent".to_string(),
+            agent_version: Some("test".to_string()),
+            public_key: hex::encode(keypair.public_key_bytes()),
+            private_key: None,
+            revoked_at_ms: Some(2),
+            revocation_reason: Some("compromised".to_string()),
+            created_at_ms: 1,
+            updated_at_ms: 2,
+        };
+        let blob = Object::Blob(Blob {
+            data: serde_json::to_vec(&record).unwrap(),
+            media_type: Some("application/json".to_string()),
+        });
+        let blob_id = store.store_object(&blob).unwrap();
+        store.set_ref("agents/agent", &blob_id).unwrap();
+
+        let registry = load_agent_registry(&store).unwrap();
+        assert!(registry.by_agent_id.is_empty());
+        assert!(registry.by_public_key.is_empty());
     }
 
     #[test]
