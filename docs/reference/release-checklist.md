@@ -5,7 +5,7 @@ Use this checklist for every tag release and hotfix.
 ## CI-Enforced Gates
 
 - [ ] `release.yml` `quality` job passed (`cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace`).
-- [ ] `release.yml` `security-audit-gate` passed (`cargo audit`).
+- [ ] `release.yml` `security-audit-gate` passed (`cargo audit --deny warnings`).
 - [ ] Dependency policy passed (`cargo deny check`).
 - [ ] `release.yml` `contract-tests-gate` passed (`claw`, `spec_tests`, `ops_artifacts_tests`).
 - [ ] `release.yml` `compatibility-matrix-gate` passed on Linux, macOS, and Windows.

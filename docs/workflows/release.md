@@ -6,7 +6,7 @@ Use this path before publishing a Claw release.
 2. Run `cargo fmt --all -- --check`.
 3. Run `cargo clippy --workspace --all-targets --locked -- -D warnings`.
 4. Run `cargo test --workspace --all-targets --locked`.
-5. Run `cargo audit` and `cargo deny check`.
+5. Run `cargo audit --deny warnings` and `cargo deny check`.
 6. Compile fuzz targets with `cargo check --manifest-path fuzz/Cargo.toml --bins --locked`.
 7. Verify release artifacts, signatures, attestations, and SBOM.
 8. Run install smoke tests from a clean environment.

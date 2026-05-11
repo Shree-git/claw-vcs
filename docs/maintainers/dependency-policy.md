@@ -2,7 +2,7 @@
 
 This repository uses layered dependency checks:
 
-- `cargo audit` for RustSec advisories.
+- `cargo audit --deny warnings` for RustSec advisories, including warning-class advisories.
 - `cargo deny check` for advisories, licenses, duplicate versions, and allowed sources.
 - GitHub Dependency Review for pull requests.
 - Dependabot for security and ecosystem updates.

@@ -11,7 +11,7 @@ Define the current, implemented release gates and operator responsibilities for 
   - Fails when contract artifacts change without updates to release governance docs or `CHANGELOG.md`.
 - **Release gates (`release.yml`, tag publish path):**
   - `quality` (fmt, clippy, workspace tests).
-  - `security-audit-gate` (`cargo audit`).
+  - `security-audit-gate` (`cargo audit --deny warnings`).
   - `contract-tests-gate` (core and integration contract suites, including ops artifacts checks).
   - `artifact-smoke-gate` for Linux, macOS, and Windows release archives/installers before publish.
   - `compatibility-matrix-gate` on Linux, macOS, and Windows.
@@ -26,7 +26,7 @@ Define the current, implemented release gates and operator responsibilities for 
   - Validates container build smoke, Helm lint/template rendering, Terraform static validation, and systemd template sanity.
 - **Signed artifact flow (`release.yml` + `verify-artifacts.yml`):**
   - `release.yml` signs each release artifact with `cosign sign-blob`, producing `<artifact>.sig` and `<artifact>.pem`.
-  - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob` and fails on missing pairs.
+  - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob`, verifies GitHub artifact attestations with `gh attestation verify`, and fails on missing pairs.
 - **Release channel smoke (`release-channel-smoke.yml`):**
   - Runs on published releases or manual dispatch.
   - Validates Linux, macOS, and Windows release archives/installers where assets exist, plus checksum consistency and Homebrew installability.

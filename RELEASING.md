@@ -34,7 +34,7 @@ In the `shree-git/claw-vcs` repo, add a secret:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
-cargo audit
+cargo audit --deny warnings
 cargo deny check
 ```
 
