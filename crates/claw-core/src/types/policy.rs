@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum Visibility {
     /// No private-field encryption requirement.
     Public,
-    /// Private visibility mode reserved for future policy semantics.
+    /// Capsule private fields must be encrypted.
     Private,
     /// Capsule private fields must be encrypted.
     EncryptedMetadataRequired,
