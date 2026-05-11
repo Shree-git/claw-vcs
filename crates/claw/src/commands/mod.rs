@@ -4,8 +4,10 @@ pub mod auth;
 pub mod branch;
 pub mod change;
 pub mod checkout;
+pub mod completion;
 pub mod daemon;
 pub mod diff;
+pub mod doctor;
 pub mod git_export;
 pub mod git_import;
 mod git_notes;
@@ -24,6 +26,7 @@ pub mod show;
 pub mod snapshot;
 pub mod status;
 pub mod sync;
+pub mod version;
 
 use clap::Subcommand;
 
@@ -46,6 +49,13 @@ pub enum Commands {
     Admin(admin::AdminArgs),
     /// Initialize a new claw repository
     Init(init::InitArgs),
+    /// Generate shell completion scripts
+    #[command(alias = "completion")]
+    Completions(completion::CompletionArgs),
+    /// Run local CLI and repository diagnostics
+    Doctor(doctor::DoctorArgs),
+    /// Show claw version information
+    Version(version::VersionArgs),
     /// Manage intents
     Intent(intent::IntentArgs),
     /// Manage changes
@@ -101,6 +111,9 @@ impl Commands {
         match self {
             Commands::Admin(args) => admin::run(args, runtime),
             Commands::Init(args) => init::run(args),
+            Commands::Completions(args) => completion::run(args),
+            Commands::Doctor(args) => doctor::run(args),
+            Commands::Version(args) => version::run(args),
             Commands::Intent(args) => intent::run(args),
             Commands::Change(args) => change::run(args),
             Commands::Patch(args) => patch::run(args),

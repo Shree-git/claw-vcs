@@ -1,0 +1,25 @@
+{
+  "text_line_cases": [
+    {
+      "name": "replace_middle",
+      "base": "line1\nline2\nline3\n",
+      "target": "line1\nmodified\nline3\n",
+      "expected_ops": [
+        {
+          "address": "L1",
+          "op_type": "replace",
+          "old_data_utf8": "line2\n",
+          "new_data_utf8": "modified\n"
+        }
+      ]
+    }
+  ],
+  "json_tree_cases": [
+    {
+      "name": "independent_object_keys_commute",
+      "base": { "a": 1, "b": 2 },
+      "left": { "a": 10, "b": 2 },
+      "right": { "a": 1, "b": 20 }
+    }
+  ]
+}

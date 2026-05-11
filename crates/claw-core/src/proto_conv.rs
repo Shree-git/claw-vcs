@@ -69,6 +69,7 @@ fn change_id_from_proto(p: &pc::Ulid) -> Result<ChangeId, CoreError> {
 
 // === Object serialization ===
 
+/// Serialize a typed object into its deterministic protobuf payload.
 pub fn serialize_object(obj: &Object) -> Result<Vec<u8>, CoreError> {
     match obj {
         Object::Blob(b) => encode(&blob_to_proto(b)),
@@ -86,6 +87,7 @@ pub fn serialize_object(obj: &Object) -> Result<Vec<u8>, CoreError> {
     }
 }
 
+/// Deserialize a deterministic protobuf payload into the expected object type.
 pub fn deserialize_object(type_tag: TypeTag, data: &[u8]) -> Result<Object, CoreError> {
     match type_tag {
         TypeTag::Blob => Ok(Object::Blob(blob_from_proto(&decode::<po::Blob>(data)?)?)),
@@ -534,6 +536,18 @@ fn capsule_to_proto(c: &Capsule) -> po::Capsule {
                     duration_ms: e.duration_ms,
                     artifact_refs: e.artifact_refs.clone(),
                     summary: e.summary.clone().unwrap_or_default(),
+                    revision_id: opt_oid_to_proto(&e.revision_id),
+                    command: e.command.clone(),
+                    exit_code: e.exit_code,
+                    started_at_ms: e.started_at_ms,
+                    ended_at_ms: e.ended_at_ms,
+                    environment_digest: e.environment_digest.clone(),
+                    runner_identity: e.runner_identity.clone(),
+                    log_digest: e.log_digest.clone(),
+                    artifact_digest: e.artifact_digest.clone(),
+                    expires_at_ms: e.expires_at_ms,
+                    trust_domain: e.trust_domain.clone(),
+                    signature: e.signature.clone(),
                 })
                 .collect(),
         }),
@@ -546,6 +560,17 @@ fn capsule_to_proto(c: &Capsule) -> po::Capsule {
             .map(|s| po::CapsuleSignature {
                 signer_id: s.signer_id.clone(),
                 signature: s.signature.clone(),
+            })
+            .collect(),
+        recipients: c
+            .recipients
+            .iter()
+            .map(|r| po::CapsuleRecipient {
+                recipient_id: r.recipient_id.clone(),
+                key_id: r.key_id.clone(),
+                algorithm: r.algorithm.clone(),
+                ephemeral_public_key: r.ephemeral_public_key.clone(),
+                encrypted_content_key: r.encrypted_content_key.clone(),
             })
             .collect(),
     }
@@ -583,18 +608,32 @@ fn capsule_from_proto(p: &po::Capsule) -> Result<Capsule, CoreError> {
             evidence: pub_fields
                 .evidence
                 .iter()
-                .map(|e| Evidence {
-                    name: e.name.clone(),
-                    status: e.status.clone(),
-                    duration_ms: e.duration_ms,
-                    artifact_refs: e.artifact_refs.clone(),
-                    summary: if e.summary.is_empty() {
-                        None
-                    } else {
-                        Some(e.summary.clone())
-                    },
+                .map(|e| {
+                    Ok(Evidence {
+                        name: e.name.clone(),
+                        status: e.status.clone(),
+                        duration_ms: e.duration_ms,
+                        artifact_refs: e.artifact_refs.clone(),
+                        summary: if e.summary.is_empty() {
+                            None
+                        } else {
+                            Some(e.summary.clone())
+                        },
+                        revision_id: opt_oid_from_proto(&e.revision_id)?,
+                        command: e.command.clone(),
+                        exit_code: e.exit_code,
+                        started_at_ms: e.started_at_ms,
+                        ended_at_ms: e.ended_at_ms,
+                        environment_digest: e.environment_digest.clone(),
+                        runner_identity: e.runner_identity.clone(),
+                        log_digest: e.log_digest.clone(),
+                        artifact_digest: e.artifact_digest.clone(),
+                        expires_at_ms: e.expires_at_ms,
+                        trust_domain: e.trust_domain.clone(),
+                        signature: e.signature.clone(),
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, CoreError>>()?,
         },
         encrypted_private: if p.encrypted_private.is_empty() {
             None
@@ -615,6 +654,17 @@ fn capsule_from_proto(p: &po::Capsule) -> Result<Capsule, CoreError> {
                 signature: s.signature.clone(),
             })
             .collect(),
+        recipients: p
+            .recipients
+            .iter()
+            .map(|r| CapsuleRecipient {
+                recipient_id: r.recipient_id.clone(),
+                key_id: r.key_id.clone(),
+                algorithm: r.algorithm.clone(),
+                ephemeral_public_key: r.ephemeral_public_key.clone(),
+                encrypted_content_key: r.encrypted_content_key.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -631,15 +681,36 @@ fn policy_to_proto(p: &Policy) -> po::Policy {
         visibility: match p.visibility {
             Visibility::Public => "public".into(),
             Visibility::Private => "private".into(),
-            Visibility::Restricted => "restricted".into(),
+            Visibility::EncryptedMetadataRequired => "encrypted-metadata-required".into(),
         },
+        authorized_recipients: p.authorized_recipients.clone(),
+        evidence_policy: Some(evidence_policy_to_proto(&p.evidence_policy)),
+        revoked_recipients: p.revoked_recipients.clone(),
+    }
+}
+
+fn evidence_policy_to_proto(p: &EvidencePolicy) -> po::EvidencePolicy {
+    po::EvidencePolicy {
+        require_fresh_evidence: p.require_fresh_evidence,
+        require_revision_match: p.require_revision_match,
+        require_evidence_after_revision: p.require_evidence_after_revision,
+        require_expires_at: p.require_expires_at,
+        require_runner_identity: p.require_runner_identity,
+        require_command: p.require_command,
+        require_exit_code: p.require_exit_code,
+        require_log_or_artifact_digest: p.require_log_or_artifact_digest,
+        require_environment_digest: p.require_environment_digest,
+        max_age_ms: p.max_age_ms,
+        trusted_runner_identities: p.trusted_runner_identities.clone(),
     }
 }
 
 fn policy_from_proto(p: &po::Policy) -> Result<Policy, CoreError> {
     let visibility = match p.visibility.as_str() {
         "private" => Visibility::Private,
-        "restricted" => Visibility::Restricted,
+        "encrypted-metadata-required" | "encrypted_metadata_required" | "restricted" => {
+            Visibility::EncryptedMetadataRequired
+        }
         _ => Visibility::Public,
     };
     Ok(Policy {
@@ -654,7 +725,30 @@ fn policy_from_proto(p: &po::Policy) -> Result<Policy, CoreError> {
             Some(p.min_trust_score.clone())
         },
         visibility,
+        authorized_recipients: p.authorized_recipients.clone(),
+        revoked_recipients: p.revoked_recipients.clone(),
+        evidence_policy: p
+            .evidence_policy
+            .as_ref()
+            .map(evidence_policy_from_proto)
+            .unwrap_or_default(),
     })
+}
+
+fn evidence_policy_from_proto(p: &po::EvidencePolicy) -> EvidencePolicy {
+    EvidencePolicy {
+        require_fresh_evidence: p.require_fresh_evidence,
+        require_revision_match: p.require_revision_match,
+        require_evidence_after_revision: p.require_evidence_after_revision,
+        require_expires_at: p.require_expires_at,
+        require_runner_identity: p.require_runner_identity,
+        require_command: p.require_command,
+        require_exit_code: p.require_exit_code,
+        require_log_or_artifact_digest: p.require_log_or_artifact_digest,
+        require_environment_digest: p.require_environment_digest,
+        max_age_ms: p.max_age_ms,
+        trusted_runner_identities: p.trusted_runner_identities.clone(),
+    }
 }
 
 // === Workstream ===

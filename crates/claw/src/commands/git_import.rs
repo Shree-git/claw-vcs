@@ -30,6 +30,9 @@ pub struct GitImportArgs {
     /// Git notes ref used when --read-notes is enabled
     #[arg(long, default_value = "claw")]
     notes_ref: String,
+    /// Preview refs that would be imported without writing Claw objects or refs
+    #[arg(long)]
+    dry_run: bool,
 }
 
 fn validate_ref_path(ref_name: &str) -> anyhow::Result<()> {
@@ -61,7 +64,6 @@ pub fn run(args: GitImportArgs) -> anyhow::Result<()> {
     let store = ClawStore::open(&root)?;
     let git_dir = root.join(&args.git_dir);
 
-    let mut importer = GitImporter::new(&store);
     if args.all_branches {
         let prefix = normalize_head_prefix(&args.head_prefix);
         validate_ref_path(prefix.trim_end_matches('/'))?;
@@ -71,11 +73,24 @@ pub fn run(args: GitImportArgs) -> anyhow::Result<()> {
             anyhow::bail!("no git branches found under refs/heads/");
         }
 
+        let mut importer = if args.dry_run {
+            None
+        } else {
+            Some(GitImporter::new(&store))
+        };
         let mut imported = 0usize;
         for (git_ref, _sha) in refs {
             let short = git_ref.strip_prefix("refs/heads/").unwrap_or(&git_ref);
             let claw_ref = format!("{prefix}{short}");
             validate_ref_path(&claw_ref)?;
+            if args.dry_run {
+                println!("Dry run: would import {git_ref} -> {claw_ref}");
+                imported += 1;
+                continue;
+            }
+            let importer = importer
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("internal git importer state missing"))?;
             let revision_id = importer.import_ref(&git_dir, &git_ref, &claw_ref)?;
             println!(
                 "Imported {git_ref} -> {claw_ref} ({})",
@@ -83,24 +98,82 @@ pub fn run(args: GitImportArgs) -> anyhow::Result<()> {
             );
             imported += 1;
         }
-        println!("Imported {imported} branch(es) from git.");
+        if args.dry_run {
+            if args.read_notes {
+                println!(
+                    "Dry run: would scan refs/notes/{} for provenance notes.",
+                    args.notes_ref
+                );
+            }
+            println!("Dry run: would import {imported} branch(es) from git.");
+        } else {
+            println!("Imported {imported} branch(es) from git.");
+            if args.read_notes {
+                let imported_notes = import_notes_for_imported_commits(
+                    &store,
+                    importer
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("internal git importer state missing"))?,
+                    &git_dir,
+                    &args.notes_ref,
+                )?;
+                println!(
+                    "Imported {imported_notes} provenance note(s) from refs/notes/{}",
+                    args.notes_ref
+                );
+            }
+        }
     } else {
         validate_ref_path(&args.ref_name)?;
+        if args.dry_run {
+            let (git_ref, sha1) = resolve_git_ref_for_preview(&git_dir, &args.git_ref)?;
+            println!(
+                "Dry run: would import {} ({}) -> {}",
+                git_ref,
+                hex::encode(sha1),
+                args.ref_name
+            );
+            if args.read_notes {
+                println!(
+                    "Dry run: would scan refs/notes/{} for provenance notes.",
+                    args.notes_ref
+                );
+            }
+            println!("  Claw object writes skipped.");
+            println!("  Claw ref updates skipped.");
+            return Ok(());
+        }
+        let mut importer = GitImporter::new(&store);
         let revision_id = importer.import_ref(&git_dir, &args.git_ref, &args.ref_name)?;
         println!("Imported git ref {} -> {}", args.git_ref, args.ref_name);
         println!("  Revision: {}", revision_id.to_hex());
-    }
-
-    if args.read_notes {
-        let imported_notes =
-            import_notes_for_imported_commits(&store, &importer, &git_dir, &args.notes_ref)?;
-        println!(
-            "Imported {imported_notes} provenance note(s) from refs/notes/{}",
-            args.notes_ref
-        );
+        if args.read_notes {
+            let imported_notes =
+                import_notes_for_imported_commits(&store, &importer, &git_dir, &args.notes_ref)?;
+            println!(
+                "Imported {imported_notes} provenance note(s) from refs/notes/{}",
+                args.notes_ref
+            );
+        }
     }
 
     Ok(())
+}
+
+fn resolve_git_ref_for_preview(
+    git_dir: &std::path::Path,
+    git_ref: &str,
+) -> anyhow::Result<(String, [u8; 20])> {
+    let refs = list_git_refs(git_dir, "refs/")?;
+    let mut candidates = vec![git_ref.to_string()];
+    if !git_ref.starts_with("refs/") {
+        candidates.push(format!("refs/{git_ref}"));
+        candidates.push(format!("refs/heads/{git_ref}"));
+    }
+
+    refs.into_iter()
+        .find(|(name, _)| candidates.iter().any(|candidate| candidate == name))
+        .ok_or_else(|| anyhow::anyhow!("git ref not found: {git_ref}"))
 }
 
 fn normalize_head_prefix(prefix: &str) -> String {
@@ -134,7 +207,21 @@ fn import_notes_for_imported_commits(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_head_prefix, validate_ref_path};
+    use super::{normalize_head_prefix, validate_ref_path, GitImportArgs};
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: GitImportArgs,
+    }
+
+    #[test]
+    fn parses_dry_run_flag() {
+        let cli = TestCli::parse_from(["claw", "--dry-run"]);
+
+        assert!(cli.args.dry_run);
+    }
 
     #[test]
     fn allows_relative_ref_paths() {

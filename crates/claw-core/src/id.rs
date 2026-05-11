@@ -7,22 +7,27 @@ use crate::CoreError;
 
 const OBJECT_ID_PREFIX: &str = "clw_";
 
+/// Content-addressed identifier for a stored Claw object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ObjectId([u8; 32]);
 
 impl ObjectId {
+    /// Construct an object ID from raw 32-byte hash output.
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
 
+    /// Borrow the raw 32-byte hash output.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
+    /// Format the ID as lowercase hexadecimal.
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
     }
 
+    /// Parse a lowercase or uppercase hexadecimal object ID.
     pub fn from_hex(s: &str) -> Result<Self, CoreError> {
         let bytes = hex::decode(s).map_err(|e| CoreError::InvalidObjectId(e.to_string()))?;
         let arr: [u8; 32] = bytes
@@ -31,6 +36,7 @@ impl ObjectId {
         Ok(Self(arr))
     }
 
+    /// Parse the human-facing `clw_` base32 display form.
     pub fn from_display(s: &str) -> Result<Self, CoreError> {
         let encoded = s.strip_prefix(OBJECT_ID_PREFIX).ok_or_else(|| {
             CoreError::InvalidObjectId(format!("missing prefix '{OBJECT_ID_PREFIX}'"))
@@ -69,22 +75,27 @@ impl fmt::Debug for ObjectId {
     }
 }
 
+/// Stable ULID identifier for an intent object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IntentId(Ulid);
 
 impl IntentId {
+    /// Generate a new time-sortable intent ID.
     pub fn new() -> Self {
         Self(Ulid::new())
     }
 
+    /// Construct an intent ID from raw ULID bytes.
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(Ulid::from_bytes(bytes))
     }
 
+    /// Return the raw 16-byte ULID representation.
     pub fn as_bytes(&self) -> [u8; 16] {
         self.0.to_bytes()
     }
 
+    /// Parse an intent ID from canonical ULID text.
     pub fn from_string(s: &str) -> Result<Self, CoreError> {
         let ulid = Ulid::from_string(s).map_err(|e| CoreError::InvalidObjectId(e.to_string()))?;
         Ok(Self(ulid))
@@ -109,22 +120,27 @@ impl fmt::Debug for IntentId {
     }
 }
 
+/// Stable ULID identifier for a change object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChangeId(Ulid);
 
 impl ChangeId {
+    /// Generate a new time-sortable change ID.
     pub fn new() -> Self {
         Self(Ulid::new())
     }
 
+    /// Construct a change ID from raw ULID bytes.
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(Ulid::from_bytes(bytes))
     }
 
+    /// Return the raw 16-byte ULID representation.
     pub fn as_bytes(&self) -> [u8; 16] {
         self.0.to_bytes()
     }
 
+    /// Parse a change ID from canonical ULID text.
     pub fn from_string(s: &str) -> Result<Self, CoreError> {
         let ulid = Ulid::from_string(s).map_err(|e| CoreError::InvalidObjectId(e.to_string()))?;
         Ok(Self(ulid))
@@ -149,18 +165,22 @@ impl fmt::Debug for ChangeId {
     }
 }
 
+/// Stable ULID identifier for a conflict object.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ConflictId(Ulid);
 
 impl ConflictId {
+    /// Generate a new time-sortable conflict ID.
     pub fn new() -> Self {
         Self(Ulid::new())
     }
 
+    /// Construct a conflict ID from raw ULID bytes.
     pub fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(Ulid::from_bytes(bytes))
     }
 
+    /// Return the raw 16-byte ULID representation.
     pub fn as_bytes(&self) -> [u8; 16] {
         self.0.to_bytes()
     }

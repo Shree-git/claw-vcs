@@ -48,18 +48,31 @@ jobs:
   quality:
     runs-on: "ubuntu-22.04"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Rustfmt
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Production panic audit
+        run: cargo clippy --workspace --lib --bins --locked -- -D clippy::panic -D clippy::todo -D clippy::unimplemented
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+      - name: Example workflow smoke scripts
+        run: |
+          cargo build -p claw --locked
+          CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh
+          CLAW_BIN=target/debug/claw examples/backup-restore/scripts/demo.sh
+      - name: Build rustdoc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+      - name: Compile fuzz targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+      - name: Smoke fuzz target
+        run: cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
 
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
@@ -74,7 +87,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
@@ -84,7 +97,7 @@ jobs:
         shell: bash
         run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.30.3/cargo-dist-installer.sh | sh"
       - name: Cache dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
@@ -94,13 +107,20 @@ jobs:
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
+        env:
+          DIST_HOST_RELEASE: ${{ !github.event.pull_request }}
+          DIST_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          if [[ "$DIST_HOST_RELEASE" == "true" ]]; then
+            dist host --steps=create --tag="$DIST_RELEASE_TAG" --output-format=json > plan-dist-manifest.json
+          else
+            dist plan --output-format=json > plan-dist-manifest.json
+          fi
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
@@ -135,7 +155,7 @@ jobs:
       - name: enable windows longpaths
         run: |
           git config --global core.longpaths true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
@@ -150,7 +170,7 @@ jobs:
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -177,7 +197,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-build-local-${{ join(matrix.targets, '_') }}
           path: |
@@ -195,19 +215,19 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -225,7 +245,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-build-global
           path: |
@@ -239,16 +259,24 @@ jobs:
       - quality
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
         run: cargo audit
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo-deny
+        run: cargo deny check
+      - name: Install cargo-vet
+        run: cargo install cargo-vet --locked
+      - name: Run cargo-vet
+        run: cargo vet
 
   contract-tests-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
@@ -259,14 +287,14 @@ jobs:
       - build-global-artifacts
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Fetch ops artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -290,20 +318,22 @@ jobs:
         os:
           - ubuntu-22.04
           - macos-latest
+          - windows-latest
     name: artifact-smoke-gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Fetch built artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
       - name: Smoke release archives
+        if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail
@@ -319,10 +349,6 @@ jobs:
                 *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
               esac
               archive="$(find target/distrib -maxdepth 1 -type f -name "$pattern" | head -n 1)"
-              ;;
-            *)
-              echo "unsupported matrix OS: ${{ matrix.os }}" >&2
-              exit 1
               ;;
           esac
 
@@ -352,12 +378,45 @@ jobs:
                 fi
                 sleep 1
               done
-              grep -q '"code":"OK"' /tmp/claw-artifact-health.json
+              grep -q '"code":"ok"' /tmp/claw-artifact-health.json
               kill "$daemon_pid"
               wait "$daemon_pid" || true
               trap - EXIT
             )
           fi
+
+      - name: Smoke Windows release archive
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zip = Get-ChildItem -Path target/distrib -Filter "claw-x86_64-pc-windows-msvc.zip" -File | Select-Object -First 1
+          if (-not $zip) {
+            throw "missing Windows release zip"
+          }
+
+          $msi = Get-ChildItem -Path target/distrib -Filter "claw-x86_64-pc-windows-msvc.msi" -File | Select-Object -First 1
+          if (-not $msi) {
+            throw "missing Windows MSI"
+          }
+
+          New-Item -ItemType Directory -Force -Path smoke-archive | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath smoke-archive -Force
+          $binary = Get-ChildItem -Path smoke-archive -Filter "claw.exe" -Recurse -File | Select-Object -First 1
+          if (-not $binary) {
+            throw "missing claw.exe in Windows release zip"
+          }
+
+          & $binary.FullName --version
+          New-Item -ItemType Directory -Force -Path smoke-archive\repo | Out-Null
+          Push-Location smoke-archive\repo
+          try {
+            & $binary.FullName init
+            & $binary.FullName status
+          } finally {
+            Pop-Location
+          }
 
   compatibility-matrix-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' }}
@@ -370,24 +429,31 @@ jobs:
         os:
           - ubuntu-22.04
           - macos-latest
+          - windows-latest
     name: compatibility-matrix-gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets --locked
       - name: Cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --locked --exclude claw-integration-tests
+      - name: Core CLI smoke suites
+        run: |
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_error_contract_tests --locked
   # Determines if we should publish/announce
   host:
     permissions:
       contents: write
       id-token: write
+      attestations: write
     needs:
       - quality
       - plan
@@ -405,19 +471,19 @@ jobs:
     outputs:
       val: ${{ steps.host.outputs.manifest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Fetch artifacts from scratch-storage
       - name: Fetch artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -430,14 +496,14 @@ jobs:
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           # Overwrite the previous copy
           name: artifacts-dist-manifest
           path: dist-manifest.json
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: artifacts
@@ -446,8 +512,21 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Export release SBOM
+        env:
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GH_REPO}/dependency-graph/sbom" \
+            --jq '.sbom' \
+            > "artifacts/claw-${RELEASE_TAG}.sbom.spdx.json"
+      - name: Attest release artifact provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: artifacts/*
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
       - name: Sign release artifacts
         shell: bash
         run: |
@@ -502,14 +581,14 @@ jobs:
       GITHUB_EMAIL: "admin+bot@axo.dev"
     if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          persist-credentials: true
+          persist-credentials: false
           repository: "shree-git/homebrew-tap"
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       # So we have access to the formula
       - name: Fetch homebrew formulae
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: Formula/
@@ -517,6 +596,8 @@ jobs:
       # This is extra complex because you can make your Formula name not match your app name
       # so we need to find releases with a *.rb file, and publish with that filename.
       - name: Commit formula files
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -541,7 +622,8 @@ jobs:
 
             git commit -m "${name} ${version}"
           done
-          git push
+          auth_header="$(printf 'x-access-token:%s' "$HOMEBREW_TAP_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push
 
   announce:
     needs:
@@ -556,7 +638,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
           submodules: recursive

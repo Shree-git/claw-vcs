@@ -1,6 +1,11 @@
 mod support;
 
+use claw_crypto::recipient::recipient_public_key;
 use support::CliTestEnv;
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 #[test]
 fn core_cli_workflow_covers_init_snapshot_and_ship() {
@@ -85,6 +90,14 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     );
     assert!(entries_before_ship[0].get("capsule_id").is_none());
 
+    let recipient_secret = [9u8; 32];
+    let recipient_public = recipient_public_key(&recipient_secret);
+    env.write_file(
+        &repo.join("capsule-private.json"),
+        "{\"ticket\":\"SEC-1\",\"note\":\"reviewed\"}\n",
+    );
+    env.write_file(&repo.join("security.x25519"), &to_hex(&recipient_secret));
+
     let shipped = env.run_ok(
         &repo,
         [
@@ -95,6 +108,20 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
             "test=pass:42",
             "--evidence",
             "lint=pass",
+            "--evidence-command",
+            "cargo test --workspace",
+            "--runner",
+            "github-actions/release",
+            "--environment-digest",
+            "sha256:toolchain",
+            "--log-digest",
+            "sha256:log",
+            "--evidence-expires-in-ms",
+            "86400000",
+            "--private-file",
+            "capsule-private.json",
+            "--recipient-key",
+            &format!("security:security-key:{}", to_hex(&recipient_public)),
         ],
     );
     let capsule_id = shipped.value_after("Capsule: ");
@@ -104,6 +131,30 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     assert!(show_capsule.stdout.contains("agent_id"));
     assert!(show_capsule.stdout.contains("test (pass)"));
     assert!(show_capsule.stdout.contains("lint (pass)"));
+    assert!(show_capsule.stdout.contains("private"));
+    assert!(show_capsule.stdout.contains("security (security-key)"));
+
+    let capsule_json = env.run_ok(&repo, ["show", "--json", capsule_id.as_str()]);
+    let capsule_value = capsule_json.stdout_json();
+    let evidence = &capsule_value["object"]["value"]["Capsule"]["public_fields"]["evidence"][0];
+    assert_eq!(evidence["command"], "cargo test --workspace");
+    assert_eq!(evidence["runner_identity"], "github-actions/release");
+    assert_eq!(evidence["environment_digest"], "sha256:toolchain");
+    assert_eq!(evidence["log_digest"], "sha256:log");
+
+    let decrypted = env.run_ok(
+        &repo,
+        [
+            "show",
+            capsule_id.as_str(),
+            "--decrypt-private",
+            "--recipient",
+            "security",
+            "--recipient-secret-key",
+            "security.x25519",
+        ],
+    );
+    assert!(decrypted.stdout.contains("\"ticket\":\"SEC-1\""));
 
     let intent_show = env.run_ok(&repo, ["intent", "show", intent_id.as_str()]);
     assert!(intent_show.stdout.contains("Status: Done"));

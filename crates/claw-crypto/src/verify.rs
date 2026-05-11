@@ -2,6 +2,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
 use crate::CryptoError;
 
+/// Verifies raw Ed25519 signature bytes for the provided message.
 pub fn verify(
     public_key_bytes: &[u8; 32],
     data: &[u8],

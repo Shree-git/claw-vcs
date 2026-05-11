@@ -11,10 +11,10 @@ impl IgnoreRules {
         let mut builder = GlobSetBuilder::new();
 
         // Always-ignore
-        let _ = builder.add(Glob::new(".claw/**").unwrap());
-        let _ = builder.add(Glob::new(".claw").unwrap());
-        let _ = builder.add(Glob::new(".git/**").unwrap());
-        let _ = builder.add(Glob::new(".git").unwrap());
+        add_glob(&mut builder, ".claw/**");
+        add_glob(&mut builder, ".claw");
+        add_glob(&mut builder, ".git/**");
+        add_glob(&mut builder, ".git");
 
         // Load .clawignore
         let ignore_path = repo_root.join(".clawignore");
@@ -31,26 +31,26 @@ impl IgnoreRules {
                     } else {
                         line.to_string()
                     };
-                    if let Ok(glob) = Glob::new(&pattern) {
-                        let _ = builder.add(glob);
-                    }
+                    add_glob(&mut builder, &pattern);
                     // Also match the directory itself
                     if line.ends_with('/') {
-                        if let Ok(glob) = Glob::new(line.trim_end_matches('/')) {
-                            let _ = builder.add(glob);
-                        }
+                        add_glob(&mut builder, line.trim_end_matches('/'));
                     }
                 }
             }
         }
 
-        let globs = builder
-            .build()
-            .unwrap_or_else(|_| GlobSetBuilder::new().build().unwrap());
+        let globs = builder.build().unwrap_or_else(|_| GlobSet::empty());
         Self { globs }
     }
 
     pub fn is_ignored(&self, rel_path: &str, _is_dir: bool) -> bool {
         self.globs.is_match(rel_path)
+    }
+}
+
+fn add_glob(builder: &mut GlobSetBuilder, pattern: &str) {
+    if let Ok(glob) = Glob::new(pattern) {
+        let _ = builder.add(glob);
     }
 }

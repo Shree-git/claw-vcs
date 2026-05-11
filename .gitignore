@@ -1,20 +1,39 @@
+# Rust/build
 /target
-*.db
-*.db-journal
-*.sqlite
-*.sqlite3
+
+# Claw local state
 .claw/
-firebase-debug.log
-video/
-.DS_Store
+
+# Secrets and keys
 .env
 .env.*
-*.log
 *.pem
 *.key
 *.crt
 *.p12
 *.pfx
+
+# Databases and local state
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
 *.tfvars
+
+# Logs and debug
+*.log
+firebase-debug.log
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Media / generated artifacts
+video/
+coverage/
+fuzz/artifacts/
+fuzz/target/
 *.cdx.json
 *.cdx.xml

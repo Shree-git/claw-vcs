@@ -87,7 +87,7 @@ jobs:
               fi
               sleep 1
             done
-            grep -q '"code":"OK"' /tmp/claw-release-health.json
+            grep -q '"code":"ok"' /tmp/claw-release-health.json
             kill "$daemon_pid"
             wait "$daemon_pid" || true
             trap - EXIT
@@ -158,3 +158,109 @@ jobs:
           brew tap shree-git/homebrew-tap
           brew install claw
           claw --version
+
+  windows-release-smoke:
+    needs: release-metadata
+    runs-on: windows-2022
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+    steps:
+      - name: Download Windows release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          gh release download "$env:RELEASE_TAG" `
+            -p 'claw-installer.ps1' `
+            -p 'claw-x86_64-pc-windows-msvc.zip' `
+            -p 'claw-x86_64-pc-windows-msvc.msi' `
+            -p 'sha256.sum' `
+            -D release-assets
+
+      - name: Verify release metadata consistency
+        shell: pwsh
+        run: |
+          $sum = Get-Content release-assets\sha256.sum
+          foreach ($asset in @(
+            "claw-installer.ps1",
+            "claw-x86_64-pc-windows-msvc.zip",
+            "claw-x86_64-pc-windows-msvc.msi"
+          )) {
+            $line = ($sum | Select-String -SimpleMatch $asset | Select-Object -First 1).Line
+            if (-not $line) {
+              throw "missing checksum for $asset"
+            }
+            $expected = $line.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)[0].ToLowerInvariant()
+            $actual = (Get-FileHash "release-assets\$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) {
+              throw "checksum mismatch for $asset"
+            }
+          }
+
+      - name: Zip archive smoke
+        shell: pwsh
+        run: |
+          Expand-Archive release-assets\claw-x86_64-pc-windows-msvc.zip -DestinationPath zip-smoke
+          $binary = Get-ChildItem zip-smoke -Recurse -Filter claw.exe | Select-Object -First 1
+          if (-not $binary) {
+            throw "claw.exe not found in zip archive"
+          }
+          & $binary.FullName --version
+          New-Item -ItemType Directory -Force zip-smoke\repo | Out-Null
+          Push-Location zip-smoke\repo
+          & $binary.FullName init
+          & $binary.FullName status
+          Pop-Location
+
+      - name: PowerShell installer smoke
+        shell: pwsh
+        run: |
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP "powershell-installer-home"
+          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          powershell -ExecutionPolicy Bypass -File .\release-assets\claw-installer.ps1
+          $candidates = @(
+            (Join-Path $env:USERPROFILE ".cargo\bin\claw.exe"),
+            (Join-Path $env:USERPROFILE ".local\bin\claw.exe")
+          )
+          $binary = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $binary) {
+            throw "installed claw.exe not found after PowerShell installer"
+          }
+          & $binary --version
+
+      - name: MSI smoke
+        shell: pwsh
+        run: |
+          $msi = Resolve-Path release-assets\claw-x86_64-pc-windows-msvc.msi
+          $process = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/norestart") -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "msiexec failed with exit code $($process.ExitCode)"
+          }
+          $binary = "C:\Program Files\claw\bin\claw.exe"
+          if (-not (Test-Path $binary)) {
+            throw "MSI-installed claw.exe not found at $binary"
+          }
+          & $binary --version
+
+  cargo-install-git-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cargo install from Git smoke
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/claw-cargo-install"
+          cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked --root "$root"
+          "$root/bin/claw" --version
+          mkdir -p "$RUNNER_TEMP/claw-cargo-install-repo"
+          (
+            cd "$RUNNER_TEMP/claw-cargo-install-repo"
+            "$root/bin/claw" init
+            "$root/bin/claw" status
+          )

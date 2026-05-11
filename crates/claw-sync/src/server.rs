@@ -1,5 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 use tonic::{Request, Response, Status};
@@ -9,14 +10,26 @@ use claw_core::id::ObjectId;
 use claw_store::ClawStore;
 
 use crate::ancestry::is_ancestor;
+use crate::event_service::EventBus;
 use crate::negotiation::{find_reachable_objects, find_reachable_objects_with_depth};
 use crate::partial_clone::{CapsuleVisibilityFilter, PartialCloneFilter};
 use crate::proto::sync::sync_service_server::SyncService;
 use crate::proto::sync::*;
+use crate::protocol::negotiate_capabilities;
+use crate::security::{
+    AllowAllAuthorizer, AuditEvent, AuditSink, AuthorizationAction, AuthorizationDecision,
+    AuthorizationRequest, AuthorizationSubject, Authorizer, RateLimiter, ReplayProtectionConfig,
+    ReplayProtector, TracingAuditSink, PRINCIPAL_METADATA_KEY, REPLAY_NONCE_METADATA_KEY,
+    REQUEST_ID_METADATA_KEY, TOKEN_ID_METADATA_KEY,
+};
+
+static SYNC_REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub struct SyncServer {
     store: Arc<RwLock<ClawStore>>,
     limits: Arc<ServerLimits>,
+    event_bus: Option<EventBus>,
+    security: Arc<SyncSecurity>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +38,9 @@ pub struct SyncServerOptions {
     pub queue_capacity: usize,
     pub backpressure: bool,
     pub io_timeout: Duration,
+    pub max_push_chunk_bytes: Option<usize>,
+    pub max_push_request_bytes: Option<usize>,
+    pub rate_limit_per_minute: Option<u32>,
 }
 
 impl Default for SyncServerOptions {
@@ -34,6 +50,9 @@ impl Default for SyncServerOptions {
             queue_capacity: 1_024,
             backpressure: true,
             io_timeout: Duration::from_secs(10),
+            max_push_chunk_bytes: Some(8 * 1024 * 1024),
+            max_push_request_bytes: Some(128 * 1024 * 1024),
+            rate_limit_per_minute: None,
         }
     }
 }
@@ -41,7 +60,26 @@ impl Default for SyncServerOptions {
 struct ServerLimits {
     queue: Arc<Semaphore>,
     workers: Arc<Semaphore>,
+    rate_limiter: Option<Mutex<RateLimiter>>,
     options: SyncServerOptions,
+}
+
+struct SyncSecurity {
+    authorizer: Arc<dyn Authorizer>,
+    audit_sink: Arc<dyn AuditSink>,
+    replay_protector: Option<Arc<Mutex<ReplayProtector>>>,
+    require_replay_nonce: bool,
+}
+
+impl Default for SyncSecurity {
+    fn default() -> Self {
+        Self {
+            authorizer: Arc::new(AllowAllAuthorizer),
+            audit_sink: Arc::new(TracingAuditSink),
+            replay_protector: None,
+            require_replay_nonce: false,
+        }
+    }
 }
 
 impl SyncServer {
@@ -61,23 +99,80 @@ impl SyncServer {
         store: Arc<RwLock<ClawStore>>,
         options: SyncServerOptions,
     ) -> Self {
+        Self::from_shared_with_options_and_events(store, options, None)
+    }
+
+    pub fn from_shared_with_options_and_events(
+        store: Arc<RwLock<ClawStore>>,
+        options: SyncServerOptions,
+        event_bus: Option<EventBus>,
+    ) -> Self {
         let worker_pool_size = options.worker_pool_size.max(1);
         let total_capacity = worker_pool_size
             .saturating_add(options.queue_capacity)
             .max(1);
+        let rate_limiter = options
+            .rate_limit_per_minute
+            .map(|limit| Mutex::new(RateLimiter::per_minute(limit, Instant::now())));
 
         Self {
             store,
             limits: Arc::new(ServerLimits {
                 queue: Arc::new(Semaphore::new(total_capacity)),
                 workers: Arc::new(Semaphore::new(worker_pool_size)),
+                rate_limiter,
                 options,
             }),
+            event_bus,
+            security: Arc::new(SyncSecurity::default()),
         }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = Arc::new(SyncSecurity {
+            authorizer,
+            audit_sink: self.security.audit_sink.clone(),
+            replay_protector: self.security.replay_protector.clone(),
+            require_replay_nonce: self.security.require_replay_nonce,
+        });
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = Arc::new(SyncSecurity {
+            authorizer: self.security.authorizer.clone(),
+            audit_sink,
+            replay_protector: self.security.replay_protector.clone(),
+            require_replay_nonce: self.security.require_replay_nonce,
+        });
+        self
+    }
+
+    pub fn with_replay_protection(
+        mut self,
+        config: ReplayProtectionConfig,
+        require_replay_nonce: bool,
+    ) -> Self {
+        self.security = Arc::new(SyncSecurity {
+            authorizer: self.security.authorizer.clone(),
+            audit_sink: self.security.audit_sink.clone(),
+            replay_protector: Some(Arc::new(Mutex::new(ReplayProtector::new(config)))),
+            require_replay_nonce,
+        });
+        self
     }
 
     #[allow(clippy::result_large_err)]
     fn acquire_queue_permit(&self) -> Result<Option<OwnedSemaphorePermit>, Status> {
+        if let Some(limiter) = &self.limits.rate_limiter {
+            let mut limiter = limiter
+                .lock()
+                .map_err(|_| Status::internal("rate limiter lock poisoned"))?;
+            if !limiter.try_acquire(Instant::now()) {
+                return Err(Status::resource_exhausted("server rate limit exceeded"));
+            }
+        }
+
         if !self.limits.options.backpressure {
             return Ok(None);
         }
@@ -109,6 +204,162 @@ impl SyncServer {
         tokio::time::timeout(timeout, operation_future)
             .await
             .map_err(|_| Status::deadline_exceeded(format!("{operation} timed out")))?
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn authorize_request<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> Result<(), Status> {
+        let subject = subject_from_request(request);
+        let request_id = request_id_from_request(request);
+        let auth_request = AuthorizationRequest {
+            subject: subject.clone(),
+            action: action.clone(),
+            resource: resource.clone(),
+        };
+
+        match self.security.authorizer.authorize(&auth_request) {
+            AuthorizationDecision::Allow => {
+                self.security.audit_sink.record(AuditEvent::allowed(
+                    now_ms(),
+                    request_id,
+                    subject,
+                    action,
+                    resource,
+                ));
+                Ok(())
+            }
+            AuthorizationDecision::Deny { reason } => {
+                self.security.audit_sink.record(AuditEvent::denied(
+                    now_ms(),
+                    request_id,
+                    subject,
+                    action,
+                    resource,
+                    reason.clone(),
+                ));
+                Err(Status::permission_denied(reason))
+            }
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn enforce_replay_nonce<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> Result<(), Status> {
+        let Some(protector) = &self.security.replay_protector else {
+            return Ok(());
+        };
+
+        let nonce = metadata_value(request, REPLAY_NONCE_METADATA_KEY);
+        if self.security.require_replay_nonce && nonce.is_none() {
+            let reason = "missing replay nonce".to_string();
+            self.security.audit_sink.record(AuditEvent::denied(
+                now_ms(),
+                request_id_from_request(request),
+                subject_from_request(request),
+                action,
+                resource,
+                reason.clone(),
+            ));
+            return Err(Status::permission_denied(reason));
+        }
+
+        let Some(nonce) = nonce else {
+            return Ok(());
+        };
+
+        let mut protector = protector
+            .lock()
+            .map_err(|_| Status::internal("replay protector lock poisoned"))?;
+        protector.accept(&nonce, Instant::now()).map_err(|err| {
+            self.security.audit_sink.record(AuditEvent::denied(
+                now_ms(),
+                request_id_from_request(request),
+                subject_from_request(request),
+                action,
+                resource,
+                err.to_string(),
+            ));
+            match err {
+                crate::security::ReplayError::EmptyNonce => {
+                    Status::invalid_argument("replay nonce cannot be empty")
+                }
+                crate::security::ReplayError::Replay => {
+                    Status::already_exists("replayed request nonce")
+                }
+            }
+        })
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn new_sync_request_id() -> String {
+    let seq = SYNC_REQUEST_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("sync-{:x}-{seq:x}", now_ms())
+}
+
+fn metadata_value<T>(request: &Request<T>, key: &str) -> Option<String> {
+    request
+        .metadata()
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn request_id_from_request<T>(request: &Request<T>) -> String {
+    metadata_value(request, REQUEST_ID_METADATA_KEY).unwrap_or_else(new_sync_request_id)
+}
+
+fn subject_from_request<T>(request: &Request<T>) -> AuthorizationSubject {
+    AuthorizationSubject {
+        principal: metadata_value(request, PRINCIPAL_METADATA_KEY),
+        token_id: metadata_value(request, TOKEN_ID_METADATA_KEY),
+        peer_addr: request.remote_addr().map(|addr| addr.to_string()),
+    }
+}
+
+fn refs_resource(prefix: &str) -> String {
+    if prefix.is_empty() {
+        "refs:*".to_string()
+    } else {
+        format!("refs:{prefix}")
+    }
+}
+
+fn object_fetch_resource(req: &FetchObjectsRequest) -> String {
+    format!(
+        "objects:fetch want={} have={}",
+        req.want.len(),
+        req.have.len()
+    )
+}
+
+fn ref_update_resource(req: &UpdateRefsRequest) -> String {
+    let mut names = req
+        .updates
+        .iter()
+        .map(|update| update.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    if names.is_empty() {
+        "refs:update empty".to_string()
+    } else {
+        format!("refs:update {}", names.join(","))
     }
 }
 
@@ -151,17 +402,48 @@ fn decode_object_id(msg: &crate::proto::common::ObjectId) -> Result<ObjectId, St
     Ok(ObjectId::from_bytes(id_bytes))
 }
 
+#[allow(clippy::result_large_err)]
+fn enforce_push_chunk_limits(
+    options: &SyncServerOptions,
+    chunk_len: usize,
+    received_bytes: &mut usize,
+) -> Result<(), Status> {
+    if options
+        .max_push_chunk_bytes
+        .is_some_and(|limit| chunk_len > limit)
+    {
+        return Err(Status::resource_exhausted(
+            "push object chunk exceeds configured byte limit",
+        ));
+    }
+
+    *received_bytes = received_bytes
+        .checked_add(chunk_len)
+        .ok_or_else(|| Status::resource_exhausted("push object request too large"))?;
+    if options
+        .max_push_request_bytes
+        .is_some_and(|limit| *received_bytes > limit)
+    {
+        return Err(Status::resource_exhausted(
+            "push object request exceeds configured byte limit",
+        ));
+    }
+
+    Ok(())
+}
+
 #[tonic::async_trait]
 impl SyncService for SyncServer {
     async fn hello(
         &self,
         request: Request<HelloRequest>,
     ) -> Result<Response<HelloResponse>, Status> {
+        self.authorize_request(&request, AuthorizationAction::Hello, None)?;
         self.run_bounded("hello", async move {
-            let _req = request.into_inner();
+            let req = request.into_inner();
             Ok(Response::new(HelloResponse {
                 server_version: "0.1.0".to_string(),
-                capabilities: vec!["partial-clone".to_string()],
+                capabilities: negotiate_capabilities(&req.capabilities),
             }))
         })
         .await
@@ -171,6 +453,11 @@ impl SyncService for SyncServer {
         &self,
         request: Request<AdvertiseRefsRequest>,
     ) -> Result<Response<AdvertiseRefsResponse>, Status> {
+        self.authorize_request(
+            &request,
+            AuthorizationAction::AdvertiseRefs,
+            Some(refs_resource(&request.get_ref().prefix)),
+        )?;
         self.run_bounded("advertise_refs", async move {
             let req = request.into_inner();
             let store = self.store.read().await;
@@ -199,6 +486,11 @@ impl SyncService for SyncServer {
         &self,
         request: Request<FetchObjectsRequest>,
     ) -> Result<Response<Self::FetchObjectsStream>, Status> {
+        self.authorize_request(
+            &request,
+            AuthorizationAction::FetchObjects,
+            Some(object_fetch_resource(request.get_ref())),
+        )?;
         let req = request.into_inner();
         let store = self.store.clone();
         let filter = req.filter.as_ref().map(convert_filter);
@@ -336,15 +628,25 @@ impl SyncService for SyncServer {
         &self,
         request: Request<tonic::Streaming<ObjectChunk>>,
     ) -> Result<Response<PushObjectsResponse>, Status> {
+        let resource = Some("objects:push".to_string());
+        self.enforce_replay_nonce(&request, AuthorizationAction::PushObjects, resource.clone())?;
+        self.authorize_request(&request, AuthorizationAction::PushObjects, resource)?;
         self.run_bounded("push_objects", async move {
             let mut stream = request.into_inner();
             let store = self.store.write().await;
             let mut accepted = Vec::new();
+            let mut received_bytes = 0usize;
 
             while let Some(chunk) = stream.message().await? {
                 if chunk.is_last {
                     break;
                 }
+
+                enforce_push_chunk_limits(
+                    &self.limits.options,
+                    chunk.data.len(),
+                    &mut received_bytes,
+                )?;
 
                 if let Some(_id_msg) = &chunk.id {
                     let (type_tag, payload) = claw_core::cof::cof_decode(&chunk.data)
@@ -373,9 +675,14 @@ impl SyncService for SyncServer {
         &self,
         request: Request<UpdateRefsRequest>,
     ) -> Result<Response<UpdateRefsResponse>, Status> {
+        let resource = Some(ref_update_resource(request.get_ref()));
+        self.enforce_replay_nonce(&request, AuthorizationAction::UpdateRefs, resource.clone())?;
+        self.authorize_request(&request, AuthorizationAction::UpdateRefs, resource)?;
+        let event_bus = self.event_bus.clone();
         self.run_bounded("update_refs", async move {
             let req = request.into_inner();
             let store = self.store.write().await;
+            let mut planned_updates = Vec::with_capacity(req.updates.len());
 
             // Two-pass: first verify all CAS conditions, then apply
             // Pass 1: verify
@@ -386,6 +693,11 @@ impl SyncService for SyncServer {
 
                 let expected_old = update
                     .old_target
+                    .as_ref()
+                    .map(decode_object_id)
+                    .transpose()?;
+                let new_id = update
+                    .new_target
                     .as_ref()
                     .map(decode_object_id)
                     .transpose()?;
@@ -408,8 +720,7 @@ impl SyncService for SyncServer {
                 }
 
                 // FF check: verify new is descendant of old (unless force)
-                if let Some(new_target) = &update.new_target {
-                    let new_id = decode_object_id(new_target)?;
+                if let Some(new_id) = new_id {
                     if let Some(ref old_id) = current {
                         if !update.force && !is_ancestor(&store, old_id, &new_id) {
                             return Ok(Response::new(UpdateRefsResponse {
@@ -422,15 +733,35 @@ impl SyncService for SyncServer {
                         }
                     }
                 }
+
+                planned_updates.push((update.name.clone(), current, new_id));
             }
 
             // Pass 2: apply all updates
-            for update in &req.updates {
-                if let Some(new_target) = &update.new_target {
-                    let id = decode_object_id(new_target)?;
+            for (name, _old_target, new_target) in &planned_updates {
+                if let Some(id) = new_target {
                     store
-                        .set_ref(&update.name, &id)
+                        .set_ref(name, id)
                         .map_err(|e| Status::internal(e.to_string()))?;
+                }
+            }
+
+            if let Some(bus) = &event_bus {
+                for (name, old_target, new_target) in &planned_updates {
+                    if let Some(id) = new_target {
+                        let event_type = if old_target.is_some() {
+                            "ref_updated"
+                        } else {
+                            "ref_created"
+                        };
+                        bus.publish_ref_event(
+                            event_type,
+                            name,
+                            Some(crate::proto::common::ObjectId {
+                                hash: id.as_bytes().to_vec(),
+                            }),
+                        );
+                    }
                 }
             }
 
@@ -446,9 +777,17 @@ impl SyncService for SyncServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_service::EventBus;
+    use crate::security::{
+        AuditOutcome, AuditSink, AuthorizationRole, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY,
+        REPLAY_NONCE_METADATA_KEY,
+    };
+    use claw_core::hash::content_hash;
     use claw_core::id::{ChangeId, IntentId};
     use claw_core::object::Object;
+    use claw_core::object::TypeTag;
     use claw_core::types::{Blob, Capsule, CapsulePublic, Change, ChangeStatus, Patch, Revision};
+    use std::sync::Mutex as StdMutex;
     use std::time::Duration;
     use tokio_stream::StreamExt;
 
@@ -468,6 +807,17 @@ mod tests {
             ids.push(ObjectId::from_bytes(bytes));
         }
         ids
+    }
+
+    #[derive(Clone, Default)]
+    struct TestAuditSink {
+        events: Arc<StdMutex<Vec<AuditEvent>>>,
+    }
+
+    impl AuditSink for TestAuditSink {
+        fn record(&self, event: AuditEvent) {
+            self.events.lock().unwrap().push(event);
+        }
     }
 
     #[test]
@@ -724,6 +1074,7 @@ mod tests {
                 encrypted_private: None,
                 encryption: String::new(),
                 key_id: None,
+                recipients: vec![],
                 signatures: vec![],
             }))
             .unwrap();
@@ -741,6 +1092,7 @@ mod tests {
                 encrypted_private: Some(vec![1, 2, 3]),
                 encryption: "xchacha20poly1305".to_string(),
                 key_id: None,
+                recipients: vec![],
                 signatures: vec![],
             }))
             .unwrap();
@@ -957,6 +1309,7 @@ mod tests {
                 queue_capacity: 0,
                 backpressure: true,
                 io_timeout: Duration::from_millis(1_000),
+                ..SyncServerOptions::default()
             },
         );
 
@@ -1000,6 +1353,7 @@ mod tests {
                 queue_capacity: 1,
                 backpressure: true,
                 io_timeout: Duration::from_millis(50),
+                ..SyncServerOptions::default()
             },
         );
 
@@ -1028,5 +1382,221 @@ mod tests {
             .expect_err("request should time out while waiting for worker");
 
         assert_eq!(timed_out.code(), tonic::Code::DeadlineExceeded);
+    }
+
+    #[tokio::test]
+    async fn update_refs_publishes_ref_events_to_bus() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let shared = Arc::new(RwLock::new(store));
+        let event_bus = EventBus::new(8);
+        let mut events = event_bus.subscribe();
+        let target = content_hash(TypeTag::Blob, b"target");
+
+        let server = SyncServer::from_shared_with_options_and_events(
+            shared,
+            SyncServerOptions::default(),
+            Some(event_bus),
+        );
+
+        let response = server
+            .update_refs(Request::new(UpdateRefsRequest {
+                updates: vec![RefUpdate {
+                    name: "heads/main".to_string(),
+                    old_target: None,
+                    new_target: Some(crate::proto::common::ObjectId {
+                        hash: target.as_bytes().to_vec(),
+                    }),
+                    force: false,
+                }],
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(response.success);
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.event_type, "ref_created");
+        assert_eq!(event.ref_name, "heads/main");
+        assert_eq!(event.object_id.unwrap().hash, target.as_bytes().to_vec());
+    }
+
+    #[tokio::test]
+    async fn role_authorizer_denies_ref_update_and_records_audit_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let audit = TestAuditSink::default();
+        let target = content_hash(TypeTag::Blob, b"target");
+
+        let server = SyncServer::new(store)
+            .with_authorizer(Arc::new(
+                RoleBasedAuthorizer::new().grant_role("reader", AuthorizationRole::Reader),
+            ))
+            .with_audit_sink(Arc::new(audit.clone()));
+
+        let mut request = Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/main".to_string(),
+                old_target: None,
+                new_target: Some(crate::proto::common::ObjectId {
+                    hash: target.as_bytes().to_vec(),
+                }),
+                force: false,
+            }],
+        });
+        request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "reader".parse().unwrap());
+
+        let denied = server
+            .update_refs(request)
+            .await
+            .expect_err("reader role cannot update refs");
+        assert_eq!(denied.code(), tonic::Code::PermissionDenied);
+
+        let events = audit.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].outcome, AuditOutcome::Denied);
+        assert_eq!(events[0].action, AuthorizationAction::UpdateRefs);
+        assert_eq!(events[0].subject.principal.as_deref(), Some("reader"));
+    }
+
+    #[tokio::test]
+    async fn replay_protection_requires_nonce_for_ref_updates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let server = SyncServer::new(store).with_replay_protection(
+            ReplayProtectionConfig {
+                window: Duration::from_secs(60),
+                max_entries: 16,
+            },
+            true,
+        );
+        let target = content_hash(TypeTag::Blob, b"target");
+
+        let denied = server
+            .update_refs(Request::new(UpdateRefsRequest {
+                updates: vec![RefUpdate {
+                    name: "heads/main".to_string(),
+                    old_target: None,
+                    new_target: Some(crate::proto::common::ObjectId {
+                        hash: target.as_bytes().to_vec(),
+                    }),
+                    force: false,
+                }],
+            }))
+            .await
+            .expect_err("missing replay nonce should be rejected");
+
+        assert_eq!(denied.code(), tonic::Code::PermissionDenied);
+    }
+
+    #[tokio::test]
+    async fn replay_protection_rejects_duplicate_nonce_for_ref_updates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let server = SyncServer::new(store).with_replay_protection(
+            ReplayProtectionConfig {
+                window: Duration::from_secs(60),
+                max_entries: 16,
+            },
+            true,
+        );
+        let target = content_hash(TypeTag::Blob, b"target");
+
+        let mut first = Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/main".to_string(),
+                old_target: None,
+                new_target: Some(crate::proto::common::ObjectId {
+                    hash: target.as_bytes().to_vec(),
+                }),
+                force: false,
+            }],
+        });
+        first
+            .metadata_mut()
+            .insert(REPLAY_NONCE_METADATA_KEY, "nonce-1".parse().unwrap());
+        assert!(
+            server
+                .update_refs(first)
+                .await
+                .unwrap()
+                .into_inner()
+                .success
+        );
+
+        let mut second = Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/other".to_string(),
+                old_target: None,
+                new_target: Some(crate::proto::common::ObjectId {
+                    hash: target.as_bytes().to_vec(),
+                }),
+                force: false,
+            }],
+        });
+        second
+            .metadata_mut()
+            .insert(REPLAY_NONCE_METADATA_KEY, "nonce-1".parse().unwrap());
+
+        let replayed = server
+            .update_refs(second)
+            .await
+            .expect_err("duplicate nonce should be rejected");
+        assert_eq!(replayed.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[tokio::test]
+    async fn rate_limit_rejects_excess_requests() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let server = SyncServer::new_with_options(
+            store,
+            SyncServerOptions {
+                backpressure: false,
+                rate_limit_per_minute: Some(1),
+                ..SyncServerOptions::default()
+            },
+        );
+
+        server
+            .hello(Request::new(HelloRequest {
+                client_version: "0.1.0".to_string(),
+                capabilities: vec![],
+            }))
+            .await
+            .unwrap();
+
+        let limited = server
+            .hello(Request::new(HelloRequest {
+                client_version: "0.1.0".to_string(),
+                capabilities: vec![],
+            }))
+            .await
+            .expect_err("second request should hit rate limit");
+
+        assert_eq!(limited.code(), tonic::Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn push_chunk_limits_reject_large_chunk_and_total() {
+        let options = SyncServerOptions {
+            max_push_chunk_bytes: Some(4),
+            max_push_request_bytes: Some(6),
+            ..SyncServerOptions::default()
+        };
+        let mut received = 0;
+
+        let too_large_chunk = enforce_push_chunk_limits(&options, 5, &mut received).unwrap_err();
+        assert_eq!(too_large_chunk.code(), tonic::Code::ResourceExhausted);
+
+        enforce_push_chunk_limits(&options, 3, &mut received).unwrap();
+        enforce_push_chunk_limits(&options, 3, &mut received).unwrap();
+        let too_large_request = enforce_push_chunk_limits(&options, 1, &mut received).unwrap_err();
+        assert_eq!(too_large_request.code(), tonic::Code::ResourceExhausted);
     }
 }

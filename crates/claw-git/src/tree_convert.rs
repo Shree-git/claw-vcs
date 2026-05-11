@@ -1,7 +1,7 @@
 use claw_core::types::{FileMode, Tree};
 
 /// Convert a claw Tree to git tree object bytes.
-/// Git tree entry format: "<mode> <name>\0<20-byte-sha1>"
+/// Git tree entry format: `<mode> <name>\0<20-byte-sha1>`.
 pub fn to_git_tree(
     tree: &Tree,
     sha1_lookup: &dyn Fn(&claw_core::id::ObjectId) -> Option<[u8; 20]>,

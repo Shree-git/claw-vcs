@@ -81,6 +81,12 @@ fn admin_migrate_and_git_bridge_commands_work_end_to_end() {
         .stdout
         .contains("Dry run complete. No files changed."));
 
+    let applied = env.run_ok(&repo, ["admin", "migrate", "apply"]);
+    assert!(applied.stdout.contains("Migration applied."));
+    let ledger = std::fs::read_to_string(repo.join(".claw/migrations/ledger.jsonl"))
+        .expect("migration ledger should be written");
+    assert!(ledger.contains("\"action\":\"migrate.apply\""));
+
     let exported = env.run_ok(&repo, ["git-export"]);
     assert!(exported
         .stdout

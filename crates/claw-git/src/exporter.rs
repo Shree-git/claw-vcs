@@ -174,15 +174,10 @@ impl<'a> GitExporter<'a> {
     }
 }
 
-/// Minimal zlib/deflate compression (for git object storage)
+/// Minimal zlib/deflate compression for git loose object storage.
 fn miniz_compress(data: &[u8]) -> Vec<u8> {
-    // Use zstd as a stand-in -- but git uses zlib.
-    // For proper git compat we need zlib. Let's implement a store-only mode
-    // that writes raw git objects (uncompressed) -- git can handle this with
-    // `git unpack-objects` or we add proper zlib later.
-    //
-    // For MVP determinism testing, write a simple zlib wrapper:
-    // zlib header (0x78, 0x01 = no compression) + raw data + adler32
+    // zlib header (0x78, 0x01 = fastest/no compression) + stored deflate
+    // blocks + adler32. Git accepts this format for loose objects.
     let mut result = Vec::with_capacity(data.len() + 11);
     // zlib header for no compression
     result.push(0x78);

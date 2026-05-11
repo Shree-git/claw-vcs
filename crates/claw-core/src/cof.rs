@@ -2,12 +2,58 @@ use crate::error::CoreError;
 use crate::object::TypeTag;
 
 const MAGIC: &[u8; 4] = b"CLW1";
-const COF_VERSION: u8 = 0x01;
+/// Current Claw Object Format version written by this crate.
+pub const COF_VERSION: u8 = 0x01;
+/// Oldest Claw Object Format version this crate may read or migrate.
+pub const MIN_READABLE_COF_VERSION: u8 = 0x01;
+const KNOWN_FLAG_BITS: u8 = 0x03;
 
+/// Read/write compatibility class for a COF version byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CofVersionSupport {
+    /// The version is the crate's native read/write format.
+    Native,
+    /// The version is older but within the migration window.
+    ReadViaMigration,
+    /// The version is newer than this crate understands.
+    UnsupportedFuture,
+    /// The version is older than the supported migration floor.
+    UnsupportedPast,
+}
+
+/// Classify a COF version byte for migration and compatibility checks.
+pub fn classify_cof_version(version: u8) -> CofVersionSupport {
+    if version == COF_VERSION {
+        CofVersionSupport::Native
+    } else if version > COF_VERSION {
+        CofVersionSupport::UnsupportedFuture
+    } else if version >= MIN_READABLE_COF_VERSION {
+        CofVersionSupport::ReadViaMigration
+    } else {
+        CofVersionSupport::UnsupportedPast
+    }
+}
+
+/// Return the COF version byte after validating the magic prefix.
+pub fn cof_version(data: &[u8]) -> Result<u8, CoreError> {
+    if data.len() < 5 {
+        return Err(CoreError::Deserialization(
+            "data too short for COF version".into(),
+        ));
+    }
+    if &data[..4] != MAGIC {
+        return Err(CoreError::InvalidMagic);
+    }
+    Ok(data[4])
+}
+
+/// Compression marker stored in the COF header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Compression {
+    /// Payload bytes are stored without compression.
     None = 0x00,
+    /// Payload bytes are compressed with zstd.
     Zstd = 0x01,
 }
 
@@ -21,10 +67,12 @@ impl Compression {
     }
 }
 
+/// Bit flags stored in a COF header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CofFlags(u8);
 
 impl CofFlags {
+    /// Build flag bits from the current compression and encryption booleans.
     pub fn new(compressed: bool, encrypted: bool) -> Self {
         let mut bits = 0u8;
         if compressed {
@@ -36,14 +84,17 @@ impl CofFlags {
         Self(bits)
     }
 
+    /// Return the raw encoded flag bits.
     pub fn bits(&self) -> u8 {
         self.0
     }
 
+    /// Return whether the compressed flag is set.
     pub fn is_compressed(&self) -> bool {
         self.0 & 0x01 != 0
     }
 
+    /// Return whether the encrypted flag is set.
     pub fn is_encrypted(&self) -> bool {
         self.0 & 0x02 != 0
     }
@@ -142,15 +193,19 @@ pub fn cof_decode(data: &[u8]) -> Result<(TypeTag, Vec<u8>), CoreError> {
 
     // Version
     let version = data[4];
-    if version != COF_VERSION {
+    if !matches!(classify_cof_version(version), CofVersionSupport::Native) {
         return Err(CoreError::UnsupportedVersion(version));
     }
 
     // Type tag
     let type_tag = TypeTag::from_u8(data[5]).ok_or(CoreError::UnknownTypeTag(data[5]))?;
 
-    // Flags (data[6]) - reserved for future use
-    let _flags = data[6];
+    let flags = data[6];
+    if flags & !KNOWN_FLAG_BITS != 0 {
+        return Err(CoreError::Deserialization(format!(
+            "unknown COF flags: 0x{flags:02x}"
+        )));
+    }
 
     // Compression
     let compression = Compression::from_u8(data[7])
@@ -181,13 +236,15 @@ pub fn cof_decode(data: &[u8]) -> Result<(TypeTag, Vec<u8>), CoreError> {
     let payload = match compression {
         Compression::None => compressed.to_vec(),
         Compression::Zstd => {
-            let mut decompressed = zstd::decode_all(compressed)
-                .map_err(|e| CoreError::Decompression(e.to_string()))?;
-            if decompressed.len() != uncompressed_len {
-                decompressed.truncate(uncompressed_len);
-            }
-            decompressed
+            zstd::decode_all(compressed).map_err(|e| CoreError::Decompression(e.to_string()))?
         }
+    };
+
+    if payload.len() != uncompressed_len {
+        return Err(CoreError::Deserialization(format!(
+            "COF length mismatch: header says {uncompressed_len}, decoded {}",
+            payload.len()
+        )));
     };
 
     // CRC32 of uncompressed payload per spec
@@ -214,6 +271,10 @@ pub fn cof_peek_type_tag(data: &[u8]) -> Result<TypeTag, CoreError> {
     }
     if &data[..4] != MAGIC {
         return Err(CoreError::InvalidMagic);
+    }
+    let version = data[4];
+    if !matches!(classify_cof_version(version), CofVersionSupport::Native) {
+        return Err(CoreError::UnsupportedVersion(version));
     }
     TypeTag::from_u8(data[5]).ok_or(CoreError::UnknownTypeTag(data[5]))
 }
@@ -255,6 +316,47 @@ mod tests {
         let mut data = cof_encode(TypeTag::Blob, b"test").unwrap();
         data[0] = b'X';
         assert!(matches!(cof_decode(&data), Err(CoreError::InvalidMagic)));
+    }
+
+    #[test]
+    fn future_version_rejected_but_classified_for_migration() {
+        let mut data = cof_encode(TypeTag::Blob, b"test").unwrap();
+        data[4] = COF_VERSION + 1;
+        assert_eq!(
+            classify_cof_version(COF_VERSION + 1),
+            CofVersionSupport::UnsupportedFuture
+        );
+        assert!(matches!(
+            cof_decode(&data),
+            Err(CoreError::UnsupportedVersion(version)) if version == COF_VERSION + 1
+        ));
+    }
+
+    #[test]
+    fn unknown_flags_are_rejected() {
+        let mut data = cof_encode(TypeTag::Blob, b"test").unwrap();
+        data[6] = 0x80;
+        assert!(matches!(
+            cof_decode(&data),
+            Err(CoreError::Deserialization(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_compression_marker_is_rejected() {
+        let mut data = cof_encode(TypeTag::Blob, b"test").unwrap();
+        data[7] = 0xff;
+        assert!(matches!(
+            cof_decode(&data),
+            Err(CoreError::Deserialization(_))
+        ));
+    }
+
+    #[test]
+    fn length_mismatch_or_payload_mutation_is_rejected() {
+        let mut data = cof_encode(TypeTag::Blob, b"test").unwrap();
+        data[8] = data[8].saturating_add(1);
+        assert!(cof_decode(&data).is_err());
     }
 
     #[test]

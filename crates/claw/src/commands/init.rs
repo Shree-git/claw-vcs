@@ -8,6 +8,12 @@ pub struct InitArgs {
     /// Path to initialize (defaults to current directory)
     #[arg(default_value = ".")]
     path: PathBuf,
+    /// Output result as JSON
+    #[arg(long)]
+    json: bool,
+    /// Preview initialization without writing .claw
+    #[arg(long)]
+    dry_run: bool,
 }
 
 pub fn run(args: InitArgs) -> anyhow::Result<()> {
@@ -17,7 +23,59 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
         std::env::current_dir()?.join(&args.path)
     };
 
+    if path.join(".claw").exists() {
+        anyhow::bail!(
+            "claw repository already exists at {}. Run `claw status` to inspect it.",
+            path.display()
+        );
+    }
+
+    let next_steps = [
+        "claw status",
+        "claw snapshot -m \"initial snapshot\"",
+        "claw intent new --title \"describe the next change\"",
+    ];
+
+    if args.dry_run {
+        if args.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "path": path.display().to_string(),
+                    "dry_run": true,
+                    "created": false,
+                    "head": "heads/main",
+                    "next_steps": next_steps,
+                }))?
+            );
+        } else {
+            println!("Would initialize claw repository at {}", path.display());
+            println!("Initial HEAD: heads/main");
+        }
+        return Ok(());
+    }
+
     ClawStore::init(&path)?;
-    println!("Initialized claw repository at {}", path.display());
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "path": path.display().to_string(),
+                "dry_run": false,
+                "created": true,
+                "head": "heads/main",
+                "next_steps": next_steps,
+            }))?
+        );
+    } else {
+        println!("Initialized claw repository at {}", path.display());
+        println!();
+        println!("Next steps:");
+        for step in next_steps {
+            println!("  {step}");
+        }
+    }
+
     Ok(())
 }

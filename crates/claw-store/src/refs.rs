@@ -67,10 +67,24 @@ pub fn validate_ref_name(name: &str) -> Result<(), StoreError> {
 pub fn write_ref(layout: &RepoLayout, name: &str, target: &ObjectId) -> Result<(), StoreError> {
     validate_ref_name(name)?;
     let path = layout.refs_dir().join(name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| StoreError::InvalidRefName(name.to_string()))?;
+    std::fs::create_dir_all(parent)?;
+
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    {
+        use std::io::Write;
+
+        let file = temp.as_file_mut();
+        file.write_all(target.to_hex().as_bytes())?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
     }
-    std::fs::write(&path, target.to_hex())?;
+    temp.persist(&path).map_err(|e| StoreError::Io(e.error))?;
+    if let Ok(dir_handle) = std::fs::File::open(parent) {
+        dir_handle.sync_all()?;
+    }
     Ok(())
 }
 
@@ -250,5 +264,31 @@ mod tests {
 
         let read_back = read_ref(&layout, "policies/release-gate").unwrap();
         assert_eq!(read_back, Some(id));
+    }
+
+    #[test]
+    fn stale_ref_lock_blocks_cas_without_changing_existing_ref() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = RepoLayout::new(tmp.path());
+        layout.create_dirs().unwrap();
+
+        let old = content_hash(TypeTag::Blob, b"old");
+        let new = content_hash(TypeTag::Blob, b"new");
+        write_ref(&layout, "heads/main", &old).unwrap();
+        let lock_path = layout.refs_dir().join("heads/main.lock");
+        std::fs::write(&lock_path, b"interrupted update").unwrap();
+
+        let err = update_ref_cas(
+            &layout,
+            "heads/main",
+            Some(&old),
+            &new,
+            "test",
+            "simulate stale lock",
+        )
+        .expect_err("stale lock should block CAS");
+
+        assert!(matches!(err, StoreError::LockContention(_)));
+        assert_eq!(read_ref(&layout, "heads/main").unwrap(), Some(old));
     }
 }

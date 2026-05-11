@@ -25,6 +25,9 @@ pub struct DiffArgs {
     /// Show only changed file names
     #[arg(long)]
     name_only: bool,
+    /// Output changed file metadata as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 pub fn run(args: DiffArgs) -> anyhow::Result<()> {
@@ -53,12 +56,38 @@ pub fn run(args: DiffArgs) -> anyhow::Result<()> {
         changes
     };
 
-    if changes.is_empty() {
+    let mut sorted = changes;
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+
+    if args.json {
+        let entries = sorted
+            .iter()
+            .map(|change| {
+                serde_json::json!({
+                    "path": change.path,
+                    "status": match change.kind {
+                        ChangeKind::Added => "added",
+                        ChangeKind::Deleted => "deleted",
+                        ChangeKind::Modified => "modified",
+                        ChangeKind::TypeChanged => "type_changed",
+                    },
+                    "old_id": change.old_id.map(|id| id.to_hex()),
+                    "new_id": change.new_id.map(|id| id.to_hex()),
+                })
+            })
+            .collect::<Vec<_>>();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "changes": entries,
+            }))?
+        );
         return Ok(());
     }
 
-    let mut sorted = changes;
-    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+    if sorted.is_empty() {
+        return Ok(());
+    }
 
     for change in &sorted {
         if args.name_only {

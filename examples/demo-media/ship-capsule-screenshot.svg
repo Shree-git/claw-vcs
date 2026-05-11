@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420" role="img" aria-labelledby="title desc">
+  <title id="title">Claw ship capsule terminal screenshot</title>
+  <desc id="desc">Terminal output showing claw ship creating a capsule with smoke and lint evidence.</desc>
+  <rect width="980" height="420" rx="8" fill="#0f1419"/>
+  <rect x="0" y="0" width="980" height="42" rx="8" fill="#242b33"/>
+  <circle cx="24" cy="21" r="6" fill="#ff5f57"/>
+  <circle cx="44" cy="21" r="6" fill="#ffbd2e"/>
+  <circle cx="64" cy="21" r="6" fill="#28c840"/>
+  <text x="96" y="27" fill="#c8d1da" font-family="Menlo, Consolas, monospace" font-size="14">capsule evidence</text>
+  <g font-family="Menlo, Consolas, monospace" font-size="17">
+    <text x="28" y="78" fill="#7ee787">$ claw ship \</text>
+    <text x="48" y="108" fill="#7ee787">--intent 01HXDEMOINTENT0000000000 \</text>
+    <text x="48" y="138" fill="#7ee787">--revision-ref heads/demo \</text>
+    <text x="48" y="168" fill="#7ee787">--agent demo-agent \</text>
+    <text x="48" y="198" fill="#7ee787">--evidence smoke=pass:15 --evidence lint=pass:7</text>
+    <text x="28" y="250" fill="#e6edf3">Shipped intent: 01HXDEMOINTENT0000000000</text>
+    <text x="48" y="286" fill="#79c0ff">Capsule: clw_demo_capsule</text>
+    <text x="48" y="322" fill="#79c0ff">Revision: clw_demo_revision</text>
+    <text x="28" y="372" fill="#8b949e">Evidence: smoke(pass), lint(pass). Signed by demo-agent.</text>
+  </g>
+</svg>

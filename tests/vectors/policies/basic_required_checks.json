@@ -1,0 +1,16 @@
+{
+  "name": "basic_required_checks",
+  "input_object": {
+    "type": "Policy",
+    "policy_id": "basic-required-checks",
+    "required_checks": [
+      "test",
+      "lint"
+    ],
+    "visibility": "public"
+  },
+  "canonical_payload_hex": "0a1562617369632d72657175697265642d636865636b7312047465737412046c696e743a067075626c6963",
+  "expected_object_id_hex": "4ecb5777da5f9aefe7a73ef854fbf75101655b0f2209bf5ee31304a15050285a",
+  "expected_object_id": "clw_j3fvo562l6no7z5hh34fj67xkeawkwypeie36xxdcmckcucqfbna",
+  "expected_verification_result": "valid_when_test_and_lint_evidence_pass"
+}

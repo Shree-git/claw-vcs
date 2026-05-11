@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -14,13 +15,14 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
-use tonic::transport::{Identity, Server, ServerTlsConfig};
+use tonic::metadata::MetadataValue;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Status};
 
 use claw_store::ClawStore;
 use claw_sync::capsule_service::CapsuleServer;
 use claw_sync::change_service::ChangeServer;
-use claw_sync::event_service::EventServer;
+use claw_sync::event_service::{EventBus, EventServer};
 use claw_sync::intent_service::IntentServer;
 use claw_sync::proto::capsule::capsule_service_server::CapsuleServiceServer;
 use claw_sync::proto::change::change_service_server::ChangeServiceServer;
@@ -28,6 +30,11 @@ use claw_sync::proto::event::event_stream_service_server::EventStreamServiceServ
 use claw_sync::proto::intent::intent_service_server::IntentServiceServer;
 use claw_sync::proto::sync::sync_service_server::SyncServiceServer;
 use claw_sync::proto::workstream::workstream_service_server::WorkstreamServiceServer;
+use claw_sync::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
+use claw_sync::security::{
+    AuthorizationRole, AuthorizationScope, Authorizer, ReplayProtectionConfig, RoleBasedAuthorizer,
+    PRINCIPAL_METADATA_KEY, TOKEN_ID_METADATA_KEY,
+};
 use claw_sync::server::{SyncServer, SyncServerOptions};
 use claw_sync::workstream_service::WorkstreamServer;
 
@@ -52,12 +59,36 @@ pub struct DaemonArgs {
     /// Read bearer auth token from a saved auth profile
     #[arg(long)]
     auth_profile: Option<String>,
+    /// Principal name attached to the configured bearer token for sync authorization
+    #[arg(long, default_value = "daemon-token")]
+    auth_principal: String,
+    /// Sync authorization role for the configured bearer token
+    #[arg(long, default_value = "admin")]
+    auth_role: String,
+    /// Additional sync authorization scope for the configured bearer token
+    #[arg(long = "auth-scope")]
+    auth_scopes: Vec<String>,
+    /// Require replay nonce metadata on sync ref/object mutations
+    #[arg(long)]
+    require_replay_nonce: bool,
+    /// Maximum accepted sync requests per minute for this daemon
+    #[arg(long)]
+    rate_limit_per_minute: Option<u32>,
+    /// Maximum byte length for one pushed object chunk
+    #[arg(long)]
+    max_push_chunk_bytes: Option<usize>,
+    /// Maximum aggregate byte length for one push request
+    #[arg(long)]
+    max_push_request_bytes: Option<usize>,
     /// TLS certificate (PEM) path
     #[arg(long)]
     tls_cert: Option<PathBuf>,
     /// TLS private key (PEM) path
     #[arg(long)]
     tls_key: Option<PathBuf>,
+    /// Client CA certificate (PEM) path; enables required client certificate auth for gRPC TLS
+    #[arg(long)]
+    client_ca_cert: Option<PathBuf>,
 }
 
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -65,27 +96,45 @@ static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 struct BearerAuthInterceptor {
     expected_header: Arc<str>,
+    principal: Arc<str>,
+    token_id: Arc<str>,
     metrics: Arc<DaemonMetrics>,
 }
 
 impl BearerAuthInterceptor {
-    fn new(token: String, metrics: Arc<DaemonMetrics>) -> Self {
+    fn new(token: String, principal: String, metrics: Arc<DaemonMetrics>) -> Self {
         Self {
+            token_id: Arc::<str>::from(bearer_token_id(&token)),
             expected_header: Arc::<str>::from(format!("Bearer {token}")),
+            principal: Arc::<str>::from(principal),
             metrics,
         }
     }
 }
 
 impl tonic::service::Interceptor for BearerAuthInterceptor {
-    fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         let provided = request
             .metadata()
             .get("authorization")
             .and_then(|value| value.to_str().ok());
 
         match provided {
-            Some(value) if value == self.expected_header.as_ref() => Ok(request),
+            Some(value) if value == self.expected_header.as_ref() => {
+                request.metadata_mut().remove(PRINCIPAL_METADATA_KEY);
+                request.metadata_mut().remove(TOKEN_ID_METADATA_KEY);
+                let principal = MetadataValue::try_from(self.principal.as_ref())
+                    .map_err(|_| Status::internal("invalid configured auth principal"))?;
+                let token_id = MetadataValue::try_from(self.token_id.as_ref())
+                    .map_err(|_| Status::internal("invalid configured auth token id"))?;
+                request
+                    .metadata_mut()
+                    .insert(PRINCIPAL_METADATA_KEY, principal);
+                request
+                    .metadata_mut()
+                    .insert(TOKEN_ID_METADATA_KEY, token_id);
+                Ok(request)
+            }
             Some(_) => {
                 self.metrics
                     .auth_failures
@@ -233,6 +282,64 @@ fn resolve_daemon_auth_token(args: &DaemonArgs) -> anyhow::Result<Option<String>
     }
 
     Ok(None)
+}
+
+fn bearer_token_id(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!("sha256:{}", &digest[..16])
+}
+
+fn validate_metadata_value(label: &str, value: &str) -> anyhow::Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("{label} cannot be empty");
+    }
+    MetadataValue::try_from(trimmed)
+        .map_err(|err| anyhow::anyhow!("{label} must be valid ASCII gRPC metadata: {err}"))?;
+    Ok(trimmed.to_string())
+}
+
+fn build_sync_authorizer(
+    args: &DaemonArgs,
+    auth_token: Option<&str>,
+) -> anyhow::Result<Option<Arc<dyn Authorizer>>> {
+    let authz_requested = auth_token.is_some()
+        || !args.auth_role.eq_ignore_ascii_case("admin")
+        || !args.auth_scopes.is_empty();
+    if !authz_requested {
+        return Ok(None);
+    }
+
+    let role = AuthorizationRole::from_str(&args.auth_role).map_err(anyhow::Error::msg)?;
+    let scopes = args
+        .auth_scopes
+        .iter()
+        .map(|scope| AuthorizationScope::from_str(scope).map_err(anyhow::Error::msg))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let principal = if auth_token.is_some() {
+        validate_metadata_value("--auth-principal", &args.auth_principal)?
+    } else {
+        "anonymous".to_string()
+    };
+
+    let mut principals = vec![principal];
+    if let Some(token) = auth_token {
+        principals.push(bearer_token_id(token));
+    }
+
+    let mut authorizer = RoleBasedAuthorizer::new();
+    for principal in principals {
+        authorizer = authorizer.grant_role(principal.clone(), role);
+        for scope in &scopes {
+            authorizer = authorizer.grant_scope(principal.clone(), *scope);
+        }
+    }
+
+    let authorizer: Arc<dyn Authorizer> = Arc::new(authorizer);
+    Ok(Some(authorizer))
 }
 
 fn is_local_bind_addr(addr: &SocketAddr) -> bool {
@@ -470,6 +577,7 @@ async fn handle_health_connection(
     let start = Instant::now();
 
     if method != "GET" {
+        drain_request_body(&mut stream, &buf[..n]).await?;
         let envelope = HealthEnvelope {
             code: "method_not_allowed".to_string(),
             message: "method not allowed".to_string(),
@@ -530,6 +638,39 @@ async fn handle_health_connection(
     Ok(())
 }
 
+async fn drain_request_body(
+    stream: &mut tokio::net::TcpStream,
+    received: &[u8],
+) -> anyhow::Result<()> {
+    let Some(header_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return Ok(());
+    };
+    let head = String::from_utf8_lossy(&received[..header_end]);
+    let content_length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    let already_read = received.len().saturating_sub(header_end + 4);
+    let mut remaining = content_length.saturating_sub(already_read);
+    let mut scratch = [0u8; 1024];
+
+    while remaining > 0 {
+        let to_read = remaining.min(scratch.len());
+        let read = stream.read(&mut scratch[..to_read]).await?;
+        if read == 0 {
+            break;
+        }
+        remaining -= read;
+    }
+
+    Ok(())
+}
+
 async fn run_health_server(addr: SocketAddr, metrics: Arc<DaemonMetrics>) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     loop {
@@ -560,6 +701,14 @@ fn resolve_tls_identity(
     }
 }
 
+fn resolve_client_ca_certificate(cert_path: Option<&Path>) -> anyhow::Result<Option<Certificate>> {
+    let Some(cert_path) = cert_path else {
+        return Ok(None);
+    };
+    let cert = std::fs::read(cert_path)?;
+    Ok(Some(Certificate::from_pem(cert)))
+}
+
 pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let cfg = config::load_or_default_config(&root)?;
@@ -582,14 +731,17 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
             if line.is_empty() {
                 continue;
             }
-            // Simple echo-based protocol for MVP
+            // Stdio clients use newline-delimited JSON requests for embedded
+            // agent integrations. Keep responses structured so callers can
+            // negotiate capabilities before issuing ref or sync requests.
             let response = match serde_json::from_str::<serde_json::Value>(&line) {
                 Ok(req) => {
                     let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
                     match method {
                         "hello" => serde_json::json!({
                             "server_version": "0.1.0",
-                            "capabilities": ["partial-clone"]
+                            "protocol_version": SYNC_PROTOCOL_VERSION,
+                            "capabilities": server_capabilities()
                         }),
                         "refs" => {
                             let prefix = req.get("prefix").and_then(|p| p.as_str()).unwrap_or("");
@@ -631,6 +783,12 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
         .clone()
         .or_else(|| cfg.tls.key_path.as_ref().map(PathBuf::from));
     let tls_identity = resolve_tls_identity(tls_cert.as_deref(), tls_key.as_deref())?;
+    let client_ca_certificate = resolve_client_ca_certificate(args.client_ca_cert.as_deref())?;
+    let mtls_enabled = client_ca_certificate.is_some();
+    if mtls_enabled && tls_identity.is_none() {
+        anyhow::bail!("--client-ca-cert requires --tls-cert and --tls-key");
+    }
+    let sync_authorizer = build_sync_authorizer(&args, auth_token.as_deref())?;
 
     let enforce_prod_profile = runtime.profile.eq_ignore_ascii_case("prod");
     if non_local_bind && enforce_prod_profile {
@@ -648,25 +806,48 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
 
     let shared_store = Arc::new(RwLock::new(store));
     let metrics = Arc::new(DaemonMetrics::new(cfg.queues.worker_pool_size)?);
+    let event_bus = EventBus::default();
+    let sync_defaults = SyncServerOptions::default();
 
-    let sync_server = SyncServer::from_shared_with_options(
+    let mut sync_server = SyncServer::from_shared_with_options_and_events(
         shared_store.clone(),
         SyncServerOptions {
             worker_pool_size: cfg.queues.worker_pool_size,
             queue_capacity: cfg.queues.queue_capacity,
             backpressure: cfg.queues.backpressure,
             io_timeout: std::time::Duration::from_millis(cfg.timeouts.io_ms),
+            max_push_chunk_bytes: args
+                .max_push_chunk_bytes
+                .or(cfg.queues.max_push_chunk_bytes)
+                .or(sync_defaults.max_push_chunk_bytes),
+            max_push_request_bytes: args
+                .max_push_request_bytes
+                .or(cfg.queues.max_push_request_bytes)
+                .or(sync_defaults.max_push_request_bytes),
+            rate_limit_per_minute: args
+                .rate_limit_per_minute
+                .or(cfg.queues.rate_limit_per_minute)
+                .or(sync_defaults.rate_limit_per_minute),
         },
-    );
+        Some(event_bus.clone()),
+    )
+    .with_replay_protection(ReplayProtectionConfig::default(), args.require_replay_nonce);
+    if let Some(authorizer) = sync_authorizer {
+        sync_server = sync_server.with_authorizer(authorizer);
+    }
     let intent_server = IntentServer::new(shared_store.clone());
     let change_server = ChangeServer::new(shared_store.clone());
     let capsule_server = CapsuleServer::new(shared_store.clone());
     let workstream_server = WorkstreamServer::new(shared_store.clone());
-    let event_server = EventServer::new(shared_store);
+    let event_server = EventServer::with_bus(event_bus);
 
     let mut grpc_builder = Server::builder();
     if let Some(identity) = tls_identity {
-        grpc_builder = grpc_builder.tls_config(ServerTlsConfig::new().identity(identity))?;
+        let mut tls_config = ServerTlsConfig::new().identity(identity);
+        if let Some(client_ca) = client_ca_certificate {
+            tls_config = tls_config.client_ca_root(client_ca);
+        }
+        grpc_builder = grpc_builder.tls_config(tls_config)?;
     }
 
     println!("Claw daemon listening (gRPC) on {}", addr);
@@ -675,11 +856,19 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     if auth_token.is_some() {
         println!("gRPC auth enabled (bearer token required)");
     }
+    if mtls_enabled {
+        println!("gRPC mTLS enabled (client certificate required)");
+    }
+    if args.require_replay_nonce {
+        println!("sync replay nonce enforcement enabled");
+    }
 
     let grpc_metrics = metrics.clone();
+    let auth_principal = validate_metadata_value("--auth-principal", &args.auth_principal)?;
     let grpc_task = async move {
         if let Some(token) = auth_token {
-            let interceptor = BearerAuthInterceptor::new(token, grpc_metrics.clone());
+            let interceptor =
+                BearerAuthInterceptor::new(token, auth_principal, grpc_metrics.clone());
             grpc_builder
                 .add_service(SyncServiceServer::with_interceptor(
                     sync_server,
@@ -881,8 +1070,11 @@ mod tests {
     #[test]
     fn auth_failure_metrics_increment_for_missing_and_invalid_bearer() {
         let metrics = test_metrics();
-        let mut interceptor =
-            BearerAuthInterceptor::new("correct-token".to_string(), metrics.clone());
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics.clone(),
+        );
 
         let missing = interceptor.call(Request::new(()));
         assert!(missing.is_err());
@@ -903,5 +1095,99 @@ mod tests {
             metrics.auth_failures.with_label_values(&["invalid"]).get(),
             1
         );
+    }
+
+    #[test]
+    fn tls_identity_requires_cert_and_key_pair() {
+        let cert_only = resolve_tls_identity(Some(Path::new("server.pem")), None)
+            .expect_err("missing key should fail");
+        assert!(cert_only.to_string().contains("--tls-cert and --tls-key"));
+
+        let key_only = resolve_tls_identity(None, Some(Path::new("server-key.pem")))
+            .expect_err("missing cert should fail");
+        assert!(key_only.to_string().contains("--tls-cert and --tls-key"));
+    }
+
+    #[test]
+    fn client_ca_certificate_loader_reads_configured_pem() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let ca_path = temp.path().join("ca.pem");
+        std::fs::write(
+            &ca_path,
+            b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        )
+        .expect("write ca");
+
+        let cert =
+            resolve_client_ca_certificate(Some(&ca_path)).expect("client CA PEM should be read");
+        assert!(cert.is_some());
+    }
+
+    #[test]
+    fn bearer_auth_interceptor_attaches_authorization_subject_metadata() {
+        let metrics = test_metrics();
+        let mut interceptor =
+            BearerAuthInterceptor::new("correct-token".to_string(), "agent-a".to_string(), metrics);
+
+        let mut request = Request::new(());
+        request.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer correct-token").expect("valid metadata value"),
+        );
+
+        let request = interceptor.call(request).expect("valid bearer token");
+        let expected_token_id = bearer_token_id("correct-token");
+        assert_eq!(
+            request
+                .metadata()
+                .get(PRINCIPAL_METADATA_KEY)
+                .and_then(|value| value.to_str().ok()),
+            Some("agent-a")
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(TOKEN_ID_METADATA_KEY)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected_token_id.as_str())
+        );
+    }
+
+    #[test]
+    fn sync_authorizer_grants_configured_role_and_scopes_to_token_principal() {
+        let args = DaemonArgs {
+            listen: "[::1]:50051".to_string(),
+            health_listen: "[::1]:50052".to_string(),
+            stdio: false,
+            auth_token: Some("correct-token".to_string()),
+            auth_profile: None,
+            auth_principal: "agent-a".to_string(),
+            auth_role: "reader".to_string(),
+            auth_scopes: vec!["refs:write".to_string()],
+            require_replay_nonce: false,
+            rate_limit_per_minute: None,
+            max_push_chunk_bytes: None,
+            max_push_request_bytes: None,
+            tls_cert: None,
+            tls_key: None,
+            client_ca_cert: None,
+        };
+
+        let authorizer = build_sync_authorizer(&args, args.auth_token.as_deref())
+            .expect("valid authorizer")
+            .expect("auth token enables role authorizer");
+        let subject = claw_sync::security::AuthorizationSubject {
+            principal: Some("agent-a".to_string()),
+            token_id: Some(bearer_token_id("correct-token")),
+            peer_addr: None,
+        };
+
+        assert!(authorizer
+            .authorize(&claw_sync::security::AuthorizationRequest {
+                subject,
+                action: claw_sync::security::AuthorizationAction::UpdateRefs,
+                resource: Some("heads/main".to_string()),
+            })
+            .is_allowed());
     }
 }

@@ -1,13 +1,15 @@
 use clap::Args;
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use claw_core::id::{ChangeId, ObjectId};
 use claw_core::object::Object;
 use claw_core::types::{
     Capsule, CapsulePublic, ChangeStatus, Evidence, Intent, IntentStatus, Policy, Revision,
 };
-use claw_crypto::capsule::{append_capsule_signature, build_capsule};
+use claw_crypto::capsule::{append_capsule_signature, build_capsule, build_capsule_for_recipients};
+use claw_crypto::recipient::RecipientPublicKey;
 use claw_policy::{evaluator::evaluate_policy, PolicyContext};
 use claw_store::ClawStore;
 
@@ -25,9 +27,33 @@ pub struct ShipArgs {
     /// Agent ID
     #[arg(short, long, default_value = "claw")]
     agent: String,
-    /// Capsule evidence item in the form name=status[:duration_ms]
+    /// Capsule evidence item in the form `name=status[:duration_ms]`.
     #[arg(long = "evidence")]
     evidence: Vec<String>,
+    /// Command that produced the supplied evidence
+    #[arg(long = "evidence-command")]
+    evidence_command: Option<String>,
+    /// Runner identity that produced the supplied evidence
+    #[arg(long = "runner")]
+    runner_identity: Option<String>,
+    /// Environment/toolchain digest for freshness-gated evidence
+    #[arg(long = "environment-digest")]
+    environment_digest: Option<String>,
+    /// Log digest for freshness-gated evidence
+    #[arg(long = "log-digest")]
+    log_digest: Option<String>,
+    /// Artifact digest for freshness-gated evidence
+    #[arg(long = "artifact-digest")]
+    artifact_digest: Option<String>,
+    /// Evidence expiration window in milliseconds
+    #[arg(long = "evidence-expires-in-ms")]
+    evidence_expires_in_ms: Option<u64>,
+    /// File containing private capsule metadata to encrypt
+    #[arg(long = "private-file")]
+    private_file: Option<PathBuf>,
+    /// Recipient envelope in the form recipient-id:key-id:hex-x25519-public-key
+    #[arg(long = "recipient-key")]
+    recipient_keys: Vec<String>,
     /// Add an additional registered agent signature to the capsule
     #[arg(long = "co-sign")]
     co_sign: Vec<String>,
@@ -75,6 +101,56 @@ fn parse_evidence(items: &[String]) -> anyhow::Result<Vec<Evidence>> {
             duration_ms,
             artifact_refs: vec![],
             summary: None,
+            revision_id: None,
+            command: None,
+            exit_code: None,
+            started_at_ms: None,
+            ended_at_ms: None,
+            environment_digest: None,
+            runner_identity: None,
+            log_digest: None,
+            artifact_digest: None,
+            expires_at_ms: None,
+            trust_domain: None,
+            signature: None,
+        });
+    }
+
+    Ok(out)
+}
+
+fn parse_recipient_public_keys(items: &[String]) -> anyhow::Result<Vec<RecipientPublicKey>> {
+    let mut out = Vec::with_capacity(items.len());
+    for raw in items {
+        let mut parts = raw.splitn(3, ':');
+        let recipient_id = parts.next().unwrap_or_default().trim();
+        let key_id = parts.next().unwrap_or_default().trim();
+        let public_key_hex = parts.next().unwrap_or_default().trim();
+
+        if recipient_id.is_empty() || key_id.is_empty() || public_key_hex.is_empty() {
+            anyhow::bail!(
+                "invalid --recipient-key '{}'; expected recipient-id:key-id:hex-x25519-public-key",
+                raw
+            );
+        }
+
+        let public_key_bytes = hex::decode(public_key_hex).map_err(|err| {
+            anyhow::anyhow!(
+                "invalid --recipient-key '{}'; public key must be 32-byte hex ({err})",
+                raw
+            )
+        })?;
+        let public_key: [u8; 32] = public_key_bytes.as_slice().try_into().map_err(|_| {
+            anyhow::anyhow!(
+                "invalid --recipient-key '{}'; public key must be exactly 32 bytes",
+                raw
+            )
+        })?;
+
+        out.push(RecipientPublicKey {
+            recipient_id: recipient_id.to_string(),
+            key_id: key_id.to_string(),
+            public_key,
         });
     }
 
@@ -112,7 +188,8 @@ pub fn run(args: ShipArgs) -> anyhow::Result<()> {
 
     let registered_agent = ensure_registered_signing_agent(&store, &args.agent)?;
     let keypair = keypair_for_agent(&args.agent, &registered_agent)?;
-    let evidence = parse_evidence(&args.evidence)?;
+    let mut evidence = parse_evidence(&args.evidence)?;
+    enrich_evidence_for_revision(&mut evidence, &rev_id, now_ms, &args);
     let mut signing_agents = vec![registered_agent.clone()];
 
     let public = CapsulePublic {
@@ -123,7 +200,20 @@ pub fn run(args: ShipArgs) -> anyhow::Result<()> {
         evidence,
     };
 
-    let mut capsule = build_capsule(&rev_id, public, None, None, &keypair)?;
+    let recipients = parse_recipient_public_keys(&args.recipient_keys)?;
+    let mut capsule = if let Some(private_file) = args.private_file.as_deref() {
+        if recipients.is_empty() {
+            anyhow::bail!("--private-file requires at least one --recipient-key");
+        }
+        let private_data = std::fs::read(private_file)?;
+        build_capsule_for_recipients(&rev_id, public, &private_data, &recipients, &keypair)?
+    } else {
+        if !recipients.is_empty() {
+            anyhow::bail!("--recipient-key requires --private-file");
+        }
+        build_capsule(&rev_id, public, None, None, &keypair)?
+    };
+    capsule.key_id = Some(registered_agent.public_key.clone());
     for signer in &args.co_sign {
         let cosigner = ensure_registered_signing_agent(&store, signer)?;
         let cosigner_key = keypair_for_agent(signer, &cosigner)?;
@@ -270,10 +360,12 @@ fn enforce_ship_policies(
 
     let (signer_agent_ids, signer_key_ids) = policy_signers(signing_agents);
     let context = PolicyContext {
+        revision_id: Some(*rev_id),
         signer_agent_ids,
         signer_key_ids,
         touched_paths: collect_touched_paths(store, revision)?,
         trust_score: derive_capsule_trust_score(capsule),
+        now_ms: Some(current_time_ms()),
     };
 
     for policy in policies {
@@ -289,6 +381,52 @@ fn enforce_ship_policies(
     }
 
     Ok(())
+}
+
+fn enrich_evidence_for_revision(
+    evidence: &mut [Evidence],
+    rev_id: &ObjectId,
+    now_ms: u64,
+    args: &ShipArgs,
+) {
+    for item in evidence {
+        item.revision_id.get_or_insert(*rev_id);
+        item.started_at_ms.get_or_insert(now_ms);
+        item.ended_at_ms.get_or_insert(now_ms);
+        item.exit_code
+            .get_or_insert(if item.status.eq_ignore_ascii_case("pass") {
+                0
+            } else {
+                1
+            });
+        if item.command.is_none() {
+            item.command = args.evidence_command.clone();
+        }
+        if item.runner_identity.is_none() {
+            item.runner_identity = args.runner_identity.clone();
+        }
+        if item.environment_digest.is_none() {
+            item.environment_digest = args.environment_digest.clone();
+        }
+        if item.log_digest.is_none() {
+            item.log_digest = args.log_digest.clone();
+        }
+        if item.artifact_digest.is_none() {
+            item.artifact_digest = args.artifact_digest.clone();
+        }
+        if item.expires_at_ms.is_none() {
+            item.expires_at_ms = args
+                .evidence_expires_in_ms
+                .map(|ttl| now_ms.saturating_add(ttl));
+        }
+    }
+}
+
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 fn load_policies_for_intent(store: &ClawStore, intent: &Intent) -> anyhow::Result<Vec<Policy>> {
@@ -396,7 +534,8 @@ fn collect_touched_paths(store: &ClawStore, revision: &Revision) -> anyhow::Resu
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_touched_paths, derive_capsule_trust_score, parse_evidence, policy_signers,
+        collect_touched_paths, derive_capsule_trust_score, parse_evidence,
+        parse_recipient_public_keys, policy_signers,
     };
     use crate::commands::agent::AgentRegistration;
     use claw_core::object::{Object, TypeTag};
@@ -432,6 +571,22 @@ mod tests {
     }
 
     #[test]
+    fn parses_recipient_public_key_envelope_input() {
+        let parsed =
+            parse_recipient_public_keys(&[format!("security:security-key:{}", "07".repeat(32))])
+                .unwrap();
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].recipient_id, "security");
+        assert_eq!(parsed[0].key_id, "security-key");
+        assert_eq!(parsed[0].public_key, [7u8; 32]);
+        assert!(parse_recipient_public_keys(&["security:missing-key".to_string()]).is_err());
+        assert!(
+            parse_recipient_public_keys(&[format!("security:key:{}", "07".repeat(31))]).is_err()
+        );
+    }
+
+    #[test]
     fn derives_capsule_trust_score_from_pass_ratio() {
         let revision_id = claw_core::hash::content_hash(TypeTag::Revision, b"ship");
         let capsule = Capsule {
@@ -448,6 +603,18 @@ mod tests {
                         duration_ms: 0,
                         artifact_refs: vec![],
                         summary: None,
+                        revision_id: None,
+                        command: None,
+                        exit_code: None,
+                        started_at_ms: None,
+                        ended_at_ms: None,
+                        environment_digest: None,
+                        runner_identity: None,
+                        log_digest: None,
+                        artifact_digest: None,
+                        expires_at_ms: None,
+                        trust_domain: None,
+                        signature: None,
                     },
                     Evidence {
                         name: "lint".to_string(),
@@ -455,12 +622,25 @@ mod tests {
                         duration_ms: 0,
                         artifact_refs: vec![],
                         summary: None,
+                        revision_id: None,
+                        command: None,
+                        exit_code: None,
+                        started_at_ms: None,
+                        ended_at_ms: None,
+                        environment_digest: None,
+                        runner_identity: None,
+                        log_digest: None,
+                        artifact_digest: None,
+                        expires_at_ms: None,
+                        trust_domain: None,
+                        signature: None,
                     },
                 ],
             },
             encrypted_private: None,
             encryption: String::new(),
             key_id: None,
+            recipients: vec![],
             signatures: vec![],
         };
 

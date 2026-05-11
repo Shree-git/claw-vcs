@@ -163,6 +163,30 @@ pub struct Evidence {
     pub artifact_refs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag = "5")]
     pub summary: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "6")]
+    pub revision_id: ::core::option::Option<super::common::ObjectId>,
+    #[prost(string, optional, tag = "7")]
+    pub command: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(int32, optional, tag = "8")]
+    pub exit_code: ::core::option::Option<i32>,
+    #[prost(uint64, optional, tag = "9")]
+    pub started_at_ms: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "10")]
+    pub ended_at_ms: ::core::option::Option<u64>,
+    #[prost(string, optional, tag = "11")]
+    pub environment_digest: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "12")]
+    pub runner_identity: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "13")]
+    pub log_digest: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "14")]
+    pub artifact_digest: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, optional, tag = "15")]
+    pub expires_at_ms: ::core::option::Option<u64>,
+    #[prost(string, optional, tag = "16")]
+    pub trust_domain: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(bytes = "vec", optional, tag = "17")]
+    pub signature: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CapsulePublic {
@@ -185,6 +209,19 @@ pub struct CapsuleSignature {
     pub signature: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CapsuleRecipient {
+    #[prost(string, tag = "1")]
+    pub recipient_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub key_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub algorithm: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub ephemeral_public_key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "5")]
+    pub encrypted_content_key: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Capsule {
     #[prost(message, optional, tag = "1")]
     pub revision_id: ::core::option::Option<super::common::ObjectId>,
@@ -198,6 +235,35 @@ pub struct Capsule {
     pub key_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "6")]
     pub signatures: ::prost::alloc::vec::Vec<CapsuleSignature>,
+    #[prost(message, repeated, tag = "7")]
+    pub recipients: ::prost::alloc::vec::Vec<CapsuleRecipient>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EvidencePolicy {
+    #[prost(bool, tag = "1")]
+    pub require_fresh_evidence: bool,
+    #[prost(bool, tag = "2")]
+    pub require_revision_match: bool,
+    #[prost(bool, tag = "3")]
+    pub require_evidence_after_revision: bool,
+    #[prost(bool, tag = "4")]
+    pub require_expires_at: bool,
+    #[prost(bool, tag = "5")]
+    pub require_runner_identity: bool,
+    #[prost(bool, tag = "6")]
+    pub require_command: bool,
+    #[prost(bool, tag = "7")]
+    pub require_exit_code: bool,
+    #[prost(bool, tag = "8")]
+    pub require_log_or_artifact_digest: bool,
+    #[prost(bool, tag = "9")]
+    pub require_environment_digest: bool,
+    #[prost(uint64, optional, tag = "10")]
+    pub max_age_ms: ::core::option::Option<u64>,
+    #[prost(string, repeated, tag = "11")]
+    pub trusted_runner_identities: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Policy {
@@ -215,6 +281,12 @@ pub struct Policy {
     pub min_trust_score: ::prost::alloc::string::String,
     #[prost(string, tag = "7")]
     pub visibility: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "8")]
+    pub authorized_recipients: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "9")]
+    pub evidence_policy: ::core::option::Option<EvidencePolicy>,
+    #[prost(string, repeated, tag = "10")]
+    pub revoked_recipients: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Workstream {

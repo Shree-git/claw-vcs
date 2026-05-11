@@ -12,4 +12,9 @@ thiserror = { workspace = true }
 flate2 = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "import_export"
+harness = false

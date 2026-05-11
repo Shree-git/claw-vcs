@@ -10,7 +10,7 @@ RUN addgroup -S claw -g 10001 && adduser -S claw -u 10001 -G claw
 WORKDIR /app
 
 COPY --from=builder /src/target/release/claw /usr/local/bin/claw
-COPY probes/healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY crates/claw/deploy/container/probes/healthcheck.sh /usr/local/bin/healthcheck.sh
 RUN chmod +x /usr/local/bin/claw /usr/local/bin/healthcheck.sh
 
 USER 10001:10001

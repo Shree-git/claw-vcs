@@ -3,6 +3,7 @@ use claw_core::types::PatchOp;
 use crate::codec::Codec;
 use crate::PatchError;
 
+/// Codec that treats every binary change as a whole-object replacement.
 pub struct BinaryCodec;
 
 impl Codec for BinaryCodec {

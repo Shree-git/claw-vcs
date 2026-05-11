@@ -10,7 +10,7 @@ claw-store = { workspace = true }
 claw-crypto = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, features = ["tls"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 thiserror = { workspace = true }
@@ -25,7 +25,12 @@ rand = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "protocol"
+harness = false
 
 [build-dependencies]
 tonic-build = { workspace = true }

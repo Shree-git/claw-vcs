@@ -10,3 +10,11 @@ claw-patch = { workspace = true }
 claw-store = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "merge"
+harness = false

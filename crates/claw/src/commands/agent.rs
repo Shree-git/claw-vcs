@@ -85,6 +85,9 @@ fn agent_key_path(name: &str) -> anyhow::Result<std::path::PathBuf> {
 }
 
 fn set_private_permissions(path: &std::path::Path) -> anyhow::Result<()> {
+    #[cfg(not(unix))]
+    let _ = path;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

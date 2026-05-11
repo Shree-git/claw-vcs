@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::proto;
 use crate::proto::sync::{HelloResponse, PushObjectsResponse, UpdateRefsResponse};
+use crate::security::{redacted_secret_marker, REPLAY_NONCE_METADATA_KEY};
 use crate::transport::SyncTransport;
 use crate::SyncError;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HttpSyncClient {
     base_url: String,
     repo: String,
@@ -26,6 +27,25 @@ pub struct HttpSyncClient {
     server_version: Option<String>,
     server_capabilities: HashSet<String>,
     capabilities_advertised: bool,
+}
+
+impl std::fmt::Debug for HttpSyncClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut caps: Vec<_> = self.server_capabilities.iter().collect();
+        caps.sort();
+        f.debug_struct("HttpSyncClient")
+            .field("base_url", &self.base_url)
+            .field("repo", &self.repo)
+            .field(
+                "bearer_token",
+                &redacted_secret_marker(self.bearer_token.is_some()),
+            )
+            .field("health_checked", &self.health_checked)
+            .field("server_version", &self.server_version)
+            .field("server_capabilities", &caps)
+            .field("capabilities_advertised", &self.capabilities_advertised)
+            .finish()
+    }
 }
 
 // Keep transfers under Vercel's hard request/response size limits.
@@ -141,7 +161,9 @@ impl HttpSyncClient {
             let mut bytes = [0_u8; 16];
             rand::thread_rng().fill_bytes(&mut bytes);
             let key = BASE64_URL_SAFE_NO_PAD.encode(bytes);
-            builder = builder.header("idempotency-key", key);
+            builder = builder
+                .header("idempotency-key", key.clone())
+                .header(REPLAY_NONCE_METADATA_KEY, key);
         }
 
         if let Some(token) = &self.bearer_token {
@@ -1429,5 +1451,23 @@ impl SyncTransport for HttpSyncClient {
             Ok(result) => Ok(result),
             Err(_) => self.push_objects_legacy(store, ids).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_bearer_token() {
+        let client = HttpSyncClient::new(
+            "https://sync.example.test".to_string(),
+            "repo".to_string(),
+            Some("super-secret-token".to_string()),
+        );
+
+        let rendered = format!("{client:?}");
+        assert!(!rendered.contains("super-secret-token"));
+        assert!(rendered.contains("[REDACTED]"));
     }
 }

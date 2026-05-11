@@ -9,6 +9,9 @@ use crate::config::find_repo_root;
 
 #[derive(Args)]
 pub struct ChangeArgs {
+    /// Output result as JSON
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: ChangeCommand,
 }
@@ -69,6 +72,7 @@ mod tests {
 }
 
 pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
+    let json = args.json;
     match args.command {
         ChangeCommand::New { intent } => {
             let root = find_repo_root()?;
@@ -81,7 +85,7 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
             let intent_ref = format!("intents/{intent_id}");
             let intent_obj_id = store
                 .get_ref(&intent_ref)?
-                .ok_or_else(|| anyhow::anyhow!("intent not found: {intent_id}"))?;
+                .ok_or_else(|| anyhow::anyhow!("intent not found: {intent_id}. Run `claw intent list` to inspect available intents."))?;
             let intent_obj = store.load_object(&intent_obj_id)?;
             let mut intent_obj = match intent_obj {
                 Object::Intent(intent) => intent,
@@ -113,28 +117,70 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
                 store.set_ref(&intent_ref, &new_intent_obj_id)?;
             }
 
-            println!("Created change: {}", change.id);
-            println!("  Intent: {intent}");
-            println!("  Object: {id}");
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "created": true,
+                        "change": change_json(&change, Some(id.to_hex())),
+                    }))?
+                );
+            } else {
+                println!("Created change: {}", change.id);
+                println!("  Intent: {intent}");
+                println!("  Object: {id}");
+            }
         }
         ChangeCommand::Show { id } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let obj_id = store
-                .get_ref(&format!("changes/{id}"))?
-                .ok_or_else(|| anyhow::anyhow!("change not found: {id}"))?;
+            let obj_id = store.get_ref(&format!("changes/{id}"))?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "change not found: {id}. Run `claw change list` to inspect available changes."
+                )
+            })?;
             let obj = store.load_object(&obj_id)?;
             if let Object::Change(change) = obj {
-                println!("Change: {}", change.id);
-                println!("  Intent: {}", change.intent_id);
-                println!("  Status: {:?}", change.status);
-                println!("  Head revision: {:?}", change.head_revision);
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "change": change_json(&change, Some(obj_id.to_hex())),
+                        }))?
+                    );
+                } else {
+                    println!("Change: {}", change.id);
+                    println!("  Intent: {}", change.intent_id);
+                    println!("  Status: {:?}", change.status);
+                    println!("  Head revision: {:?}", change.head_revision);
+                }
             }
         }
         ChangeCommand::List { intent } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
             let refs = store.list_refs("changes")?;
+            if json {
+                let mut changes = Vec::new();
+                for (_, id) in &refs {
+                    if let Ok(Object::Change(change)) = store.load_object(id) {
+                        let matches_intent = intent
+                            .as_ref()
+                            .map(|filter| change.intent_id.to_string() == *filter)
+                            .unwrap_or(true);
+                        if matches_intent {
+                            changes.push(change_json(&change, Some(id.to_hex())));
+                        }
+                    }
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "changes": changes,
+                    }))?
+                );
+                return Ok(());
+            }
             for (_, id) in &refs {
                 if let Ok(Object::Change(change)) = store.load_object(id) {
                     let matches_intent = intent
@@ -154,9 +200,11 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
         ChangeCommand::Status { id, status } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let obj_id = store
-                .get_ref(&format!("changes/{id}"))?
-                .ok_or_else(|| anyhow::anyhow!("change not found: {id}"))?;
+            let obj_id = store.get_ref(&format!("changes/{id}"))?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "change not found: {id}. Run `claw change list` to inspect available changes."
+                )
+            })?;
             let obj = store.load_object(&obj_id)?;
             if let Object::Change(mut change) = obj {
                 change.status = match status.to_lowercase().as_str() {
@@ -164,16 +212,50 @@ pub fn run(args: ChangeArgs) -> anyhow::Result<()> {
                     "ready" => ChangeStatus::Ready,
                     "integrated" => ChangeStatus::Integrated,
                     "abandoned" => ChangeStatus::Abandoned,
-                    _ => anyhow::bail!("unknown status: {status}"),
+                    _ => anyhow::bail!(
+                        "unknown status: {status}. Expected one of: open, ready, integrated, abandoned."
+                    ),
                 };
                 change.updated_at_ms = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_millis() as u64;
                 let new_id = store.store_object(&Object::Change(change.clone()))?;
                 store.set_ref(&format!("changes/{}", change.id), &new_id)?;
-                println!("Updated change {} to {:?}", change.id, change.status);
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "updated": true,
+                            "change": change_json(&change, Some(new_id.to_hex())),
+                        }))?
+                    );
+                } else {
+                    println!("Updated change {} to {:?}", change.id, change.status);
+                }
             }
         }
     }
     Ok(())
+}
+
+fn change_json(change: &Change, object_id: Option<String>) -> serde_json::Value {
+    serde_json::json!({
+        "id": change.id.to_string(),
+        "object_id": object_id,
+        "intent_id": change.intent_id.to_string(),
+        "status": change_status(change.status),
+        "head_revision": change.head_revision.map(|id| id.to_hex()),
+        "workstream_id": change.workstream_id,
+        "created_at_ms": change.created_at_ms,
+        "updated_at_ms": change.updated_at_ms,
+    })
+}
+
+fn change_status(status: ChangeStatus) -> &'static str {
+    match status {
+        ChangeStatus::Open => "open",
+        ChangeStatus::Ready => "ready",
+        ChangeStatus::Integrated => "integrated",
+        ChangeStatus::Abandoned => "abandoned",
+    }
 }

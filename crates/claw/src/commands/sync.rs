@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use std::path::{Path, PathBuf};
 
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
@@ -7,7 +8,8 @@ use claw_sync::client::{RetryPolicy, SyncClient};
 use claw_sync::compat::{compatibility_report, CompatibilityLevel};
 use claw_sync::negotiation::ordered_reachable_objects;
 use claw_sync::proto::sync::HelloResponse;
-use claw_sync::transport::RemoteTransportConfig;
+use claw_sync::protocol::{negotiated_protocol_version, SYNC_PROTOCOL_VERSION};
+use claw_sync::transport::{GrpcTlsConfig, RemoteTransportConfig};
 
 use crate::auth_store;
 use crate::config::{self, find_repo_root};
@@ -72,9 +74,21 @@ fn require_access_token(
 
 #[derive(Args)]
 pub struct SyncArgs {
+    /// Trust this PEM CA certificate when connecting to gRPC remotes over TLS
+    #[arg(long)]
+    tls_ca_cert: Option<PathBuf>,
+    /// Override the TLS server name used for gRPC certificate verification
+    #[arg(long)]
+    tls_domain: Option<String>,
+    /// PEM client certificate for mutual TLS with gRPC remotes
+    #[arg(long)]
+    client_cert: Option<PathBuf>,
+    /// PEM client private key for mutual TLS with gRPC remotes
+    #[arg(long)]
+    client_key: Option<PathBuf>,
     #[command(subcommand)]
     command: Option<SyncCommand>,
-    /// Remote name or address (compatibility form: claw sync <remote>)
+    /// Remote name or address (compatibility form: `claw sync <remote>`)
     remote: Option<String>,
 }
 
@@ -91,6 +105,9 @@ enum SyncCommand {
         /// Force non-fast-forward push
         #[arg(long)]
         force: bool,
+        /// Preview objects and ref update without uploading or mutating remote refs
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Pull objects from remote
     Pull {
@@ -135,9 +152,10 @@ fn resolve_command(args: SyncArgs) -> SyncCommand {
 }
 
 async fn connect_from_remote(
-    root: &std::path::Path,
+    root: &Path,
     remote_arg: &str,
     runtime: &RuntimeOptions,
+    grpc_tls: Option<GrpcTlsConfig>,
 ) -> anyhow::Result<SyncClient> {
     let resolved = remote::resolve_remote(root, remote_arg)?;
     let cfg = config::load_or_default_config(root)?;
@@ -153,7 +171,11 @@ async fn connect_from_remote(
                     require_access_token(Some(profile), &runtime.profile, repo_default_profile)
                 })
                 .transpose()?;
-            RemoteTransportConfig::Grpc { addr, bearer_token }
+            RemoteTransportConfig::Grpc {
+                addr,
+                bearer_token,
+                tls: grpc_tls,
+            }
         }
         remote::ResolvedRemote::ClawLab {
             base_url,
@@ -185,8 +207,42 @@ async fn connect_from_remote(
     Ok(client)
 }
 
+fn load_optional_pem(path: Option<&Path>) -> anyhow::Result<Option<Vec<u8>>> {
+    path.map(std::fs::read).transpose().map_err(Into::into)
+}
+
+fn build_grpc_tls_config(args: &SyncArgs) -> anyhow::Result<Option<GrpcTlsConfig>> {
+    if args.client_cert.is_some() != args.client_key.is_some() {
+        anyhow::bail!("--client-cert and --client-key must be provided together");
+    }
+
+    if args.tls_ca_cert.is_none()
+        && args.tls_domain.is_none()
+        && args.client_cert.is_none()
+        && args.client_key.is_none()
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(GrpcTlsConfig {
+        ca_cert_pem: load_optional_pem(args.tls_ca_cert.as_deref())?,
+        client_cert_pem: load_optional_pem(args.client_cert.as_deref())?,
+        client_key_pem: load_optional_pem(args.client_key.as_deref())?,
+        domain_name: args.tls_domain.clone(),
+    }))
+}
+
 fn check_remote_compatibility(remote: &str, hello: &HelloResponse) -> anyhow::Result<()> {
     let report = compatibility_report(CLI_VERSION, &hello.server_version);
+    let protocol = negotiated_protocol_version(&hello.capabilities);
+    if protocol != Some(SYNC_PROTOCOL_VERSION) {
+        anyhow::bail!(
+            "protocol negotiation failed for {remote}: expected {expected}, got capabilities [{caps}]",
+            expected = SYNC_PROTOCOL_VERSION,
+            caps = hello.capabilities.join(", "),
+        );
+    }
+
     match report.level {
         CompatibilityLevel::Full => Ok(()),
         CompatibilityLevel::Limited => {
@@ -198,7 +254,7 @@ fn check_remote_compatibility(remote: &str, hello: &HelloResponse) -> anyhow::Re
             Ok(())
         }
         CompatibilityLevel::Unsupported => anyhow::bail!(
-            "compatibility check failed for {remote}: local claw version '{local}' is incompatible with remote version '{remote_ver}'; use matching major version and at most one minor difference (N/N-1), or retry without --compat-check",
+            "compatibility check failed for {remote}: local claw version '{local}' is incompatible with remote version '{remote_ver}'; use matching major version and at most one minor difference (N/N-1), or retry with --no-compat-check only after verifying the risk",
             local = report.local,
             remote_ver = report.remote,
         ),
@@ -219,15 +275,17 @@ async fn maybe_check_compatibility(
 }
 
 pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
+    let grpc_tls = build_grpc_tls_config(&args)?;
     match resolve_command(args) {
         SyncCommand::Push {
             remote,
             ref_name,
             force,
+            dry_run,
         } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let mut client = connect_from_remote(&root, &remote, runtime).await?;
+            let mut client = connect_from_remote(&root, &remote, runtime, grpc_tls.clone()).await?;
             maybe_check_compatibility(runtime, &remote, &mut client).await?;
 
             let local_id = store
@@ -236,9 +294,6 @@ pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()>
 
             let push_ids: Vec<ObjectId> = ordered_reachable_objects(&store, &[local_id]);
 
-            let resp = client.push_objects(&store, &push_ids).await?;
-            println!("Push: {}", resp.message);
-
             let remote_refs = client.advertise_refs("").await?;
             let remote_old = remote_refs
                 .iter()
@@ -246,6 +301,27 @@ pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()>
                 .map(|(_, id)| *id);
 
             let updates = vec![(ref_name.clone(), remote_old, local_id)];
+            if dry_run {
+                println!(
+                    "Dry run: would push {} object(s) to {}.",
+                    push_ids.len(),
+                    remote
+                );
+                match remote_old {
+                    Some(old) => println!("  Ref update: {ref_name} {old} -> {local_id}"),
+                    None => println!("  Ref create: {ref_name} -> {local_id}"),
+                }
+                if force {
+                    println!("  Force: true");
+                }
+                println!("  Object upload skipped.");
+                println!("  Remote ref update skipped.");
+                return Ok(());
+            }
+
+            let resp = client.push_objects(&store, &push_ids).await?;
+            println!("Push: {}", resp.message);
+
             let ref_resp = client.update_refs(&updates, force).await?;
 
             if ref_resp.success {
@@ -261,7 +337,7 @@ pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()>
         } => {
             let root = find_repo_root()?;
             let store = ClawStore::open(&root)?;
-            let mut client = connect_from_remote(&root, &remote, runtime).await?;
+            let mut client = connect_from_remote(&root, &remote, runtime, grpc_tls.clone()).await?;
             maybe_check_compatibility(runtime, &remote, &mut client).await?;
 
             let remote_refs = client.advertise_refs("").await?;
@@ -348,6 +424,7 @@ pub async fn run(args: SyncArgs, runtime: &RuntimeOptions) -> anyhow::Result<()>
                         RemoteTransportConfig::Grpc {
                             addr: remote.clone(),
                             bearer_token,
+                            tls: grpc_tls.clone(),
                         },
                         retry_policy,
                     )
@@ -443,10 +520,11 @@ mod tests {
     use clap::Parser;
 
     use super::{
-        check_remote_compatibility, resolve_command, resolve_token_profiles, SyncArgs, SyncCommand,
-        CLI_VERSION,
+        build_grpc_tls_config, check_remote_compatibility, resolve_command, resolve_token_profiles,
+        SyncArgs, SyncCommand, CLI_VERSION,
     };
     use claw_sync::proto::sync::HelloResponse;
+    use claw_sync::protocol::CAP_PROTOCOL_V1;
 
     #[derive(Parser)]
     struct TestCli {
@@ -491,6 +569,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_push_dry_run() {
+        let cli = TestCli::parse_from(["claw", "push", "--remote", "origin", "--dry-run"]);
+
+        match resolve_command(cli.args) {
+            SyncCommand::Push {
+                remote,
+                ref_name,
+                force,
+                dry_run,
+            } => {
+                assert_eq!(remote, "origin");
+                assert_eq!(ref_name, "heads/main");
+                assert!(!force);
+                assert!(dry_run);
+            }
+            _ => panic!("expected push command"),
+        }
+    }
+
+    #[test]
     fn parse_sync_without_remote_defaults_to_origin() {
         let cli = TestCli::parse_from(["claw"]);
 
@@ -512,7 +610,7 @@ mod tests {
     fn compat_check_accepts_matching_version() {
         let hello = HelloResponse {
             server_version: CLI_VERSION.to_string(),
-            capabilities: vec!["partial-clone".to_string()],
+            capabilities: vec![CAP_PROTOCOL_V1.to_string(), "partial-clone".to_string()],
         };
 
         check_remote_compatibility("origin", &hello).expect("expected compatible versions");
@@ -526,7 +624,7 @@ mod tests {
         let n_minus_one = minor.saturating_sub(1);
         let hello = HelloResponse {
             server_version: format!("{major}.{n_minus_one}.99"),
-            capabilities: vec!["partial-clone".to_string()],
+            capabilities: vec![CAP_PROTOCOL_V1.to_string(), "partial-clone".to_string()],
         };
 
         check_remote_compatibility("origin", &hello)
@@ -537,7 +635,7 @@ mod tests {
     fn compat_check_rejects_unsupported_version_gap() {
         let hello = HelloResponse {
             server_version: "9.9.9".to_string(),
-            capabilities: vec!["partial-clone".to_string()],
+            capabilities: vec![CAP_PROTOCOL_V1.to_string(), "partial-clone".to_string()],
         };
 
         let err = check_remote_compatibility("origin", &hello).expect_err("expected mismatch");
@@ -545,7 +643,57 @@ mod tests {
         assert!(message.contains("compatibility check failed"));
         assert!(message.contains("incompatible"));
         assert!(message.contains("N/N-1"));
-        assert!(message.contains("--compat-check"));
+        assert!(message.contains("--no-compat-check"));
+    }
+
+    #[test]
+    fn compat_check_rejects_missing_protocol_marker() {
+        let hello = HelloResponse {
+            server_version: CLI_VERSION.to_string(),
+            capabilities: vec!["partial-clone".to_string()],
+        };
+
+        let err =
+            check_remote_compatibility("origin", &hello).expect_err("expected protocol mismatch");
+        assert!(err.to_string().contains("protocol negotiation failed"));
+    }
+
+    #[test]
+    fn parse_sync_mtls_flags() {
+        let cli = TestCli::parse_from([
+            "claw",
+            "--tls-ca-cert",
+            "ca.pem",
+            "--tls-domain",
+            "claw.example",
+            "--client-cert",
+            "client.pem",
+            "--client-key",
+            "client-key.pem",
+            "push",
+        ]);
+
+        assert_eq!(
+            cli.args.tls_ca_cert.as_deref(),
+            Some(std::path::Path::new("ca.pem"))
+        );
+        assert_eq!(cli.args.tls_domain.as_deref(), Some("claw.example"));
+        assert_eq!(
+            cli.args.client_cert.as_deref(),
+            Some(std::path::Path::new("client.pem"))
+        );
+        assert_eq!(
+            cli.args.client_key.as_deref(),
+            Some(std::path::Path::new("client-key.pem"))
+        );
+    }
+
+    #[test]
+    fn mtls_config_requires_cert_and_key_pair() {
+        let cli = TestCli::parse_from(["claw", "--client-cert", "client.pem", "pull"]);
+
+        let err = build_grpc_tls_config(&cli.args).expect_err("missing key should fail");
+        assert!(err.to_string().contains("--client-cert and --client-key"));
     }
 
     #[test]

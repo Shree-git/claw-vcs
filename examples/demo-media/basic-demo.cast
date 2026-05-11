@@ -1,0 +1,10 @@
+{"version":2,"width":96,"height":24,"timestamp":1778505000,"env":{"SHELL":"/bin/bash","TERM":"xterm-256color"}}
+[0.100,"o","$ claw init\r\nInitialized claw repository at /tmp/claw-demo\r\n"]
+[0.900,"o","$ claw intent create --title \"Add dark mode\" --goal \"Support theme toggling\"\r\nCreated intent: 01HXDEMOINTENT0000000000\r\n  Title: Add dark mode\r\n  Object: clw_demo_intent\r\n"]
+[1.700,"o","$ claw change create --intent 01HXDEMOINTENT0000000000\r\nCreated change: 01HXDEMOCHANGE000000000\r\n  Intent: 01HXDEMOINTENT0000000000\r\n  Object: clw_demo_change\r\n"]
+[2.500,"o","$ claw status\r\n=== On branch demo ===\r\nChanges (1 file(s)):\r\n\r\n  A  app.conf\r\n\r\n  (use \"claw snapshot -m <message>\" to record)\r\n"]
+[3.500,"o","$ claw snapshot --change 01HXDEMOCHANGE000000000 -m \"Add demo config\"\r\nSnapshot: clw_demo_revision\r\n"]
+[4.400,"o","$ claw agent register --name demo-agent --version basic-demo\r\nRegistered agent: demo-agent\r\n  Version: basic-demo\r\n  Public signing id: demo-public-id\r\n  Object: clw_demo_agent\r\n"]
+[5.300,"o","$ claw ship --intent 01HXDEMOINTENT0000000000 --revision-ref heads/demo --agent demo-agent --evidence smoke=pass:15 --evidence lint=pass:7\r\nShipped intent: 01HXDEMOINTENT0000000000\r\n  Capsule: clw_demo_capsule\r\n  Revision: clw_demo_revision\r\n"]
+[6.300,"o","$ claw integrate --right heads/demo --message \"Integrate demo branch\"\r\nIntegrated successfully: clw_demo_merge\r\n"]
+[7.100,"o","$ claw status\r\n=== On branch main ===\r\nNothing to snapshot (working tree clean).\r\n"]

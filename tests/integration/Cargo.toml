@@ -45,6 +45,10 @@ path = "cli_error_contract_tests.rs"
 name = "cli_admin_git_workflow_tests"
 path = "cli_admin_git_workflow_tests.rs"
 
+[[test]]
+name = "backlog_gap_tests"
+path = "backlog_gap_tests.rs"
+
 [dependencies]
 claw-core = { workspace = true }
 claw-store = { workspace = true }

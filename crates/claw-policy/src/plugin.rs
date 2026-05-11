@@ -20,6 +20,7 @@ const DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const INIT_REQUEST_ID: u64 = 1;
 const CHECK_REQUEST_ID: u64 = 2;
 
+/// Evaluate configured external policy plugins for a revision and capsule.
 pub fn evaluate_plugins(
     policy: &Policy,
     revision: &Revision,

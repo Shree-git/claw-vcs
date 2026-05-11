@@ -6,7 +6,7 @@ use claw_core::object::Object;
 use crate::layout::RepoLayout;
 use crate::StoreError;
 
-/// Pack format (MVP - no delta compression):
+/// Pack format (version 1; delta compression is not currently part of the format):
 /// [4B "CLPK"][4B version=1][4B object_count]
 /// [object entries: 4B length, COF bytes]*
 const PACK_MAGIC: &[u8; 4] = b"CLPK";

@@ -13,8 +13,8 @@ Define the current, implemented release gates and operator responsibilities for 
   - `quality` (fmt, clippy, workspace tests).
   - `security-audit-gate` (`cargo audit`).
   - `contract-tests-gate` (core and integration contract suites, including ops artifacts checks).
-  - `artifact-smoke-gate` for Linux and macOS release archives before publish.
-  - `compatibility-matrix-gate` on Linux and macOS.
+  - `artifact-smoke-gate` for Linux, macOS, and Windows release archives/installers before publish.
+  - `compatibility-matrix-gate` on Linux, macOS, and Windows.
 - **Cross-version runtime checks (`cross-version-runtime.yml`):**
   - Runs on PRs and pushes to `main`.
   - Runs `cross_version_runtime_tests` (`claw-integration-tests`).
@@ -29,7 +29,7 @@ Define the current, implemented release gates and operator responsibilities for 
   - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob` and fails on missing pairs.
 - **Release channel smoke (`release-channel-smoke.yml`):**
   - Runs on published releases or manual dispatch.
-  - Validates Linux and macOS release archives, installer script installs, checksum consistency, and Homebrew installability.
+  - Validates Linux, macOS, and Windows release archives/installers where assets exist, plus checksum consistency and Homebrew installability.
 - **Nightly drill (`nightly-chaos.yml`):**
   - Scheduled daily at `03:00 UTC`.
   - Runs deterministic failure drills via `chaos_tests`.

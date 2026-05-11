@@ -1,27 +1,32 @@
 # Claw VCS
 
+[![CI](https://github.com/Shree-git/claw-vcs/actions/workflows/ci.yml/badge.svg)](https://github.com/Shree-git/claw-vcs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Security policy](https://img.shields.io/badge/security-policy-informational.svg)](SECURITY.md)
+
 **Intent-native, agent-native version control.**
 
-Claw is a version control system built for a world where AI agents write code alongside humans. It tracks *why* changes were made — not just *what* changed — and provides cryptographic proof of who did the work and what checks they passed.
+> Status: v0.1 experimental. Claw VCS is suitable for local exploration, demos, and design feedback.
+> It is not yet recommended as the sole source of truth for production repositories.
 
-> Status: `v0.1.x` early production rollout. Claw is usable for controlled self-hosted deployments and real operator feedback, but teams should keep rollback, backup, and migration validation in place before treating it as the sole system of record.
+Claw VCS is a version control system built for a world where AI agents write code alongside humans. It tracks *why* changes were made, not just *what* changed, and stores signed claims about who did the work and what checks they ran.
 
 ```
 claw init
 claw intent create --title "Add dark mode" --goal "Support light/dark theme toggling"
 claw change create --intent <intent-id>
 # ... write code ...
-claw snapshot -m "Initial dark mode implementation"
-claw ship --intent <intent-id> --evidence test=pass --evidence lint=pass
+claw snapshot --change <change-id> -m "Initial dark mode implementation"
+claw ship --intent <intent-id> --revision-ref heads/main --evidence test=pass --evidence lint=pass
 ```
 
-## Why Claw exists
+## Why Claw VCS exists
 
-Git was designed in 2005 for human kernel developers emailing patches. It does its job well: it tracks who changed what lines, when, and (if the commit message is good) why.
+Git remains excellent for human-authored source history. Claw VCS explores a complementary model for agent-written code where intent, evidence, and policy are first-class repository objects.
 
-But the world is changing. AI agents are writing significant amounts of code. And Git's model has gaps that matter in this new world:
+AI agents are writing significant amounts of code. Git's model has gaps that matter in this new world:
 
-**Git can't prove what checks passed.** Alice says "I ran the tests" in her commit message. Did she? Git doesn't know. CI runs externally, and the results live in GitHub Actions, not in the repo. If GitHub goes down, that proof is gone.
+**Git does not store structured check evidence.** Alice says "I ran the tests" in her commit message. Git records the message, not a signed, queryable claim about the command, runner, revision, and result. CI runs externally, and the results often live in GitHub Actions rather than in the repository.
 
 **Git can't distinguish human Alice from bot Alice.** If an AI agent commits as alice@example.com, Git can't tell. There's no structured way to say "this was written by Claude 3.5 Sonnet, using toolchain X, in environment Y." Git's author field is a freeform string.
 
@@ -45,9 +50,9 @@ Intent ("add dark mode")          ← the goal, with constraints and acceptance 
 
 Intents are versioned objects in the repo — not external issues in Jira. They have structured fields: `goal`, `constraints`, `acceptance_tests`, `status`. Changes link to intents by ID. You can programmatically ask "what revisions addressed intent X, and did they all pass the acceptance tests?"
 
-### Capsules: agent provenance with cryptographic proof
+### Capsules: signed agent provenance claims
 
-When an agent makes a change, it produces a **Capsule** — a signed envelope containing:
+When an agent makes a change, it produces a **Capsule**, a signed envelope containing:
 
 ```
 Capsule {
@@ -68,7 +73,7 @@ Capsule {
 }
 ```
 
-The evidence (test results, lint outcomes, security scan results) is stored as signed objects in the repo. You can verify them offline, years later, without any external service.
+The evidence (test results, lint outcomes, security scan results) is stored in signed capsules in the repo. Claw can verify that a signed capsule claims specific evidence over a specific revision, produced by a specific key. Whether that evidence is trustworthy depends on key management, runner integrity, and policy configuration.
 
 ### Policies as versioned objects
 
@@ -169,7 +174,7 @@ The architecture supports adding codecs for YAML, TOML, SQL migrations, Protobuf
 ### Sync protocol
 
 Claw uses **gRPC with HTTP/2 streaming** for network operations, with an optional
-HTTP transport adapter for ClawLab-hosted remotes:
+HTTP transport adapter for planned hosted remotes:
 
 ```protobuf
 service SyncService {
@@ -187,14 +192,14 @@ Partial clone filters let you fetch selectively:
 - **Path prefixes** — fetch only `src/frontend/`
 - **Time ranges** — fetch only recent work
 - **Codec types** — fetch only JSON files
-- **Capsule visibility** — respect public/private/restricted access
+- **Capsule visibility** — respect public/private/encrypted-metadata-required policy modes
 - **Byte budget / depth limit** — resource-constrained fetching
 
 ### Daemon
 
 `claw daemon` (or `claw serve`) runs a long-lived gRPC server exposing services for intents, changes, capsules, workstreams, events, and sync. Agents connect programmatically — create intents, submit changes, stream events in real-time. Git has no equivalent.
 
-For production deployments, daemon auth can be enabled with `--auth-token` (explicit bearer token) or `--auth-profile` (reuse token from `claw auth` profile).
+For production profile runs, non-local daemon binds require authentication and TLS by default. Daemon auth can be configured with `--auth-token` (explicit bearer token) or `--auth-profile` (reuse token from `claw auth` profile).
 
 ### Cryptography
 
@@ -214,8 +219,8 @@ claw intent <subcommand>     Create and manage intents
 claw change <subcommand>     Create and manage changes
 claw policy <subcommand>     Create and manage integration policies
 claw snapshot -m "msg"       Record the working tree atomically
-claw ship --intent <id>      Finalize a change and produce a capsule (supports --co-sign)
-claw integrate               Merge changes (three-way, codec-aware)
+claw ship --intent <id>      Finalize a revision and produce a capsule (use --revision-ref for branches)
+claw integrate --right <ref> Merge changes (three-way, codec-aware)
 claw branch <subcommand>     List, create, or delete branches
 claw checkout <branch>       Switch branches or restore working tree
 claw log                     Show revision history
@@ -225,7 +230,7 @@ claw show <object-id>        Inspect any object
 claw resolve <subcommand>    Manage merge conflicts
 claw agent <subcommand>      Register and manage agent identities
 claw remote <subcommand>     Manage remote repositories
-claw auth <subcommand>       Manage ClawLab auth profiles and tokens
+claw auth <subcommand>       Manage auth profiles and tokens for hosted remotes
 claw sync <remote>           Pull from a remote (shorthand)
 claw sync <subcommand>       Push, pull, or clone
 claw daemon                  Run the gRPC sync server
@@ -237,12 +242,12 @@ claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 
 **No staging area** — by design. `claw snapshot` captures everything atomically. This is a deliberate simplification for agent workflows where partial staging adds complexity without value.
 
-## What Claw does that Git can't
+## What Claw VCS adds alongside Git
 
 | Capability | Git | Claw |
 |---|---|---|
 | Track *why* a change was made (structured) | Freeform commit message | Intent objects with goals, constraints, acceptance tests |
-| Prove what checks passed | External CI; not in the repo | Evidence in capsules, signed and stored in-repo |
+| Record signed check claims | External CI; not in the repo | Evidence in capsules, signed and stored in-repo |
 | Distinguish human from AI agent | Freeform author string | Registered agent identities with Ed25519 keys |
 | Enforce policies in the repo | GitHub/GitLab settings (external) | Policy objects versioned alongside code |
 | Codec-aware merging | Line-based diff only | Pluggable codecs (JSON tree diff, etc.) |
@@ -255,13 +260,25 @@ claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 
 - **Human authorship** — Git's author/committer model works well for human developers.
 - **Commit messages as "why"** — perfectly adequate for most human-only projects.
-- **GPG signing** — proves a human signed a commit. Claw's capsule signatures extend the same idea to agents and evidence.
+- **GPG/SSH signing** — proves a configured key signed a commit. Claw's capsule signatures extend the same idea to agent keys and evidence claims.
 
-**The thesis:** If your project is 100% human-written, Git's provenance model is probably sufficient. If agents are submitting changes autonomously, Git has no way to enforce "only integrate if the agent proved it ran the test suite" without external infrastructure. Claw bakes it in.
+**The thesis:** If your project is 100% human-written, Git's provenance model is probably sufficient. If agents are submitting changes autonomously, Git has no built-in repository object for enforcing "only integrate if a trusted key signed acceptable test evidence for this exact revision." Claw makes that evidence and policy part of the repo.
+
+## What Claw VCS is not
+
+- Not a Git replacement for every project.
+- Not a CI system.
+- Not a code review platform.
+- Not proof that code is correct.
+- Not proof that tests are sufficient.
+- Not proof that an AI agent behaved safely.
+- Not full supply-chain security by itself.
 
 ## Install
 
-Tagged releases publish prebuilt binaries for macOS, Linux, and Windows in GitHub Releases. The current supported install channels are Homebrew, direct release downloads, shell/PowerShell installer scripts, and the Windows MSI. WinGet is being added separately.
+Tagged releases publish prebuilt binaries for macOS, Linux, and Windows in GitHub Releases. The verification blocks below require a release built from this hardened tree; the existing `v0.1.0` release from 2026-05-01 predates `claw doctor` and should be treated as historical for launch verification.
+
+For the current working tree, the source install path has been smoke-tested with `cargo install --path crates/claw --locked`. For release channels, check [install verification](docs/operations/install-verification-log.md) and only mark a channel launch-ready after its current public artifact passes the matching clean-environment smoke test.
 
 ### macOS
 
@@ -278,10 +295,27 @@ brew tap shree-git/homebrew-tap
 brew install claw
 ```
 
+Verify:
+
+```bash
+claw --version
+claw doctor
+mkdir -p /tmp/claw-demo && cd /tmp/claw-demo
+claw init
+claw status
+```
+
 **Installer script**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+```
+
+Non-pipe alternative:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh
+sh ./claw-installer.sh
 ```
 
 **Manual download**
@@ -296,12 +330,29 @@ CLAW_HOME="$HOME/.claw" \
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
+Verify:
+
+```bash
+claw --version
+claw doctor
+mkdir -p /tmp/claw-demo && cd /tmp/claw-demo
+claw init
+claw status
+```
+
 ### Linux
 
 **Installer script**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+```
+
+Non-pipe alternative:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh
+sh ./claw-installer.sh
 ```
 
 **Manual download**
@@ -316,6 +367,16 @@ CLAW_HOME="$HOME/.claw" \
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
 ```
 
+Verify:
+
+```bash
+claw --version
+claw doctor
+mkdir -p /tmp/claw-demo && cd /tmp/claw-demo
+claw init
+claw status
+```
+
 Notes:
 
 - On NixOS (or other unusual environments), prefer manual install (download a release archive and place `claw` somewhere on your `PATH`) or build from source.
@@ -325,10 +386,10 @@ Notes:
 **WinGet**
 
 ```powershell
-winget install ClawContributors.ClawVCS
+winget install ShreeGit.ClawVCS
 ```
 
-WinGet support is pending review in the upstream Microsoft repository. Until that lands, use the MSI or PowerShell installer below.
+WinGet support is planned. Until a manifest is accepted in the upstream Microsoft repository, use the MSI or PowerShell installer below.
 
 **MSI**
 
@@ -338,6 +399,24 @@ Download the latest `.msi` from GitHub Releases and run it. The installer adds `
 
 ```powershell
 iwr -useb https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.ps1 | iex
+```
+
+Non-pipe alternative:
+
+```powershell
+iwr -useb https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.ps1 -OutFile claw-installer.ps1
+powershell -ExecutionPolicy Bypass -File .\claw-installer.ps1
+```
+
+Verify:
+
+```powershell
+claw --version
+claw doctor
+mkdir $env:TEMP\claw-demo -Force
+cd $env:TEMP\claw-demo
+claw init
+claw status
 ```
 
 ### Build from source (any OS)
@@ -350,7 +429,13 @@ generally **don't** need to install Protocol Buffers tooling. If you want to for
 git clone https://github.com/shree-git/claw-vcs.git
 cd claw-vcs
 cargo build --release -p claw
-./target/release/claw --help
+CLAW_BIN="$(pwd)/target/release/claw"
+"$CLAW_BIN" --version
+"$CLAW_BIN" doctor
+mkdir /tmp/claw-demo
+cd /tmp/claw-demo
+"$CLAW_BIN" init
+"$CLAW_BIN" status
 ```
 
 Run tests:
@@ -365,13 +450,30 @@ If you already have Rust installed, you can install directly with cargo:
 
 ```bash
 cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked
+claw --version
+claw doctor
+mkdir /tmp/claw-demo
+cd /tmp/claw-demo
+claw init
+claw status
 ```
+
+## Verify releases
+
+Before trusting a downloaded artifact, verify checksums, signatures, and attestations when release assets provide them. See [release verification](docs/security/verifying-releases.md).
+
+## Uninstall
+
+See [uninstall instructions](docs/operations/uninstall.md) for Homebrew, MSI, manual installs, config, auth profiles, and local repo state.
 
 ## Documentation
 
 - Full operator docs: [docs/README.md](docs/README.md)
 - Production readiness checklist: [docs/reference/production-readiness-checklist.md](docs/reference/production-readiness-checklist.md)
 - Quickstart: [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
+- Basic demo: [examples/basic-demo/README.md](examples/basic-demo/README.md)
+- Backup/restore demo: [examples/backup-restore/README.md](examples/backup-restore/README.md)
+- Demo media: [examples/demo-media/README.md](examples/demo-media/README.md)
 - Production install: [docs/operations/production-install.md](docs/operations/production-install.md)
 - Upgrade and rollback: [docs/operations/upgrade-and-rollback.md](docs/operations/upgrade-and-rollback.md)
 - Disaster recovery: [docs/operations/disaster-recovery.md](docs/operations/disaster-recovery.md)
@@ -380,7 +482,7 @@ cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --l
 
 ## Project status
 
-Claw is **v0.1.0** and now ships as a real release line with signed artifacts, Homebrew distribution, Windows MSI packaging, operator docs, rollback guidance, and production preflight checks. The support boundary is still intentionally narrow: prefer controlled self-hosted rollouts, pin versions per environment, and validate upgrades before broad adoption.
+Claw VCS is **v0.1.0 experimental**. The repository includes release, operator, rollback, and production preflight tooling, but public release channels must be verified per release before they are treated as live. Keep Git or another proven system as the source of truth while evaluating Claw VCS.
 
 ## License
 

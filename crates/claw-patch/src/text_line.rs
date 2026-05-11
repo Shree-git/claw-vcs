@@ -4,6 +4,7 @@ use similar::{DiffTag, TextDiff};
 use crate::codec::Codec;
 use crate::PatchError;
 
+/// Codec for UTF-8 text using line-based patch addresses.
 pub struct TextLineCodec;
 
 fn context_hash(lines: &[&str], center: usize) -> u64 {

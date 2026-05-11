@@ -32,6 +32,9 @@ pub struct IntegrateArgs {
     /// Merge message
     #[arg(short, long, default_value = "Integrate changes")]
     message: String,
+    /// Preview policy checks and merge result without updating refs or worktree
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Debug, Default)]
@@ -83,6 +86,18 @@ pub fn run(args: IntegrateArgs) -> anyhow::Result<()> {
     )?;
 
     if result.conflicts.is_empty() {
+        if args.dry_run {
+            println!("Dry run: integration can be applied cleanly.");
+            println!("  Left ref: {left_ref} ({left_id})");
+            println!("  Right: {} ({right_id})", args.right);
+            if let Some(tree_id) = result.revision.tree {
+                println!("  Result tree: {tree_id}");
+            }
+            println!("  Ref update skipped.");
+            println!("  Worktree update skipped.");
+            return Ok(());
+        }
+
         // Clean merge: store revision, materialize tree, advance ref
         let rev_id = store.store_object(&Object::Revision(result.revision))?;
         store.update_ref_cas(
@@ -100,6 +115,19 @@ pub fn run(args: IntegrateArgs) -> anyhow::Result<()> {
 
         println!("Integrated successfully: {rev_id}");
     } else {
+        if args.dry_run {
+            println!(
+                "Dry run: merge would have {} conflict(s).",
+                result.conflicts.len()
+            );
+            for c in &result.conflicts {
+                println!("  CONFLICT: {} ({})", c.file_path, c.codec_id);
+            }
+            println!("  Conflict artifacts skipped.");
+            println!("  Merge state write skipped.");
+            return Ok(());
+        }
+
         // Conflicted merge: write conflict artifacts, MERGE_STATE.toml, do NOT advance ref
         let mut conflict_entries = Vec::new();
 
@@ -231,10 +259,12 @@ fn enforce_integration_policies(
         let provenance = verify_capsule_provenance(&capsule, &rev_id, &agent_registry)?;
         let touched_paths = collect_touched_paths(store, &rev)?;
         let context = PolicyContext {
+            revision_id: Some(rev_id),
             signer_agent_ids: provenance.signer_agent_ids,
             signer_key_ids: provenance.signer_key_ids,
             touched_paths,
             trust_score: provenance.trust_score,
+            now_ms: Some(current_time_ms()),
         };
 
         for policy in policies {
@@ -250,6 +280,13 @@ fn enforce_integration_policies(
     }
 
     Ok(())
+}
+
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default()
 }
 
 fn verify_capsule_provenance(
@@ -630,18 +667,33 @@ impl ObjectExt for Object {
 mod tests {
     use super::{
         collect_applicable_revisions, enforce_integration_policies, resolve_revision_ref_or_id,
-        verify_capsule_provenance, AgentRegistry,
+        verify_capsule_provenance, AgentRegistry, IntegrateArgs,
     };
     use crate::commands::agent::AgentRegistration;
+    use clap::Parser;
     use claw_core::id::{ChangeId, IntentId};
     use claw_core::object::Object;
     use claw_core::types::Blob;
     use claw_core::types::{
-        Change, ChangeStatus, Intent, IntentStatus, Policy, Revision, Visibility,
+        Change, ChangeStatus, EvidencePolicy, Intent, IntentStatus, Policy, Revision, Visibility,
     };
     use claw_crypto::capsule::build_capsule;
     use claw_crypto::keypair::KeyPair;
     use claw_store::ClawStore;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: IntegrateArgs,
+    }
+
+    #[test]
+    fn parses_dry_run_flag() {
+        let cli = TestCli::parse_from(["claw", "--right", "heads/feature", "--dry-run"]);
+
+        assert_eq!(cli.args.right, "heads/feature");
+        assert!(cli.args.dry_run);
+    }
 
     fn test_store() -> (tempfile::TempDir, ClawStore) {
         let tmp = tempfile::tempdir().unwrap();
@@ -756,6 +808,9 @@ mod tests {
             quarantine_lane: false,
             min_trust_score: None,
             visibility: Visibility::Public,
+            authorized_recipients: vec![],
+            revoked_recipients: vec![],
+            evidence_policy: EvidencePolicy::default(),
         });
         let policy_obj_id = store.store_object(&policy_obj).unwrap();
         store

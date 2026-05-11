@@ -100,6 +100,18 @@ message Evidence {
   uint64 duration_ms = 3;
   repeated string artifact_refs = 4;
   string summary = 5;
+  claw.common.ObjectId revision_id = 6;
+  optional string command = 7;
+  optional int32 exit_code = 8;
+  optional uint64 started_at_ms = 9;
+  optional uint64 ended_at_ms = 10;
+  optional string environment_digest = 11;
+  optional string runner_identity = 12;
+  optional string log_digest = 13;
+  optional string artifact_digest = 14;
+  optional uint64 expires_at_ms = 15;
+  optional string trust_domain = 16;
+  optional bytes signature = 17;
 }
 
 message CapsulePublic {
@@ -115,6 +127,14 @@ message CapsuleSignature {
   bytes signature = 2;
 }
 
+message CapsuleRecipient {
+  string recipient_id = 1;
+  string key_id = 2;
+  string algorithm = 3;
+  bytes ephemeral_public_key = 4;
+  bytes encrypted_content_key = 5;
+}
+
 message Capsule {
   claw.common.ObjectId revision_id = 1;
   CapsulePublic public_fields = 2;
@@ -122,6 +142,21 @@ message Capsule {
   string encryption = 4;
   string key_id = 5;
   repeated CapsuleSignature signatures = 6;
+  repeated CapsuleRecipient recipients = 7;
+}
+
+message EvidencePolicy {
+  bool require_fresh_evidence = 1;
+  bool require_revision_match = 2;
+  bool require_evidence_after_revision = 3;
+  bool require_expires_at = 4;
+  bool require_runner_identity = 5;
+  bool require_command = 6;
+  bool require_exit_code = 7;
+  bool require_log_or_artifact_digest = 8;
+  bool require_environment_digest = 9;
+  optional uint64 max_age_ms = 10;
+  repeated string trusted_runner_identities = 11;
 }
 
 message Policy {
@@ -132,6 +167,9 @@ message Policy {
   bool quarantine_lane = 5;
   string min_trust_score = 6;
   string visibility = 7;
+  repeated string authorized_recipients = 8;
+  EvidencePolicy evidence_policy = 9;
+  repeated string revoked_recipients = 10;
 }
 
 message Workstream {

@@ -1,3 +1,5 @@
+//! Hand-written Claw object model types.
+
 mod blob;
 mod capsule;
 mod change;
@@ -12,12 +14,15 @@ mod tree;
 mod workstream;
 
 pub use blob::Blob;
-pub use capsule::{Capsule, CapsulePublic, CapsuleSignature, Evidence};
+pub use capsule::{
+    Capsule, CapsulePublic, CapsuleRecipient, CapsuleSignature, Evidence,
+    CAPSULE_PRIVATE_ENCRYPTION, CAPSULE_RECIPIENT_PRIVATE_ENCRYPTION, RECIPIENT_ENVELOPE_ALGORITHM,
+};
 pub use change::{Change, ChangeStatus};
 pub use conflict::{Conflict, ConflictStatus};
 pub use intent::{Intent, IntentStatus};
 pub use patch::{Patch, PatchOp};
-pub use policy::{Policy, Visibility};
+pub use policy::{EvidencePolicy, Policy, Visibility};
 pub use reflog::{RefLog, RefLogEntry};
 pub use revision::Revision;
 pub use snapshot::Snapshot;

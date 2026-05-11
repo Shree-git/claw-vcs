@@ -36,6 +36,7 @@ flate2 = "1.1"
 # Crypto
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 chacha20poly1305 = "0.10"
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rand = "0.8"
 
 # Serialization
@@ -91,6 +92,7 @@ globset = "0.4"
 
 # Testing
 proptest = "1.6"
+criterion = "0.5"
 
 # Internal crates
 claw-core = { path = "crates/claw-core" }

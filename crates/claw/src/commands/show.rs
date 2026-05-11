@@ -1,8 +1,12 @@
 use clap::Args;
 
+use std::path::PathBuf;
+
+use base64::prelude::*;
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
 use claw_core::types::FileMode;
+use claw_crypto::recipient::decrypt_capsule_private_for_recipient;
 use claw_store::ClawStore;
 
 use crate::config::find_repo_root;
@@ -10,6 +14,18 @@ use crate::output;
 
 #[derive(Args)]
 pub struct ShowArgs {
+    /// Output object details as JSON
+    #[arg(long)]
+    json: bool,
+    /// Decrypt capsule private fields for a recipient
+    #[arg(long)]
+    decrypt_private: bool,
+    /// Recipient ID to use with --decrypt-private
+    #[arg(long)]
+    recipient: Option<String>,
+    /// Path to a hex-encoded X25519 recipient secret key
+    #[arg(long)]
+    recipient_secret_key: Option<PathBuf>,
     /// Object ID (hex or clw_ display format), or ref name
     object: String,
 }
@@ -39,6 +55,25 @@ pub fn run(args: ShowArgs) -> anyhow::Result<()> {
 
     let obj = store.load_object(&id)?;
     let type_name = obj.type_tag().name();
+
+    if args.json && args.decrypt_private {
+        anyhow::bail!("--decrypt-private is only supported with human-readable output");
+    }
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "object": {
+                    "id": id.to_string(),
+                    "hex": id.to_hex(),
+                    "type": type_name,
+                    "value": serde_json::to_value(&obj)?,
+                }
+            }))?
+        );
+        return Ok(());
+    }
 
     println!("{}", output::header(&format!("{} {}", type_name, id)));
     println!("{}", output::kv("hex", &id.to_hex()));
@@ -172,6 +207,35 @@ pub fn run(args: ShowArgs) -> anyhow::Result<()> {
             if capsule.encrypted_private.is_some() {
                 println!("{}", output::kv("private", "encrypted"));
             }
+            if !capsule.recipients.is_empty() {
+                println!(
+                    "{}",
+                    output::kv(
+                        "recipients",
+                        &format!("{} envelope(s)", capsule.recipients.len())
+                    )
+                );
+                for recipient in &capsule.recipients {
+                    println!("  {} ({})", recipient.recipient_id, recipient.key_id);
+                }
+            }
+            if args.decrypt_private {
+                let recipient_id = args.recipient.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("--recipient is required with --decrypt-private")
+                })?;
+                let key_path = args.recipient_secret_key.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("--recipient-secret-key is required with --decrypt-private")
+                })?;
+                let secret_key = read_recipient_secret_key(key_path)?;
+                let plaintext =
+                    decrypt_capsule_private_for_recipient(&capsule, recipient_id, &secret_key)?;
+                println!("{}", output::kv("private", "decrypted"));
+                if let Ok(text) = std::str::from_utf8(&plaintext) {
+                    println!("{text}");
+                } else {
+                    println!("{}", BASE64_STANDARD.encode(plaintext));
+                }
+            }
         }
         Object::Snapshot(snap) => {
             println!("{}", output::kv("revision", &snap.revision_id.to_string()));
@@ -209,6 +273,30 @@ pub fn run(args: ShowArgs) -> anyhow::Result<()> {
                     output::kv("checks", &policy.required_checks.join(", "))
                 );
             }
+            if !policy.authorized_recipients.is_empty() {
+                println!(
+                    "{}",
+                    output::kv("recipients", &policy.authorized_recipients.join(", "))
+                );
+            }
+            if policy.evidence_policy.require_fresh_evidence {
+                println!("{}", output::kv("fresh_evidence", "required"));
+                if let Some(max_age_ms) = policy.evidence_policy.max_age_ms {
+                    println!(
+                        "{}",
+                        output::kv("evidence_max_age_ms", &max_age_ms.to_string())
+                    );
+                }
+                if !policy.evidence_policy.trusted_runner_identities.is_empty() {
+                    println!(
+                        "{}",
+                        output::kv(
+                            "trusted_runners",
+                            &policy.evidence_policy.trusted_runner_identities.join(", ")
+                        )
+                    );
+                }
+            }
         }
         Object::Workstream(ws) => {
             println!("{}", output::kv("id", &ws.workstream_id));
@@ -240,6 +328,22 @@ pub fn run(args: ShowArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn read_recipient_secret_key(path: &std::path::Path) -> anyhow::Result<[u8; 32]> {
+    let raw = std::fs::read_to_string(path)?;
+    let bytes = hex::decode(raw.trim()).map_err(|err| {
+        anyhow::anyhow!(
+            "invalid recipient secret key at {}: expected 32-byte hex ({err})",
+            path.display()
+        )
+    })?;
+    bytes.as_slice().try_into().map_err(|_| {
+        anyhow::anyhow!(
+            "invalid recipient secret key at {}: expected 32-byte hex",
+            path.display()
+        )
+    })
+}
+
 fn format_timestamp(ms: u64) -> String {
     let secs = ms / 1000;
     let h = (secs % 86400) / 3600;
@@ -247,4 +351,45 @@ fn format_timestamp(ms: u64) -> String {
     let s = secs % 60;
     let d = secs / 86400;
     format!("{:02}:{:02}:{:02} UTC (day {})", h, m, s, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShowArgs;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: ShowArgs,
+    }
+
+    #[test]
+    fn parses_json_flag() {
+        let cli = TestCli::parse_from(["claw", "--json", "heads/main"]);
+
+        assert!(cli.args.json);
+        assert_eq!(cli.args.object, "heads/main");
+    }
+
+    #[test]
+    fn parses_decrypt_private_flags() {
+        let cli = TestCli::parse_from([
+            "claw",
+            "--decrypt-private",
+            "--recipient",
+            "security",
+            "--recipient-secret-key",
+            "security.x25519",
+            "clw_capsule",
+        ]);
+
+        assert!(cli.args.decrypt_private);
+        assert_eq!(cli.args.recipient.as_deref(), Some("security"));
+        assert_eq!(
+            cli.args.recipient_secret_key.as_deref(),
+            Some(std::path::Path::new("security.x25519"))
+        );
+        assert_eq!(cli.args.object, "clw_capsule");
+    }
 }

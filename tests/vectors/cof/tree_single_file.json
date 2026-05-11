@@ -1,0 +1,18 @@
+{
+  "name": "tree_single_file",
+  "input_object": {
+    "type": "Tree",
+    "entries": [
+      {
+        "name": "README.md",
+        "mode": "regular",
+        "object_id": "clw_jys5zwjrgfbnmq2nkq6q2oug2b6zfcppl33cdufpuda3zyf73cna"
+      }
+    ]
+  },
+  "canonical_payload_hex": "0a330a09524541444d452e6d6410a483021a220a204e25dcd9313142d6434d543d0d3a86d07d9289ef5ef621d0afa0c1bce0bfd89a",
+  "cof_hex": "434c573101020000350a330a09524541444d452e6d6410a483021a220a204e25dcd9313142d6434d543d0d3a86d07d9289ef5ef621d0afa0c1bce0bfd89acbc20287",
+  "expected_object_id_hex": "b139b0fb2f356ced780ffa1da15cc35caf6b3877213e91049adbcc65e852c37b",
+  "expected_object_id": "clw_we43b6zpgvwo26ap7io2cxgdlsxwwodxee7jcbe23pggl2csyn5q",
+  "expected_verification_result": "valid"
+}

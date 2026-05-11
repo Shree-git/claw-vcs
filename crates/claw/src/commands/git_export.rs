@@ -32,6 +32,9 @@ pub struct GitExportArgs {
     /// Git notes ref used when --git-notes is enabled
     #[arg(long, default_value = "claw")]
     notes_ref: String,
+    /// Preview export plan without writing Git objects, refs, or notes
+    #[arg(long)]
+    dry_run: bool,
 }
 
 fn validate_git_branch_path(branch: &str) -> anyhow::Result<()> {
@@ -79,6 +82,27 @@ pub fn run(args: GitExportArgs) -> anyhow::Result<()> {
             let branch_name = format!("{}{}", args.branch_prefix, short);
             validate_git_branch_path(&branch_name)?;
 
+            if args.dry_run {
+                let revision_count = collect_revision_ids(&store, &rev_id)?.len();
+                let note_count = if args.git_notes {
+                    count_git_provenance_notes(&store, &rev_id)?
+                } else {
+                    0
+                };
+                println!(
+                    "Dry run: would export {} -> refs/heads/{} ({} revision object(s))",
+                    ref_name, branch_name, revision_count
+                );
+                if args.git_notes {
+                    println!(
+                        "  Would write {note_count} provenance note(s) to refs/notes/{}",
+                        args.notes_ref
+                    );
+                }
+                exported += 1;
+                continue;
+            }
+
             let sha1 = exporter.export(&rev_id, &git_objects_dir)?;
             write_git_branch_ref(&git_dir, &branch_name, &sha1)?;
             write_change_refs(&store, &exporter, &rev_id, &git_dir)?;
@@ -106,14 +130,40 @@ pub fn run(args: GitExportArgs) -> anyhow::Result<()> {
             );
             exported += 1;
         }
-        println!("Exported {exported} branch(es) to git.");
+        if args.dry_run {
+            println!("Dry run: would export {exported} branch(es) to git.");
+        } else {
+            println!("Exported {exported} branch(es) to git.");
+        }
     } else {
         let rev_id = store
             .get_ref(&args.ref_name)?
             .ok_or_else(|| anyhow::anyhow!("ref not found: {}", args.ref_name))?;
+        validate_git_branch_path(&args.branch)?;
+        if args.dry_run {
+            let revision_count = collect_revision_ids(&store, &rev_id)?.len();
+            let note_count = if args.git_notes {
+                count_git_provenance_notes(&store, &rev_id)?
+            } else {
+                0
+            };
+            println!(
+                "Dry run: would export {} -> refs/heads/{} ({} revision object(s))",
+                args.ref_name, args.branch, revision_count
+            );
+            if args.git_notes {
+                println!(
+                    "  Would write {note_count} provenance note(s) to refs/notes/{}",
+                    args.notes_ref
+                );
+            }
+            println!("  Git object writes skipped.");
+            println!("  Git ref writes skipped.");
+            return Ok(());
+        }
+
         let head_sha1 = exporter.export(&rev_id, &git_objects_dir)?;
 
-        validate_git_branch_path(&args.branch)?;
         write_git_branch_ref(&git_dir, &args.branch, &head_sha1)?;
         write_change_refs(&store, &exporter, &rev_id, &git_dir)?;
         if args.git_notes {
@@ -132,6 +182,20 @@ pub fn run(args: GitExportArgs) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn count_git_provenance_notes(store: &ClawStore, start: &ObjectId) -> anyhow::Result<usize> {
+    let mut count = 0usize;
+    for rev_id in collect_revision_ids(store, start)? {
+        let rev_obj = store.load_object(&rev_id)?;
+        let Object::Revision(rev) = rev_obj else {
+            continue;
+        };
+        if GitProvenanceNote::from_revision(store, &rev_id, &rev)?.is_some() {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn write_git_branch_ref(
@@ -229,7 +293,21 @@ fn collect_revision_ids(store: &ClawStore, start: &ObjectId) -> anyhow::Result<V
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_git_branch_path, validate_git_branch_prefix};
+    use super::{validate_git_branch_path, validate_git_branch_prefix, GitExportArgs};
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: GitExportArgs,
+    }
+
+    #[test]
+    fn parses_dry_run_flag() {
+        let cli = TestCli::parse_from(["claw", "--dry-run"]);
+
+        assert!(cli.args.dry_run);
+    }
 
     #[test]
     fn allows_relative_branch_paths() {

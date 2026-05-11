@@ -25,22 +25,26 @@ jobs:
       LANG: C
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Run deterministic soak/load loop
         shell: bash
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          INPUT_DURATION_HOURS: ${{ github.event.inputs.duration_hours || '' }}
         run: |
           set -euo pipefail
 
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
             DURATION_HOURS=24
           else
-            INPUT_DURATION="${{ github.event.inputs.duration_hours }}"
+            INPUT_DURATION="$INPUT_DURATION_HOURS"
             DURATION_HOURS="${INPUT_DURATION:-24}"
           fi
 

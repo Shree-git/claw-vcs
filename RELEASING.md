@@ -1,4 +1,4 @@
-# Releasing Claw
+# Releasing Claw VCS
 
 When release infrastructure is configured, this repo uses `cargo-dist` to build and publish:
 
@@ -6,6 +6,7 @@ When release infrastructure is configured, this repo uses `cargo-dist` to build 
 - `claw-installer.sh` + `claw-installer.ps1`
 - Windows `.msi`
 - A Homebrew formula published to a tap repository
+- artifact signatures, attestations, and SBOMs when the release workflows are enabled
 
 ## One-time setup
 
@@ -26,10 +27,67 @@ In the `shree-git/claw-vcs` repo, add a secret:
 ## Cutting a release
 
 1. Bump the version in `Cargo.toml` (`[workspace.package].version`).
-2. Commit the version bump.
-3. Create and push a git tag in the form `vX.Y.Z` (example: `v0.1.0`).
+2. Update `CHANGELOG.md`.
+3. Run local gates:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo audit
+cargo deny check
+```
+
+4. Run a fuzz smoke test when `cargo-fuzz` is installed:
+
+```bash
+cargo fuzz list
+```
+
+5. Run a release dry-run if supported by the local `cargo-dist` version.
+6. Commit the version and changelog update.
+7. Create and push a git tag in the form `vX.Y.Z` (example: `v0.1.0`).
 
 Pushing the tag triggers `.github/workflows/release.yml` which builds and publishes artifacts.
+
+## Release verification
+
+Before announcing a release, verify from a clean machine or container:
+
+```bash
+claw --version
+claw doctor
+mkdir /tmp/claw-demo
+cd /tmp/claw-demo
+claw init
+claw status
+```
+
+Verify release assets:
+
+- checksums match
+- Cosign signatures verify
+- GitHub artifact attestations verify with `gh attestation verify`
+- SBOM is present and readable
+- Homebrew formula installs the tagged version
+- Windows MSI installs and adds `claw` to `PATH`
+
+See [docs/security/verifying-releases.md](docs/security/verifying-releases.md).
+
+## Rollback
+
+Keep the previous release artifact and a verified repository backup available before promoting a new release.
+
+Rollback procedure:
+
+1. Stop the daemon.
+2. Install the previous verified version.
+3. Restore a verified backup if a migration changed `.claw/` state.
+4. Run `claw admin preflight`.
+5. Restart the daemon.
+6. Verify refs, object store health, and client sync.
+
+See [docs/operations/upgrade-and-rollback.md](docs/operations/upgrade-and-rollback.md).
 
 ## WinGet (manual, first publish)
 
@@ -37,7 +95,7 @@ WinGet publishing is manual until the initial package is accepted into `microsof
 
 Suggested package identifier:
 
-- `ShreeGit.Claw`
+- `ShreeGit.ClawVCS`
 
 High-level steps:
 
