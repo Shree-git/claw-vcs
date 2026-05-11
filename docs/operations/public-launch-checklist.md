@@ -6,9 +6,14 @@ Status as of 2026-05-11:
 
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
+- Full-history local secret scans passed on 2026-05-11:
+  `gitleaks 8.30.0` scanned 51 commits with no leaks found, and
+  `trufflehog 3.95.2` reported 0 verified and 0 unverified secrets.
+- Code scanning uploads are accepted for PR #4 on 2026-05-11:
+  CodeQL, Semgrep OSS, and Scorecard analyses exist for `refs/pull/4/merge`.
 - `main` branch protection is enabled with required reviews, code-owner review, stale approval dismissal, required checks, conversation resolution, signed commits, no force pushes, and no deletions.
 - Suggested repository topics and labels are configured.
-- Remaining external checks: package/name reservation, trademark/domain/social-handle review, social preview upload, accepted code-scanning uploads, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
+- Remaining external checks: package/name reservation, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
 
 ## Repository Identity
 
@@ -34,8 +39,10 @@ For `main`, require:
 ## GitHub Security Settings
 
 - [x] Enable GitHub secret scanning.
+- [x] Run full-history `gitleaks detect --source . --no-git=false --redact`.
+- [x] Run full-history `trufflehog git file://$PWD --json --no-update`.
 - [x] Enable Dependabot security updates.
-- [ ] Confirm code scanning uploads are accepted for CodeQL, Semgrep, and Scorecard workflows.
+- [x] Confirm code scanning uploads are accepted for CodeQL, Semgrep, and Scorecard workflows.
 - [ ] Confirm artifact attestations are enabled for public release artifacts.
 
 Release/install verification evidence is tracked in [install-verification-log.md](install-verification-log.md).

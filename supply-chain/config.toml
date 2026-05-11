@@ -55,14 +55,6 @@ criteria = "safe-to-deploy"
 version = "0.7.6"
 criteria = "safe-to-deploy"
 
-[[exemptions.async-stream]]
-version = "0.3.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.async-stream-impl]]
-version = "0.3.6"
-criteria = "safe-to-deploy"
-
 [[exemptions.async-trait]]
 version = "0.1.89"
 criteria = "safe-to-deploy"
@@ -73,14 +65,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.autocfg]]
 version = "1.5.0"
-criteria = "safe-to-deploy"
+criteria = "safe-to-run"
 
 [[exemptions.axum]]
-version = "0.7.9"
+version = "0.8.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.axum-core]]
-version = "0.4.5"
+version = "0.5.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.base64]]
@@ -307,6 +299,10 @@ criteria = "safe-to-deploy"
 version = "1.1.9"
 criteria = "safe-to-deploy"
 
+[[exemptions.foldhash]]
+version = "0.1.5"
+criteria = "safe-to-deploy"
+
 [[exemptions.futures-channel]]
 version = "0.3.31"
 criteria = "safe-to-deploy"
@@ -350,6 +346,10 @@ criteria = "safe-to-deploy"
 [[exemptions.half]]
 version = "2.7.1"
 criteria = "safe-to-run"
+
+[[exemptions.hashbrown]]
+version = "0.15.2"
+criteria = "safe-to-deploy"
 
 [[exemptions.hashbrown]]
 version = "0.16.1"
@@ -429,10 +429,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.idna]]
 version = "1.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.indexmap]]
-version = "1.9.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.indexmap]]
@@ -524,7 +520,7 @@ version = "0.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.matchit]]
-version = "0.7.3"
+version = "0.8.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.memchr]]
@@ -584,7 +580,7 @@ version = "2.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.petgraph]]
-version = "0.7.1"
+version = "0.8.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.pin-project]]
@@ -652,19 +648,19 @@ version = "1.10.0"
 criteria = "safe-to-run"
 
 [[exemptions.prost]]
-version = "0.13.5"
+version = "0.14.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-build]]
-version = "0.13.5"
+version = "0.14.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-derive]]
-version = "0.13.5"
+version = "0.14.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-types]]
-version = "0.13.5"
+version = "0.14.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.protoc-bin-vendored]]
@@ -701,6 +697,14 @@ criteria = "safe-to-deploy"
 
 [[exemptions.protoc-bin-vendored-win32]]
 version = "3.2.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.pulldown-cmark]]
+version = "0.13.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.pulldown-cmark-to-cmark]]
+version = "22.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.quick-error]]
@@ -807,10 +811,6 @@ criteria = "safe-to-deploy"
 version = "0.23.36"
 criteria = "safe-to-deploy"
 
-[[exemptions.rustls-pemfile]]
-version = "2.2.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.rustls-pki-types]]
 version = "1.14.0"
 criteria = "safe-to-deploy"
@@ -901,10 +901,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.smallvec]]
 version = "1.15.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.socket2]]
-version = "0.5.10"
 criteria = "safe-to-deploy"
 
 [[exemptions.socket2]]
@@ -1012,15 +1008,19 @@ version = "0.1.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.tonic]]
-version = "0.12.3"
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.tonic-build]]
-version = "0.12.3"
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
-[[exemptions.tower]]
-version = "0.4.13"
+[[exemptions.tonic-prost]]
+version = "0.14.6"
+criteria = "safe-to-deploy"
+
+[[exemptions.tonic-prost-build]]
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.tower]]
@@ -1074,6 +1074,10 @@ criteria = "safe-to-deploy"
 [[exemptions.unarray]]
 version = "0.1.4"
 criteria = "safe-to-run"
+
+[[exemptions.unicase]]
+version = "2.9.0"
+criteria = "safe-to-deploy"
 
 [[exemptions.unicode-ident]]
 version = "1.0.22"
