@@ -18,7 +18,7 @@ claw-policy = { path = "../crates/claw-policy" }
 claw-store = { path = "../crates/claw-store" }
 claw-sync = { path = "../crates/claw-sync" }
 libfuzzer-sys = "0.4"
-prost = "0.13"
+prost = "0.14"
 serde_json = "1.0"
 tempfile = "3.15"
 
