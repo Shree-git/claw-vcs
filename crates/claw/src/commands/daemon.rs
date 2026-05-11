@@ -252,7 +252,7 @@ impl DaemonMetrics {
         Ok(out)
     }
 
-    fn touch_placeholders(&self) {
+    fn register_metric_families(&self) {
         let _ = self.retry_total.get();
         let _ = self.policy_eval_duration.get_sample_count();
         let _ = self.queue_depth.get();
@@ -612,7 +612,7 @@ async fn handle_health_connection(
             log_health_request(&request_id, path, 200);
         }
         "/v1/metrics" => {
-            metrics.touch_placeholders();
+            metrics.register_metric_families();
             let payload = metrics.render_prometheus()?;
             write_http_text_response(
                 &mut stream,
