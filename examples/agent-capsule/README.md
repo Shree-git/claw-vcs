@@ -1,18 +1,11 @@
 # Agent Capsule
 
-This example shows the expected shape of an agent-authored change.
+This example shows the expected shape of an agent-authored change. Run the
+script to create a temporary repository, register an agent, ship signed evidence,
+and inspect the resulting capsule:
 
 ```bash
-claw agent register --name build-agent-01 --version 0.1.0
-claw intent create --title "Refactor cache" --goal "Reduce duplicate cache lookups"
-claw change create --intent <intent-id>
-claw snapshot -m "refactor cache lookup path"
-claw ship \
-  --intent <intent-id> \
-  --agent build-agent-01 \
-  --evidence test=pass \
-  --evidence lint=pass
-claw show <capsule-id>
+CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
 ```
 
 `claw agent register` creates a local signing key for the agent and stores only

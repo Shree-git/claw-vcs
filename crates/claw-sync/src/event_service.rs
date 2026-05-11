@@ -7,6 +7,7 @@ use claw_store::ClawStore;
 
 use crate::proto::event::event_stream_service_server::EventStreamService;
 use crate::proto::event::*;
+use crate::security::{AuthorizationAction, Authorizer, ServiceSecurity};
 
 #[derive(Debug, Clone)]
 pub struct EventBus {
@@ -52,6 +53,7 @@ impl Default for EventBus {
 
 pub struct EventServer {
     bus: EventBus,
+    security: ServiceSecurity,
 }
 
 impl EventServer {
@@ -60,7 +62,15 @@ impl EventServer {
     }
 
     pub fn with_bus(bus: EventBus) -> Self {
-        Self { bus }
+        Self {
+            bus,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
     }
 }
 
@@ -84,6 +94,8 @@ impl EventStreamService for EventServer {
         &self,
         request: Request<SubscribeRequest>,
     ) -> Result<Response<Self::SubscribeStream>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::SubscribeEvents, None)?;
         let req = request.into_inner();
         let event_types = req.event_types;
         let ref_prefix = req.ref_prefix;

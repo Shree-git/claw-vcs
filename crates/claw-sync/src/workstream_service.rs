@@ -10,14 +10,24 @@ use claw_store::ClawStore;
 
 use crate::proto::workstream::workstream_service_server::WorkstreamService;
 use crate::proto::workstream::*;
+use crate::security::{AuthorizationAction, Authorizer, ServiceSecurity};
 
 pub struct WorkstreamServer {
     store: Arc<RwLock<ClawStore>>,
+    security: ServiceSecurity,
 }
 
 impl WorkstreamServer {
     pub fn new(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
     }
 }
 
@@ -40,6 +50,8 @@ impl WorkstreamService for WorkstreamServer {
         &self,
         request: Request<CreateWorkstreamRequest>,
     ) -> Result<Response<CreateWorkstreamResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::CreateWorkstream, None)?;
         let req = request.into_inner();
 
         let ws = Workstream {
@@ -64,6 +76,8 @@ impl WorkstreamService for WorkstreamServer {
         &self,
         request: Request<GetWorkstreamRequest>,
     ) -> Result<Response<GetWorkstreamResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadWorkstream, None)?;
         let req = request.into_inner();
         let store = self.store.read().await;
 
@@ -87,6 +101,8 @@ impl WorkstreamService for WorkstreamServer {
         &self,
         request: Request<PushChangeRequest>,
     ) -> Result<Response<PushChangeResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::UpdateWorkstream, None)?;
         let req = request.into_inner();
         let ulid = req
             .change_id
@@ -129,6 +145,8 @@ impl WorkstreamService for WorkstreamServer {
         &self,
         request: Request<PopChangeRequest>,
     ) -> Result<Response<PopChangeResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::UpdateWorkstream, None)?;
         let req = request.into_inner();
         let store = self.store.write().await;
         let ref_name = format!("workstreams/{}", req.workstream_name);

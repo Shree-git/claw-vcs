@@ -8,22 +8,26 @@ This page defines launch-hardening behavior for daemon and sync security surface
 - Production daemon binds beyond localhost must use daemon TLS or TLS termination when `tls.require_for_non_localhost = true`.
 - Bearer credentials are passed as `authorization: Bearer <token>` and must not be logged. Debug output for sync transports redacts configured bearer tokens.
 - Use `--auth-token`, `--auth-profile`, or the configured default auth profile for daemon startup.
-- `--auth-principal`, `--auth-role`, and repeated `--auth-scope` configure the sync authorization grant attached to the daemon bearer token. The default role is `admin` for compatibility.
+- `--auth-principal`, `--auth-role`, and repeated `--auth-scope` configure the daemon authorization grant attached to the bearer token. The default role is `admin` for compatibility.
 - `--client-ca-cert <path>` enables required client certificate verification for the gRPC listener. It must be used with `--tls-cert` and `--tls-key`.
 - `claw sync` can connect to TLS and mTLS gRPC remotes with `--tls-ca-cert`, `--tls-domain`, `--client-cert`, and `--client-key`. Client certificates require both the certificate and key.
 
-## Sync Authorization
+## Daemon Authorization
 
-The sync service supports a concrete role/scope model. Bearer-authenticated daemon requests are annotated with a server-controlled principal and token ID before they reach the sync service; incoming caller-provided principal metadata is overwritten by the auth interceptor.
+The daemon supports a concrete role/scope model for sync, intent, change,
+capsule, workstream, and event-stream gRPC methods. Bearer-authenticated daemon
+requests are annotated with a server-controlled principal and token ID before
+they reach services; incoming caller-provided principal metadata is overwritten
+by the auth interceptor.
 
 Roles:
 
-- `reader`: `sync:hello`, `refs:read`, `objects:read`, `events:read`
+- `reader`: `sync:hello`, read access for refs, objects, events, intents, changes, capsules, and workstreams; capsule verification
 - `object-writer`: reader object access plus `objects:write`
 - `ref-writer`: reader object/ref access plus `refs:write`
-- `writer`: read access plus `objects:write` and `refs:write`
+- `writer`: read access plus write access for refs, objects, intents, changes, capsules, and workstreams
 - `event-reader`: `sync:hello`, `events:read`
-- `admin`: `sync:*`
+- `admin`: `sync:*`, which grants all daemon scopes
 
 Scopes:
 
@@ -31,6 +35,10 @@ Scopes:
 - `refs:read`, `refs:write`, `refs:*`
 - `objects:read`, `objects:write`, `objects:*`
 - `events:read`, `events:*`
+- `intents:read`, `intents:write`, `intents:*`
+- `changes:read`, `changes:write`, `changes:*`
+- `capsules:read`, `capsules:write`, `capsules:verify`, `capsules:private-read`, `capsules:*`
+- `workstreams:read`, `workstreams:write`, `workstreams:*`
 
 Authorization failures return gRPC `PermissionDenied`. Local unauthenticated daemon usage remains compatibility-oriented; use bearer auth plus role/scope flags when a daemon is shared beyond a single trusted local user.
 
@@ -71,11 +79,12 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 - Event subscriptions use an internal event bus for daemon-generated ref changes. The stream emits `ref_created` and `ref_updated` events from sync ref updates.
 - Sync server options enforce per-minute request rate limits when configured with `--rate-limit-per-minute` or `queues.rate_limit_per_minute`.
 - Push object uploads enforce per-chunk and per-request byte limits, configurable with `--max-push-chunk-bytes`, `--max-push-request-bytes`, `queues.max_push_chunk_bytes`, and `queues.max_push_request_bytes`.
-- Sync ref/object actions emit structured `sync_audit_event` tracing records with request ID, principal, token ID, action, resource, outcome, and denial reason when available.
+- Authorized gRPC service actions emit structured `sync_audit_event` tracing records with request ID, principal, token ID, action, resource, outcome, and denial reason when available.
 - gRPC clients send `x-claw-replay-nonce` on `PushObjects` and `UpdateRefs`; HTTP clients send the same value as the `idempotency-key` for mutating requests. The daemon can require nonces with `--require-replay-nonce`; otherwise duplicate nonces are still rejected when present.
 
 Known limitations:
 
-- Role/scope enforcement is wired for the core `SyncService` ref/object methods. Capsule reads also redact recipient-encrypted private fields unless the authenticated principal is a listed recipient. Other daemon gRPC services still rely on bearer authentication only until they receive service-specific resource models.
+- Local unauthenticated daemon usage still uses allow-all authorization for compatibility. Shared daemon deployments should enable bearer authentication and configure role/scope grants.
+- Capsule private field disclosure requires both a matching recipient principal and `capsules:private-read`; callers without both receive public capsule fields only.
 - Evidence freshness is enforced by policy only when `require_fresh_evidence`
   is enabled on the policy object.

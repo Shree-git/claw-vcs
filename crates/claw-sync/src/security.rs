@@ -1,14 +1,19 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tonic::{Request, Status};
 
 pub const REQUEST_ID_METADATA_KEY: &str = "x-request-id";
 pub const PRINCIPAL_METADATA_KEY: &str = "x-claw-principal";
 pub const TOKEN_ID_METADATA_KEY: &str = "x-claw-token-id";
 pub const REPLAY_NONCE_METADATA_KEY: &str = "x-claw-replay-nonce";
+
+static SERVICE_REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -19,6 +24,19 @@ pub enum AuthorizationAction {
     PushObjects,
     UpdateRefs,
     SubscribeEvents,
+    CreateIntent,
+    ReadIntent,
+    UpdateIntent,
+    CreateChange,
+    ReadChange,
+    UpdateChange,
+    CreateCapsule,
+    ReadCapsule,
+    ReadPrivateCapsule,
+    VerifyCapsule,
+    CreateWorkstream,
+    ReadWorkstream,
+    UpdateWorkstream,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -34,6 +52,20 @@ pub enum AuthorizationScope {
     ObjectsAll,
     EventsRead,
     EventsAll,
+    IntentsRead,
+    IntentsWrite,
+    IntentsAll,
+    ChangesRead,
+    ChangesWrite,
+    ChangesAll,
+    CapsulesRead,
+    CapsulesWrite,
+    CapsulesVerify,
+    CapsulesPrivateRead,
+    CapsulesAll,
+    WorkstreamsRead,
+    WorkstreamsWrite,
+    WorkstreamsAll,
 }
 
 impl AuthorizationScope {
@@ -45,6 +77,19 @@ impl AuthorizationScope {
             AuthorizationAction::PushObjects => Self::ObjectsWrite,
             AuthorizationAction::UpdateRefs => Self::RefsWrite,
             AuthorizationAction::SubscribeEvents => Self::EventsRead,
+            AuthorizationAction::CreateIntent => Self::IntentsWrite,
+            AuthorizationAction::ReadIntent => Self::IntentsRead,
+            AuthorizationAction::UpdateIntent => Self::IntentsWrite,
+            AuthorizationAction::CreateChange => Self::ChangesWrite,
+            AuthorizationAction::ReadChange => Self::ChangesRead,
+            AuthorizationAction::UpdateChange => Self::ChangesWrite,
+            AuthorizationAction::CreateCapsule => Self::CapsulesWrite,
+            AuthorizationAction::ReadCapsule => Self::CapsulesRead,
+            AuthorizationAction::ReadPrivateCapsule => Self::CapsulesPrivateRead,
+            AuthorizationAction::VerifyCapsule => Self::CapsulesVerify,
+            AuthorizationAction::CreateWorkstream => Self::WorkstreamsWrite,
+            AuthorizationAction::ReadWorkstream => Self::WorkstreamsRead,
+            AuthorizationAction::UpdateWorkstream => Self::WorkstreamsWrite,
         }
     }
 
@@ -56,6 +101,19 @@ impl AuthorizationScope {
                 (Self::RefsAll, Self::RefsRead | Self::RefsWrite)
                     | (Self::ObjectsAll, Self::ObjectsRead | Self::ObjectsWrite)
                     | (Self::EventsAll, Self::EventsRead)
+                    | (Self::IntentsAll, Self::IntentsRead | Self::IntentsWrite)
+                    | (Self::ChangesAll, Self::ChangesRead | Self::ChangesWrite)
+                    | (
+                        Self::CapsulesAll,
+                        Self::CapsulesRead
+                            | Self::CapsulesWrite
+                            | Self::CapsulesVerify
+                            | Self::CapsulesPrivateRead
+                    )
+                    | (
+                        Self::WorkstreamsAll,
+                        Self::WorkstreamsRead | Self::WorkstreamsWrite
+                    )
             )
     }
 }
@@ -73,6 +131,20 @@ impl std::fmt::Display for AuthorizationScope {
             Self::ObjectsAll => "objects:*",
             Self::EventsRead => "events:read",
             Self::EventsAll => "events:*",
+            Self::IntentsRead => "intents:read",
+            Self::IntentsWrite => "intents:write",
+            Self::IntentsAll => "intents:*",
+            Self::ChangesRead => "changes:read",
+            Self::ChangesWrite => "changes:write",
+            Self::ChangesAll => "changes:*",
+            Self::CapsulesRead => "capsules:read",
+            Self::CapsulesWrite => "capsules:write",
+            Self::CapsulesVerify => "capsules:verify",
+            Self::CapsulesPrivateRead => "capsules:private-read",
+            Self::CapsulesAll => "capsules:*",
+            Self::WorkstreamsRead => "workstreams:read",
+            Self::WorkstreamsWrite => "workstreams:write",
+            Self::WorkstreamsAll => "workstreams:*",
         })
     }
 }
@@ -92,6 +164,24 @@ impl FromStr for AuthorizationScope {
             "objects:*" | "objects:all" | "object:*" | "object:all" => Ok(Self::ObjectsAll),
             "events:read" | "event:read" => Ok(Self::EventsRead),
             "events:*" | "events:all" | "event:*" | "event:all" => Ok(Self::EventsAll),
+            "intents:read" | "intent:read" => Ok(Self::IntentsRead),
+            "intents:write" | "intent:write" => Ok(Self::IntentsWrite),
+            "intents:*" | "intents:all" | "intent:*" | "intent:all" => Ok(Self::IntentsAll),
+            "changes:read" | "change:read" => Ok(Self::ChangesRead),
+            "changes:write" | "change:write" => Ok(Self::ChangesWrite),
+            "changes:*" | "changes:all" | "change:*" | "change:all" => Ok(Self::ChangesAll),
+            "capsules:read" | "capsule:read" => Ok(Self::CapsulesRead),
+            "capsules:write" | "capsule:write" => Ok(Self::CapsulesWrite),
+            "capsules:verify" | "capsule:verify" => Ok(Self::CapsulesVerify),
+            "capsules:private-read" | "capsules:private:read" | "capsule:private-read" => {
+                Ok(Self::CapsulesPrivateRead)
+            }
+            "capsules:*" | "capsules:all" | "capsule:*" | "capsule:all" => Ok(Self::CapsulesAll),
+            "workstreams:read" | "workstream:read" => Ok(Self::WorkstreamsRead),
+            "workstreams:write" | "workstream:write" => Ok(Self::WorkstreamsWrite),
+            "workstreams:*" | "workstreams:all" | "workstream:*" | "workstream:all" => {
+                Ok(Self::WorkstreamsAll)
+            }
             other => Err(format!("unknown authorization scope '{other}'")),
         }
     }
@@ -116,6 +206,11 @@ impl AuthorizationRole {
                 AuthorizationScope::RefsRead,
                 AuthorizationScope::ObjectsRead,
                 AuthorizationScope::EventsRead,
+                AuthorizationScope::IntentsRead,
+                AuthorizationScope::ChangesRead,
+                AuthorizationScope::CapsulesRead,
+                AuthorizationScope::CapsulesVerify,
+                AuthorizationScope::WorkstreamsRead,
             ],
             Self::ObjectWriter => &[
                 AuthorizationScope::SyncHello,
@@ -136,6 +231,10 @@ impl AuthorizationRole {
                 AuthorizationScope::ObjectsWrite,
                 AuthorizationScope::RefsWrite,
                 AuthorizationScope::EventsRead,
+                AuthorizationScope::IntentsAll,
+                AuthorizationScope::ChangesAll,
+                AuthorizationScope::CapsulesAll,
+                AuthorizationScope::WorkstreamsAll,
             ],
             Self::EventReader => &[
                 AuthorizationScope::SyncHello,
@@ -405,6 +504,116 @@ impl AuditSink for TracingAuditSink {
             "sync_audit_event"
         );
     }
+}
+
+#[derive(Clone)]
+pub struct ServiceSecurity {
+    authorizer: Arc<dyn Authorizer>,
+    audit_sink: Arc<dyn AuditSink>,
+}
+
+impl Default for ServiceSecurity {
+    fn default() -> Self {
+        Self {
+            authorizer: Arc::new(AllowAllAuthorizer),
+            audit_sink: Arc::new(TracingAuditSink),
+        }
+    }
+}
+
+impl ServiceSecurity {
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.authorizer = authorizer;
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.audit_sink = audit_sink;
+        self
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn authorize<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> Result<(), Status> {
+        let subject = subject_from_request(request);
+        let request_id = request_id_from_request(request);
+        let auth_request = AuthorizationRequest {
+            subject: subject.clone(),
+            action: action.clone(),
+            resource: resource.clone(),
+        };
+
+        match self.authorizer.authorize(&auth_request) {
+            AuthorizationDecision::Allow => {
+                self.audit_sink.record(AuditEvent::allowed(
+                    now_ms(),
+                    request_id,
+                    subject,
+                    action,
+                    resource,
+                ));
+                Ok(())
+            }
+            AuthorizationDecision::Deny { reason } => {
+                self.audit_sink.record(AuditEvent::denied(
+                    now_ms(),
+                    request_id,
+                    subject,
+                    action,
+                    resource,
+                    reason.clone(),
+                ));
+                Err(Status::permission_denied(reason))
+            }
+        }
+    }
+
+    pub fn allows<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> bool {
+        self.authorize(request, action, resource).is_ok()
+    }
+}
+
+pub fn metadata_value<T>(request: &Request<T>, key: &str) -> Option<String> {
+    request
+        .metadata()
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+pub fn request_id_from_request<T>(request: &Request<T>) -> String {
+    metadata_value(request, REQUEST_ID_METADATA_KEY).unwrap_or_else(new_service_request_id)
+}
+
+pub fn subject_from_request<T>(request: &Request<T>) -> AuthorizationSubject {
+    AuthorizationSubject {
+        principal: metadata_value(request, PRINCIPAL_METADATA_KEY),
+        token_id: metadata_value(request, TOKEN_ID_METADATA_KEY),
+        peer_addr: request.remote_addr().map(|addr| addr.to_string()),
+    }
+}
+
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn new_service_request_id() -> String {
+    let seq = SERVICE_REQUEST_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("service-{:x}-{seq:x}", now_ms())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -756,11 +965,39 @@ mod tests {
                 resource: None,
             })
             .is_allowed());
+        assert!(authorizer
+            .authorize(&AuthorizationRequest {
+                subject: subject.clone(),
+                action: AuthorizationAction::ReadIntent,
+                resource: None,
+            })
+            .is_allowed());
+        assert!(authorizer
+            .authorize(&AuthorizationRequest {
+                subject: subject.clone(),
+                action: AuthorizationAction::VerifyCapsule,
+                resource: None,
+            })
+            .is_allowed());
+        assert!(!authorizer
+            .authorize(&AuthorizationRequest {
+                subject: subject.clone(),
+                action: AuthorizationAction::UpdateRefs,
+                resource: Some("heads/main".to_string()),
+            })
+            .is_allowed());
+        assert!(!authorizer
+            .authorize(&AuthorizationRequest {
+                subject: subject.clone(),
+                action: AuthorizationAction::CreateIntent,
+                resource: None,
+            })
+            .is_allowed());
         assert!(!authorizer
             .authorize(&AuthorizationRequest {
                 subject,
-                action: AuthorizationAction::UpdateRefs,
-                resource: Some("heads/main".to_string()),
+                action: AuthorizationAction::ReadPrivateCapsule,
+                resource: None,
             })
             .is_allowed());
     }
@@ -793,6 +1030,16 @@ mod tests {
         assert_eq!(
             "refs:write".parse::<AuthorizationScope>().unwrap(),
             AuthorizationScope::RefsWrite
+        );
+        assert_eq!(
+            "capsules:private-read"
+                .parse::<AuthorizationScope>()
+                .unwrap(),
+            AuthorizationScope::CapsulesPrivateRead
+        );
+        assert_eq!(
+            "workstreams:*".parse::<AuthorizationScope>().unwrap(),
+            AuthorizationScope::WorkstreamsAll
         );
         assert!("bogus".parse::<AuthorizationRole>().is_err());
     }

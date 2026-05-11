@@ -44,8 +44,7 @@ Claw VCS is v0.1 experimental software. It is appropriate for local exploration,
 
 ## Policy Attachment
 
-- The CLI can create and inspect policies, but it does not yet expose a command
-  to attach policy refs to intents.
+- The CLI can attach existing policy refs with `claw intent policy add`.
 - Policy enforcement only applies when an intent references the policy. A policy
   object named `default` is not global.
 

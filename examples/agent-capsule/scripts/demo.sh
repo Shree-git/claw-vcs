@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CLAW_BIN="${CLAW_BIN:-claw}"
-ROOT="${1:-$(mktemp -d "${TMPDIR:-/tmp}/claw-demo.XXXXXX")}"
+ROOT="${1:-$(mktemp -d "${TMPDIR:-/tmp}/claw-agent-capsule.XXXXXX")}"
 
 if ! resolved_claw_bin="$(command -v "$CLAW_BIN")"; then
   printf 'error: claw binary not found: %s\n' "$CLAW_BIN" >&2
@@ -19,14 +19,14 @@ fi
 mkdir -p "$ROOT"
 cd "$ROOT"
 
-DEMO_HOME="${CLAW_DEMO_HOME:-$(mktemp -d "${TMPDIR:-/tmp}/claw-demo-home.XXXXXX")}"
+DEMO_HOME="${CLAW_AGENT_DEMO_HOME:-$(mktemp -d "${TMPDIR:-/tmp}/claw-agent-home.XXXXXX")}"
 export HOME="$DEMO_HOME"
 mkdir -p "$HOME"
 
 finish() {
   status=$?
   if [[ $status -ne 0 ]]; then
-    printf '\nDemo failed. Workspace preserved at: %s\n' "$ROOT" >&2
+    printf '\nAgent capsule demo failed. Workspace preserved at: %s\n' "$ROOT" >&2
   fi
 }
 trap finish EXIT
@@ -51,14 +51,12 @@ extract_created_id() {
 
 run "$CLAW_BIN" init
 
-printf '# Basic demo\n' > README.md
+printf '# Cache refactor\n' > README.md
 run "$CLAW_BIN" snapshot -m "Initial repository"
-run "$CLAW_BIN" branch create demo
-run "$CLAW_BIN" checkout demo
 
 intent_output="$(capture "$CLAW_BIN" intent create \
-  --title "Add dark mode" \
-  --goal "Support theme toggling")"
+  --title "Refactor cache" \
+  --goal "Reduce duplicate cache lookups")"
 printf '%s\n' "$intent_output"
 intent_id="$(printf '%s\n' "$intent_output" | extract_created_id "Created intent")"
 if [[ -z "$intent_id" ]]; then
@@ -74,35 +72,27 @@ if [[ -z "$change_id" ]]; then
   exit 1
 fi
 
-printf 'theme = "dark"\n' > app.conf
+mkdir -p src
+printf 'cache_lookup = "deduplicated"\n' > src/cache.conf
+run "$CLAW_BIN" snapshot --change "$change_id" -m "Refactor cache lookup path"
 
-run "$CLAW_BIN" status
-run "$CLAW_BIN" diff --name-only
-run "$CLAW_BIN" snapshot --change "$change_id" -m "Add demo config"
-
-run "$CLAW_BIN" policy create --id demo-ci --check smoke --check lint
-run "$CLAW_BIN" policy show demo-ci
-run "$CLAW_BIN" intent policy add "$intent_id" demo-ci
-
-run "$CLAW_BIN" agent register --name demo-agent --version basic-demo
-run "$CLAW_BIN" agent status demo-agent
+run "$CLAW_BIN" agent register --name build-agent-01 --version agent-capsule-demo
+run "$CLAW_BIN" agent status build-agent-01
 
 ship_output="$(capture "$CLAW_BIN" ship \
   --intent "$intent_id" \
-  --revision-ref heads/demo \
-  --agent demo-agent \
-  --evidence smoke=pass:15 \
-  --evidence lint=pass:7)"
+  --revision-ref heads/main \
+  --agent build-agent-01 \
+  --evidence test=pass:18 \
+  --evidence lint=pass:6)"
 printf '%s\n' "$ship_output"
 capsule_id="$(printf '%s\n' "$ship_output" | awk '/Capsule:/ {print $2; exit}')"
-
-run "$CLAW_BIN" log --all --limit 5
-if [[ -n "${capsule_id:-}" ]]; then
-  run "$CLAW_BIN" show "$capsule_id"
+if [[ -z "${capsule_id:-}" ]]; then
+  printf 'error: could not parse capsule id\n' >&2
+  exit 1
 fi
 
-run "$CLAW_BIN" checkout main
-run "$CLAW_BIN" integrate --right heads/demo --message "Integrate demo branch"
-run "$CLAW_BIN" status
+run "$CLAW_BIN" show "$capsule_id"
+run "$CLAW_BIN" log --all --limit 3
 
-printf '\nDemo workspace: %s\n' "$ROOT"
+printf '\nAgent capsule demo workspace: %s\n' "$ROOT"

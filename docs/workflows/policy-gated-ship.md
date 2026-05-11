@@ -7,10 +7,11 @@ integrated.
 
 `claw policy create`, `claw policy list`, and `claw policy show` manage policy
 objects. Enforcement happens only for policies referenced by the intent being
-shipped or integrated. The current CLI can create intents, but it does not yet
-expose a command to edit an intent's `policy_refs` field. Until that command
-exists, enforced policy-gated demos need an integration/API/import step that
-pre-populates `policy_refs`.
+shipped or integrated. Attach a policy with:
+
+```bash
+claw intent policy add <intent-id> <policy-id>
+```
 
 Do not assume a policy named `default` applies automatically.
 
@@ -40,6 +41,12 @@ claw policy create \
   --require-fresh-evidence \
   --trusted-runner github-actions/release \
   --evidence-max-age-ms 86400000
+```
+
+Attach it to the intent that should be gated:
+
+```bash
+claw intent policy add <intent-id> ci-required
 ```
 
 ## 2. Run checks

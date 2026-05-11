@@ -11,15 +11,26 @@ use claw_store::ClawStore;
 
 use crate::proto::capsule::capsule_service_server::CapsuleService;
 use crate::proto::capsule::*;
-use crate::security::PRINCIPAL_METADATA_KEY;
+use crate::security::{
+    metadata_value, AuthorizationAction, Authorizer, ServiceSecurity, PRINCIPAL_METADATA_KEY,
+};
 
 pub struct CapsuleServer {
     store: Arc<RwLock<ClawStore>>,
+    security: ServiceSecurity,
 }
 
 impl CapsuleServer {
     pub fn new(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
     }
 }
 
@@ -202,16 +213,14 @@ fn verify_capsule_for_revision(capsule: &Capsule, revision_id: &ObjectId) -> (bo
 }
 
 fn principal_from_request<T>(request: &Request<T>) -> Option<String> {
-    request
-        .metadata()
-        .get(PRINCIPAL_METADATA_KEY)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+    metadata_value(request, PRINCIPAL_METADATA_KEY)
 }
 
-fn capsule_for_principal(capsule: &Capsule, principal: Option<&str>) -> Capsule {
+fn capsule_for_principal(
+    capsule: &Capsule,
+    principal: Option<&str>,
+    can_read_private: bool,
+) -> Capsule {
     if capsule.encrypted_private.is_none() || capsule.recipients.is_empty() {
         return capsule.clone();
     }
@@ -223,7 +232,7 @@ fn capsule_for_principal(capsule: &Capsule, principal: Option<&str>) -> Capsule 
             .any(|recipient| recipient.recipient_id == principal)
     });
 
-    if authorized {
+    if authorized && can_read_private {
         return capsule.clone();
     }
 
@@ -239,6 +248,8 @@ impl CapsuleService for CapsuleServer {
         &self,
         request: Request<CreateCapsuleRequest>,
     ) -> Result<Response<CreateCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::CreateCapsule, None)?;
         let req = request.into_inner();
 
         let rev_id_msg = req
@@ -308,6 +319,11 @@ impl CapsuleService for CapsuleServer {
         &self,
         request: Request<GetCapsuleRequest>,
     ) -> Result<Response<GetCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadCapsule, None)?;
+        let can_read_private =
+            self.security
+                .allows(&request, AuthorizationAction::ReadPrivateCapsule, None);
         let principal = principal_from_request(&request);
         let req = request.into_inner();
         let rev_id_msg = req
@@ -334,6 +350,7 @@ impl CapsuleService for CapsuleServer {
                 capsule: Some(capsule_to_proto(&capsule_for_principal(
                     &c,
                     principal.as_deref(),
+                    can_read_private,
                 ))),
             })),
             _ => Err(Status::internal("object is not a capsule")),
@@ -344,6 +361,8 @@ impl CapsuleService for CapsuleServer {
         &self,
         request: Request<VerifyCapsuleRequest>,
     ) -> Result<Response<VerifyCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::VerifyCapsule, None)?;
         let req = request.into_inner();
         let rev_id_msg = req
             .revision_id
@@ -460,7 +479,7 @@ mod tests {
     fn capsule_private_fields_are_redacted_for_non_recipient_principals() {
         let capsule = recipient_capsule();
 
-        let redacted = capsule_for_principal(&capsule, Some("runner-b"));
+        let redacted = capsule_for_principal(&capsule, Some("runner-b"), true);
 
         assert!(redacted.encrypted_private.is_none());
         assert!(redacted.recipients.is_empty());
@@ -471,10 +490,20 @@ mod tests {
     }
 
     #[test]
-    fn capsule_private_fields_are_kept_for_recipient_principal() {
+    fn capsule_private_fields_are_redacted_for_recipient_without_private_read_scope() {
         let capsule = recipient_capsule();
 
-        let visible = capsule_for_principal(&capsule, Some("runner-a"));
+        let redacted = capsule_for_principal(&capsule, Some("runner-a"), false);
+
+        assert!(redacted.encrypted_private.is_none());
+        assert!(redacted.recipients.is_empty());
+    }
+
+    #[test]
+    fn capsule_private_fields_are_kept_for_authorized_recipient_principal() {
+        let capsule = recipient_capsule();
+
+        let visible = capsule_for_principal(&capsule, Some("runner-a"), true);
 
         assert_eq!(visible.encrypted_private, capsule.encrypted_private);
         assert_eq!(visible.recipients.len(), 1);

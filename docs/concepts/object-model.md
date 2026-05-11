@@ -113,9 +113,10 @@ An intent is the structured "why":
 - `status`: `Open`, `Blocked`, `Done`, or `Superseded`.
 - `created_at_ms`, `updated_at_ms`: Unix epoch milliseconds.
 
-The current CLI creates, lists, shows, and updates status. It does not yet expose
-all intent fields, so integrations that need `policy_refs` must write through an
-API/import path or a future CLI surface.
+The current CLI creates, lists, shows, updates status, and manages
+`policy_refs` with `claw intent policy add/list/remove`. Some lower-level
+fields, such as constraints and supersession metadata, remain API/import
+surfaces for now.
 
 ## Change
 

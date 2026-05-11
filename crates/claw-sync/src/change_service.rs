@@ -11,14 +11,24 @@ use claw_store::ClawStore;
 
 use crate::proto::change::change_service_server::ChangeService;
 use crate::proto::change::*;
+use crate::security::{AuthorizationAction, Authorizer, ServiceSecurity};
 
 pub struct ChangeServer {
     store: Arc<RwLock<ClawStore>>,
+    security: ServiceSecurity,
 }
 
 impl ChangeServer {
     pub fn new(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
     }
 }
 
@@ -69,6 +79,8 @@ impl ChangeService for ChangeServer {
         &self,
         request: Request<CreateChangeRequest>,
     ) -> Result<Response<CreateChangeResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::CreateChange, None)?;
         let req = request.into_inner();
         let now = now_ms();
 
@@ -139,6 +151,8 @@ impl ChangeService for ChangeServer {
         &self,
         request: Request<GetChangeRequest>,
     ) -> Result<Response<GetChangeResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadChange, None)?;
         let req = request.into_inner();
         let ulid = req
             .id
@@ -171,6 +185,8 @@ impl ChangeService for ChangeServer {
         &self,
         request: Request<ListChangesRequest>,
     ) -> Result<Response<ListChangesResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadChange, None)?;
         let req = request.into_inner();
         let store = self.store.read().await;
         let refs = store
@@ -203,6 +219,8 @@ impl ChangeService for ChangeServer {
         &self,
         request: Request<UpdateChangeStatusRequest>,
     ) -> Result<Response<UpdateChangeStatusResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::UpdateChange, None)?;
         let req = request.into_inner();
         let ulid = req
             .id

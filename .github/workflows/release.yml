@@ -65,6 +65,8 @@ jobs:
       - name: Example workflow smoke scripts
         run: |
           cargo build -p claw --locked
+          CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
+          CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
           CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh
           CLAW_BIN=target/debug/claw examples/backup-restore/scripts/demo.sh
       - name: Build rustdoc

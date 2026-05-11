@@ -59,13 +59,13 @@ pub struct DaemonArgs {
     /// Read bearer auth token from a saved auth profile
     #[arg(long)]
     auth_profile: Option<String>,
-    /// Principal name attached to the configured bearer token for sync authorization
+    /// Principal name attached to the configured bearer token for daemon authorization
     #[arg(long, default_value = "daemon-token")]
     auth_principal: String,
-    /// Sync authorization role for the configured bearer token
+    /// Daemon authorization role for the configured bearer token
     #[arg(long, default_value = "admin")]
     auth_role: String,
-    /// Additional sync authorization scope for the configured bearer token
+    /// Additional daemon authorization scope for the configured bearer token
     #[arg(long = "auth-scope")]
     auth_scopes: Vec<String>,
     /// Require replay nonce metadata on sync ref/object mutations
@@ -832,14 +832,21 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
         Some(event_bus.clone()),
     )
     .with_replay_protection(ReplayProtectionConfig::default(), args.require_replay_nonce);
-    if let Some(authorizer) = sync_authorizer {
-        sync_server = sync_server.with_authorizer(authorizer);
+    if let Some(authorizer) = sync_authorizer.as_ref() {
+        sync_server = sync_server.with_authorizer(authorizer.clone());
     }
-    let intent_server = IntentServer::new(shared_store.clone());
-    let change_server = ChangeServer::new(shared_store.clone());
-    let capsule_server = CapsuleServer::new(shared_store.clone());
-    let workstream_server = WorkstreamServer::new(shared_store.clone());
-    let event_server = EventServer::with_bus(event_bus);
+    let mut intent_server = IntentServer::new(shared_store.clone());
+    let mut change_server = ChangeServer::new(shared_store.clone());
+    let mut capsule_server = CapsuleServer::new(shared_store.clone());
+    let mut workstream_server = WorkstreamServer::new(shared_store.clone());
+    let mut event_server = EventServer::with_bus(event_bus);
+    if let Some(authorizer) = sync_authorizer {
+        intent_server = intent_server.with_authorizer(authorizer.clone());
+        change_server = change_server.with_authorizer(authorizer.clone());
+        capsule_server = capsule_server.with_authorizer(authorizer.clone());
+        workstream_server = workstream_server.with_authorizer(authorizer.clone());
+        event_server = event_server.with_authorizer(authorizer);
+    }
 
     let mut grpc_builder = Server::builder();
     if let Some(identity) = tls_identity {

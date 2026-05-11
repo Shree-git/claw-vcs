@@ -27,9 +27,10 @@ steps live under `docs/operations/` and `docs/runbooks/`.
 | Ship with evidence | `claw ship --intent <intent-id> --revision-ref heads/<branch> --evidence name=pass` |
 | Merge work | `claw integrate --right heads/<branch>` |
 | Create policy object | `claw policy create --id <policy-id> --check <name>` |
+| Attach policy to intent | `claw intent policy add <intent-id> <policy-id>` |
 | Sync remote refs | `claw sync pull`, `claw sync push` |
 | Bridge to Git | `claw git-export`, `claw git-import`, `claw git-roundtrip` |
 
 Policy objects are enforced only when referenced by the intent for the revision
-being shipped or integrated. The current CLI creates policies but does not yet
-provide an `intent policy add` command.
+being shipped or integrated. Use `claw intent policy list <intent-id>` to audit
+which policies apply to a workflow before shipping or integrating work.
