@@ -1,0 +1,32 @@
+[
+  {
+    "case": "same release line with patch drift stays full",
+    "local": "0.1.0",
+    "remote": "0.1.9",
+    "expected": "full"
+  },
+  {
+    "case": "one minor upgrade window is limited",
+    "local": "0.1.0",
+    "remote": "0.2.0",
+    "expected": "limited"
+  },
+  {
+    "case": "v prefix and prerelease normalize before classification",
+    "local": "v0.1.3",
+    "remote": "0.1.8-rc.1",
+    "expected": "full"
+  },
+  {
+    "case": "two minor steps are unsupported",
+    "local": "0.1.0",
+    "remote": "0.3.0",
+    "expected": "unsupported"
+  },
+  {
+    "case": "major mismatch is unsupported",
+    "local": "0.1.0",
+    "remote": "1.0.0",
+    "expected": "unsupported"
+  }
+]

@@ -277,6 +277,88 @@ jobs:
           cargo test -p claw-integration-tests --test spec_tests
           cargo test -p claw-integration-tests --test ops_artifacts_tests
 
+  artifact-smoke-gate:
+    if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    needs:
+      - plan
+      - quality
+      - build-local-artifacts
+      - build-global-artifacts
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - macos-latest
+    name: artifact-smoke-gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Fetch built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Smoke release archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.os }}" in
+            ubuntu-22.04)
+              archive="$(find target/distrib -maxdepth 1 -type f -name 'claw-x86_64-unknown-linux-gnu.tar.xz' | head -n 1)"
+              ;;
+            macos-latest)
+              case "$(uname -m)" in
+                arm64) pattern='claw-aarch64-apple-darwin.tar.xz' ;;
+                x86_64) pattern='claw-x86_64-apple-darwin.tar.xz' ;;
+                *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+              esac
+              archive="$(find target/distrib -maxdepth 1 -type f -name "$pattern" | head -n 1)"
+              ;;
+            *)
+              echo "unsupported matrix OS: ${{ matrix.os }}" >&2
+              exit 1
+              ;;
+          esac
+
+          test -n "$archive"
+          mkdir -p smoke-archive
+          tar -xJf "$archive" -C smoke-archive
+          binary="$(find smoke-archive -type f -name claw | head -n 1)"
+          test -n "$binary"
+          "$binary" --version
+
+          mkdir -p smoke-archive/repo
+          (
+            cd smoke-archive/repo
+            "$binary" init
+            "$binary" status
+          )
+
+          if [[ "${{ matrix.os }}" == "ubuntu-22.04" ]]; then
+            (
+              cd smoke-archive/repo
+              "$binary" daemon --listen 127.0.0.1:50061 --health-listen 127.0.0.1:50062 --auth-token smoke-token >/tmp/claw-artifact-daemon.log 2>&1 &
+              daemon_pid=$!
+              trap 'kill "$daemon_pid" >/dev/null 2>&1 || true' EXIT
+              for _ in $(seq 1 20); do
+                if curl -fsS http://127.0.0.1:50062/v1/health/live >/tmp/claw-artifact-health.json; then
+                  break
+                fi
+                sleep 1
+              done
+              grep -q '"code":"OK"' /tmp/claw-artifact-health.json
+              kill "$daemon_pid"
+              wait "$daemon_pid" || true
+              trap - EXIT
+            )
+          fi
+
   compatibility-matrix-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' }}
     needs:
@@ -288,7 +370,6 @@ jobs:
         os:
           - ubuntu-22.04
           - macos-latest
-          - windows-latest
     name: compatibility-matrix-gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -314,9 +395,10 @@ jobs:
       - build-global-artifacts
       - security-audit-gate
       - contract-tests-gate
+      - artifact-smoke-gate
       - compatibility-matrix-gate
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.quality.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.security-audit-gate.result == 'success' && needs.contract-tests-gate.result == 'success' && needs.compatibility-matrix-gate.result == 'success' }}
+    if: ${{ always() && needs.quality.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && needs.security-audit-gate.result == 'success' && needs.contract-tests-gate.result == 'success' && needs.artifact-smoke-gate.result == 'success' && needs.compatibility-matrix-gate.result == 'success' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"

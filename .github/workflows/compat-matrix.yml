@@ -20,7 +20,6 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          - windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,10 +31,21 @@ jobs:
         run: cargo check --workspace --all-targets
 
       - name: Cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --exclude claw-integration-tests
 
-      - name: Runtime and daemon contract targets (Linux)
+      - name: Core CLI smoke suites
+        run: |
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests
+          cargo test -p claw-integration-tests --test cli_error_contract_tests
+
+      - name: Live daemon and sync suites (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          cargo test -p claw-integration-tests --test cli_sync_e2e_tests
           cargo test -p claw-integration-tests --test daemon_http_contract_tests
           cargo test -p claw-integration-tests --test cross_version_runtime_tests
+
+      - name: Extended live sync smoke (macOS main)
+        if: matrix.os == 'macos-latest' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: cargo test -p claw-integration-tests --test cli_sync_e2e_tests

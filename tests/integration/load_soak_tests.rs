@@ -1,253 +1,333 @@
+#[path = "live_daemon_support.rs"]
+mod live_daemon_support;
+
+use claw_core::cof::cof_encode;
+use claw_core::id::ObjectId;
+use claw_core::object::Object;
+use claw_core::types::{Blob, Revision};
+use claw_store::ClawStore;
+use claw_sync::client::SyncClient;
 use claw_sync::proto::sync::sync_service_client::SyncServiceClient;
-use claw_sync::proto::sync::sync_service_server::{SyncService, SyncServiceServer};
-use claw_sync::proto::sync::{
-    AdvertiseRefsRequest, AdvertiseRefsResponse, FetchObjectsRequest, HelloRequest, HelloResponse,
-    ObjectChunk, PushObjectsResponse, UpdateRefsRequest, UpdateRefsResponse,
-};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use claw_sync::proto::sync::{HelloRequest, ObjectChunk, RefUpdate, UpdateRefsRequest};
+use live_daemon_support::{init_temp_repo, proto_object_id, write_repo_config, LiveDaemon};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot, Semaphore};
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
+use tokio::sync::Barrier;
 
-struct LoadState {
-    accepted: AtomicUsize,
-    rejected: AtomicUsize,
-    inflight: AtomicUsize,
-    max_inflight: AtomicUsize,
+fn store_revision(
+    store: &ClawStore,
+    parent: Option<ObjectId>,
+    summary: &str,
+    created_at_ms: u64,
+) -> ObjectId {
+    store
+        .store_object(&Object::Revision(Revision {
+            change_id: None,
+            parents: parent.into_iter().collect(),
+            patches: vec![],
+            snapshot_base: None,
+            tree: None,
+            capsule_id: None,
+            author: "integration-test".to_string(),
+            created_at_ms,
+            summary: summary.to_string(),
+            policy_evidence: vec![],
+        }))
+        .expect("store revision")
 }
 
-impl LoadState {
-    fn new() -> Self {
-        Self {
-            accepted: AtomicUsize::new(0),
-            rejected: AtomicUsize::new(0),
-            inflight: AtomicUsize::new(0),
-            max_inflight: AtomicUsize::new(0),
-        }
-    }
+fn small_queue_config() -> &'static str {
+    r#"
+config_version = 1
 
-    fn record_enter(&self) {
-        let now = self.inflight.fetch_add(1, Ordering::SeqCst) + 1;
-        let mut max = self.max_inflight.load(Ordering::SeqCst);
-        while now > max {
-            match self
-                .max_inflight
-                .compare_exchange(max, now, Ordering::SeqCst, Ordering::SeqCst)
-            {
-                Ok(_) => break,
-                Err(observed) => max = observed,
+[auth]
+require_auth_for_daemon = false
+default_profile = "default"
+
+[tls]
+require_for_non_localhost = true
+
+[timeouts]
+io_ms = 5000
+git_bridge_ms = 15000
+policy_eval_ms = 5000
+
+[retries]
+idempotent_only = true
+max_attempts = 4
+base_backoff_ms = 100
+max_backoff_ms = 2000
+jitter = true
+
+[queues]
+worker_pool_size = 1
+queue_capacity = 0
+backpressure = true
+
+[telemetry]
+structured_logs = true
+correlation_ids = true
+metrics = true
+traces = true
+
+[policy]
+fail_closed_integrate = true
+fail_closed_ship = true
+
+[backup]
+snapshot_interval_min = 60
+verify_integrity_on_startup = false
+strict_startup_checks = false
+"#
+}
+
+fn object_chunk_for(store: &ClawStore, id: ObjectId) -> ObjectChunk {
+    let object = store.load_object(&id).expect("load object for chunk");
+    let payload = object
+        .serialize_payload()
+        .expect("serialize object payload");
+    let cof = cof_encode(object.type_tag(), &payload).expect("encode object chunk");
+    ObjectChunk {
+        id: Some(proto_object_id(&id)),
+        object_type: object.type_tag() as i32,
+        data: cof,
+        is_last: false,
+    }
+}
+
+#[tokio::test]
+async fn live_push_pressure_rejects_ref_mutation_until_capacity_recovers() {
+    let repo = init_temp_repo();
+    write_repo_config(repo.path(), small_queue_config());
+    let store = ClawStore::open(repo.path()).expect("open remote store");
+
+    let current = store_revision(&store, None, "current", 1);
+    let next = store_revision(&store, Some(current), "next", 2);
+    store
+        .set_ref("heads/main", &current)
+        .expect("seed main ref");
+
+    let local_repo = init_temp_repo();
+    let local_store = ClawStore::open(local_repo.path()).expect("open local push store");
+    let pushed_blob = local_store
+        .store_object(&Object::Blob(Blob {
+            data: vec![42u8; 64 * 1024],
+            media_type: Some("application/octet-stream".to_string()),
+        }))
+        .expect("store pushed blob");
+
+    let daemon = LiveDaemon::spawn(repo.path(), &[]).await;
+
+    let mut holding_client = SyncServiceClient::connect(daemon.grpc_endpoint.clone())
+        .await
+        .expect("connect holding client");
+
+    let (push_tx, push_rx) = tokio::sync::mpsc::channel(2);
+    push_tx
+        .send(object_chunk_for(&local_store, pushed_blob))
+        .await
+        .expect("enqueue first object chunk");
+
+    let push_task = tokio::spawn(async move {
+        holding_client
+            .push_objects(tonic::Request::new(
+                tokio_stream::wrappers::ReceiverStream::new(push_rx),
+            ))
+            .await
+    });
+
+    let mut saw_backpressure = false;
+    for _ in 0..20 {
+        let mut probe = SyncServiceClient::connect(daemon.grpc_endpoint.clone())
+            .await
+            .expect("connect probe client");
+        match probe
+            .hello(tonic::Request::new(HelloRequest {
+                client_version: env!("CARGO_PKG_VERSION").to_string(),
+                capabilities: vec!["partial-clone".to_string()],
+            }))
+            .await
+        {
+            Err(status) if status.code() == tonic::Code::ResourceExhausted => {
+                saw_backpressure = true;
+                break;
+            }
+            Ok(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+            Err(status) => {
+                panic!("unexpected probe failure while waiting for saturation: {status}")
             }
         }
     }
-
-    fn record_exit(&self) {
-        self.inflight.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
-#[derive(Clone)]
-struct OverloadAwareHelloService {
-    permits: Arc<Semaphore>,
-    latency: Duration,
-    state: Arc<LoadState>,
-}
-
-#[tonic::async_trait]
-impl SyncService for OverloadAwareHelloService {
-    type FetchObjectsStream = ReceiverStream<Result<ObjectChunk, Status>>;
-
-    async fn hello(
-        &self,
-        _request: Request<HelloRequest>,
-    ) -> Result<Response<HelloResponse>, Status> {
-        let Ok(permit) = self.permits.clone().try_acquire_owned() else {
-            self.state.rejected.fetch_add(1, Ordering::SeqCst);
-            return Err(Status::resource_exhausted("server overloaded"));
-        };
-
-        self.state.record_enter();
-        tokio::time::sleep(self.latency).await;
-        self.state.record_exit();
-        drop(permit);
-
-        self.state.accepted.fetch_add(1, Ordering::SeqCst);
-        Ok(Response::new(HelloResponse {
-            server_version: "0.1.0".to_string(),
-            capabilities: vec!["partial-clone".to_string()],
-        }))
-    }
-
-    async fn advertise_refs(
-        &self,
-        _request: Request<AdvertiseRefsRequest>,
-    ) -> Result<Response<AdvertiseRefsResponse>, Status> {
-        Ok(Response::new(AdvertiseRefsResponse { refs: vec![] }))
-    }
-
-    async fn fetch_objects(
-        &self,
-        _request: Request<FetchObjectsRequest>,
-    ) -> Result<Response<Self::FetchObjectsStream>, Status> {
-        let (tx, rx) = mpsc::channel(1);
-        let _ = tx
-            .send(Ok(ObjectChunk {
-                id: None,
-                object_type: 0,
-                data: vec![],
-                is_last: true,
-            }))
-            .await;
-        Ok(Response::new(ReceiverStream::new(rx)))
-    }
-
-    async fn push_objects(
-        &self,
-        _request: Request<tonic::Streaming<ObjectChunk>>,
-    ) -> Result<Response<PushObjectsResponse>, Status> {
-        Ok(Response::new(PushObjectsResponse {
-            success: true,
-            message: "noop".to_string(),
-            accepted: vec![],
-        }))
-    }
-
-    async fn update_refs(
-        &self,
-        _request: Request<UpdateRefsRequest>,
-    ) -> Result<Response<UpdateRefsResponse>, Status> {
-        Ok(Response::new(UpdateRefsResponse {
-            success: true,
-            message: "noop".to_string(),
-        }))
-    }
-}
-
-struct RunningLoadServer {
-    endpoint: String,
-    state: Arc<LoadState>,
-    shutdown_tx: oneshot::Sender<()>,
-    handle: tokio::task::JoinHandle<()>,
-}
-
-async fn spawn_load_server(max_inflight: usize, latency: Duration) -> RunningLoadServer {
-    let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral grpc port");
-    let addr = probe.local_addr().expect("read ephemeral grpc port");
-    drop(probe);
-
-    let state = Arc::new(LoadState::new());
-    let service = OverloadAwareHelloService {
-        permits: Arc::new(Semaphore::new(max_inflight)),
-        latency,
-        state: state.clone(),
-    };
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let handle = tokio::spawn(async move {
-        tonic::transport::Server::builder()
-            .add_service(SyncServiceServer::new(service))
-            .serve_with_shutdown(addr, async {
-                let _ = shutdown_rx.await;
-            })
-            .await
-            .expect("run grpc load server");
-    });
-
-    tokio::time::sleep(Duration::from_millis(25)).await;
-
-    RunningLoadServer {
-        endpoint: format!("http://{addr}"),
-        state,
-        shutdown_tx,
-        handle,
-    }
-}
-
-async fn hello_once(endpoint: &str) -> Result<(), tonic::Code> {
-    let mut client = SyncServiceClient::connect(endpoint.to_string())
-        .await
-        .map_err(|_| tonic::Code::Unavailable)?;
-    client
-        .hello(Request::new(HelloRequest {
-            client_version: "0.1.0".to_string(),
-            capabilities: vec!["partial-clone".to_string()],
-        }))
-        .await
-        .map(|_| ())
-        .map_err(|err| err.code())
-}
-
-#[tokio::test]
-async fn sustained_load_is_deterministic_and_bounded_without_overload() {
-    let concurrency = 4usize;
-    let rounds = 20usize;
-    let server = spawn_load_server(concurrency, Duration::from_millis(5)).await;
-
-    for _ in 0..rounds {
-        let mut tasks = Vec::with_capacity(concurrency);
-        for _ in 0..concurrency {
-            let endpoint = server.endpoint.clone();
-            tasks.push(tokio::spawn(async move { hello_once(&endpoint).await }));
-        }
-
-        for task in tasks {
-            let result = task.await.expect("join sustained hello task");
-            assert!(result.is_ok(), "sustained request should not overload");
-        }
-    }
-
-    let total = concurrency * rounds;
-    assert_eq!(server.state.accepted.load(Ordering::SeqCst), total);
-    assert_eq!(server.state.rejected.load(Ordering::SeqCst), 0);
     assert!(
-        server.state.max_inflight.load(Ordering::SeqCst) <= concurrency,
-        "inflight must stay bounded by configured concurrency"
+        saw_backpressure,
+        "live push stream never saturated the bounded worker/queue pool"
     );
 
-    let _ = server.shutdown_tx.send(());
-    server.handle.await.expect("join grpc load server");
+    let mut mutator = SyncServiceClient::connect(daemon.grpc_endpoint.clone())
+        .await
+        .expect("connect mutator");
+    let overload = mutator
+        .update_refs(tonic::Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/main".to_string(),
+                old_target: Some(proto_object_id(&current)),
+                new_target: Some(proto_object_id(&next)),
+                force: false,
+            }],
+        }))
+        .await
+        .expect_err("mutation should be rejected while worker is saturated");
+
+    assert_eq!(overload.code(), tonic::Code::ResourceExhausted);
+    assert_eq!(
+        store
+            .get_ref("heads/main")
+            .expect("read ref after overload"),
+        Some(current)
+    );
+
+    push_tx
+        .send(ObjectChunk {
+            id: None,
+            object_type: 0,
+            data: vec![],
+            is_last: true,
+        })
+        .await
+        .expect("enqueue final chunk");
+
+    let push_response = push_task
+        .await
+        .expect("join held push task")
+        .expect("finish held push request")
+        .into_inner();
+    assert!(push_response.success, "held push should eventually succeed");
+
+    let mut final_result = None;
+    for _ in 0..20 {
+        let mut retry = SyncServiceClient::connect(daemon.grpc_endpoint.clone())
+            .await
+            .expect("connect retry mutator");
+        match retry
+            .update_refs(tonic::Request::new(UpdateRefsRequest {
+                updates: vec![RefUpdate {
+                    name: "heads/main".to_string(),
+                    old_target: Some(proto_object_id(&current)),
+                    new_target: Some(proto_object_id(&next)),
+                    force: false,
+                }],
+            }))
+            .await
+        {
+            Ok(response) => {
+                final_result = Some(response.into_inner());
+                break;
+            }
+            Err(status) if status.code() == tonic::Code::ResourceExhausted => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(status) => panic!("unexpected retry error: {status}"),
+        }
+    }
+
+    let response = final_result.expect("mutation should succeed after pressure releases");
+    assert!(
+        response.success,
+        "expected successful ref mutation: {}",
+        response.message
+    );
+    assert_eq!(
+        store
+            .get_ref("heads/main")
+            .expect("read ref after recovery"),
+        Some(next)
+    );
 }
 
-#[tokio::test]
-async fn burst_load_uses_explicit_overload_handling_and_remains_bounded() {
-    let max_inflight = 3usize;
-    let burst = 48usize;
-    let server = spawn_load_server(max_inflight, Duration::from_millis(20)).await;
-    let barrier = Arc::new(tokio::sync::Barrier::new(burst));
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn contended_live_update_refs_keeps_a_single_consistent_winner() {
+    let remote_repo = init_temp_repo();
+    let remote_store = ClawStore::open(remote_repo.path()).expect("open remote store");
+    let base = store_revision(&remote_store, None, "base", 1);
+    remote_store
+        .set_ref("heads/main", &base)
+        .expect("seed remote main ref");
 
-    let mut tasks = Vec::with_capacity(burst);
-    for _ in 0..burst {
-        let endpoint = server.endpoint.clone();
+    let local_repo = init_temp_repo();
+    let local_store = ClawStore::open(local_repo.path()).expect("open local store");
+    let local_base = store_revision(&local_store, None, "base", 1);
+    assert_eq!(
+        local_base, base,
+        "base revision ids must match across stores"
+    );
+
+    let candidates: Vec<ObjectId> = (0..12)
+        .map(|idx| {
+            store_revision(
+                &local_store,
+                Some(base),
+                &format!("candidate-{idx}"),
+                (idx + 2) as u64,
+            )
+        })
+        .collect();
+
+    let daemon = LiveDaemon::spawn(remote_repo.path(), &[]).await;
+    let mut pusher = SyncClient::connect(&daemon.grpc_endpoint)
+        .await
+        .expect("connect pusher");
+    let push_result = pusher
+        .push_objects(&local_store, &candidates)
+        .await
+        .expect("push candidate revisions");
+    assert!(
+        push_result.success,
+        "push should succeed: {}",
+        push_result.message
+    );
+
+    let barrier = Arc::new(Barrier::new(candidates.len()));
+    let mut tasks = Vec::with_capacity(candidates.len());
+    for candidate in candidates.iter().copied() {
         let barrier = barrier.clone();
+        let endpoint = daemon.grpc_endpoint.clone();
         tasks.push(tokio::spawn(async move {
             barrier.wait().await;
-            hello_once(&endpoint).await
+            let mut client = SyncClient::connect(&endpoint)
+                .await
+                .expect("connect contending client");
+            client
+                .update_refs(&[("heads/main".to_string(), Some(base), candidate)], false)
+                .await
+                .expect("update_refs should return response")
         }));
     }
 
-    let mut ok = 0usize;
-    let mut overloaded = 0usize;
+    let mut winners = 0usize;
+    let mut conflicts = 0usize;
     for task in tasks {
-        match task.await.expect("join burst hello task") {
-            Ok(()) => ok += 1,
-            Err(tonic::Code::ResourceExhausted) => overloaded += 1,
-            Err(code) => panic!("unexpected burst error code: {code:?}"),
+        let response = task.await.expect("join update_refs contender");
+        if response.success {
+            winners += 1;
+        } else {
+            conflicts += 1;
+            assert!(
+                response.message.contains("CAS conflict"),
+                "expected CAS conflict, got: {}",
+                response.message
+            );
         }
     }
 
-    assert_eq!(ok + overloaded, burst);
-    assert!(
-        overloaded > 0,
-        "burst must trigger explicit overload responses"
-    );
-    assert_eq!(server.state.accepted.load(Ordering::SeqCst), ok);
-    assert_eq!(server.state.rejected.load(Ordering::SeqCst), overloaded);
-    assert!(
-        server.state.max_inflight.load(Ordering::SeqCst) <= max_inflight,
-        "inflight must stay bounded under burst pressure"
-    );
+    assert_eq!(winners, 1, "exactly one contender should win the ref race");
+    assert_eq!(conflicts, candidates.len() - 1);
 
-    let _ = server.shutdown_tx.send(());
-    server.handle.await.expect("join grpc load server");
+    let final_ref = remote_store
+        .get_ref("heads/main")
+        .expect("read final remote ref")
+        .expect("main ref should remain set");
+    assert!(
+        candidates.contains(&final_ref),
+        "winning ref target must be one of the pushed candidate revisions"
+    );
 }

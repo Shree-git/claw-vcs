@@ -19,6 +19,8 @@ jobs:
     name: Contract test suites
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      RUST_TEST_THREADS: "1"
 
     steps:
       - name: Checkout repository
@@ -32,11 +34,20 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Run contract tests
+      - name: Run core library contract tests
+        run: cargo test -p claw -- --nocapture
+
+      - name: Run public workflow CLI tests
         run: |
-          cargo test -p claw -- --nocapture
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests
+          cargo test -p claw-integration-tests --test cli_sync_e2e_tests
+          cargo test -p claw-integration-tests --test cli_error_contract_tests
+
+      - name: Run contract artifact and interoperability suites
+        run: |
           cargo test -p claw-integration-tests --test spec_tests
           cargo test -p claw-integration-tests --test ops_artifacts_tests
           cargo test -p claw-integration-tests --test daemon_http_contract_tests
           cargo test -p claw-integration-tests --test cross_version_runtime_tests
-          cargo test -p claw-integration-tests --test load_soak_tests
+          cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1

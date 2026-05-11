@@ -29,6 +29,22 @@ path = "cross_version_runtime_tests.rs"
 name = "load_soak_tests"
 path = "load_soak_tests.rs"
 
+[[test]]
+name = "cli_core_workflow_tests"
+path = "cli_core_workflow_tests.rs"
+
+[[test]]
+name = "cli_sync_e2e_tests"
+path = "cli_sync_e2e_tests.rs"
+
+[[test]]
+name = "cli_error_contract_tests"
+path = "cli_error_contract_tests.rs"
+
+[[test]]
+name = "cli_admin_git_workflow_tests"
+path = "cli_admin_git_workflow_tests.rs"
+
 [dependencies]
 claw-core = { workspace = true }
 claw-store = { workspace = true }

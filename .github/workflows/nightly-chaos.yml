@@ -25,5 +25,8 @@ jobs:
       - name: Run deterministic chaos suite
         run: cargo test -p claw-integration-tests --test chaos_tests -- --test-threads=1
 
-      - name: Run deterministic stress subset
-        run: cargo test -p claw-integration-tests --test ops_artifacts_tests -- --test-threads=1
+      - name: Run deterministic mutating sync stress subset
+        run: cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1
+
+      - name: Run live compatibility drill
+        run: cargo test -p claw-integration-tests --test cross_version_runtime_tests -- --test-threads=1

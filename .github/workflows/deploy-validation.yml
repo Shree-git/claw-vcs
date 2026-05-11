@@ -1,0 +1,69 @@
+name: Deploy Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-assets:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate healthcheck script syntax
+        run: sh -n crates/claw/deploy/container/probes/healthcheck.sh
+
+      - name: Build container image
+        run: docker build -f crates/claw/deploy/container/Dockerfile -t claw-deploy-smoke .
+
+      - name: Container binary smoke
+        run: docker run --rm --entrypoint /usr/local/bin/claw claw-deploy-smoke --version
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
+
+      - name: Helm lint
+        run: helm lint crates/claw/deploy/helm/claw
+
+      - name: Helm template render
+        run: |
+          helm template claw-smoke crates/claw/deploy/helm/claw \
+            --set image.repository=ghcr.io/shree-git/claw-vcs \
+            --set image.tag=test \
+            > rendered-helm.yaml
+          grep -q '^kind: Deployment' rendered-helm.yaml
+          grep -q '^kind: Service' rendered-helm.yaml
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive crates/claw/deploy/terraform
+
+      - name: Terraform validate
+        working-directory: crates/claw/deploy/terraform
+        env:
+          TF_VAR_kubeconfig_path: /tmp/nonexistent-kubeconfig
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Systemd template sanity
+        run: |
+          grep -q '^ExecStart={{ \\.BinaryPath }} daemon --listen {{ \\.ListenAddr }} --health-listen {{ \\.HealthListenAddr }}$' \
+            crates/claw/deploy/systemd/claw-daemon.service.tpl
+          grep -q '^ReadWritePaths={{ \\.StateDirectory }}$' \
+            crates/claw/deploy/systemd/claw-daemon.service.tpl
