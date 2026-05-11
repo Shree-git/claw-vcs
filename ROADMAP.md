@@ -14,6 +14,11 @@ guide, not a date promise.
 - Keep primitive docs complete for all 12 object types.
 - Keep the basic demo script smoke-testable against the current CLI.
 - Publish small versioned demo media for docs and social previews.
+- Support agent key generation, registration, rotation, and revocation in the CLI.
+- Enforce recipient-encrypted capsule private fields for authorized policy recipients.
+- Use the internal daemon event bus for daemon-generated sync ref updates.
+- Keep daemon authorization, replay protection, request limits, audit logs, and production TLS/auth defaults covered by tests.
+- Maintain validated Docker, Helm, Terraform, and systemd deployment assets without treating a public OCI image as live until it is published and verified.
 
 ## v0.2
 
@@ -25,13 +30,13 @@ guide, not a date promise.
 - Add more policy examples for review, sensitive paths, and evidence checks.
 - Make compatibility test output easier for operators to read.
 - Expose a supported CLI path for attaching policy refs to intents.
-- Add explicit agent key import, rotation, and revocation workflows if they are
-  promoted into the CLI.
+- Deepen agent lifecycle ergonomics around external key custody, fleet rotation,
+  and revoked-key audit queries.
 
 ## v0.3
 
 - Remote sync hardening and compatibility matrix expansion.
-- Recipient-based capsule encryption and private-field read authorization.
+- Large-scale recipient policy operations and private-field authorization review tools.
 - Broaden hosted remote integration once the self-hosted path is proven.
 - Add more codecs for structured file formats.
 - Publish larger scale benchmarks and sizing guidance.
