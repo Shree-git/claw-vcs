@@ -72,6 +72,28 @@ RestartSec=2
 WantedBy=multi-user.target
 ```
 
+## Container and Helm Preview
+
+Container deployment assets are present for operators who want to evaluate the daemon in Kubernetes, but a public OCI image is not a launch-ready install channel until a release publishes signed, attested images and records clean-environment verification.
+
+Build the image locally from a checked-out release tag:
+
+```bash
+docker build -f crates/claw/deploy/container/Dockerfile -t claw-vcs:<release-tag> .
+docker run --rm --entrypoint /usr/local/bin/claw claw-vcs:<release-tag> --version
+```
+
+Validate the chart before installation:
+
+```bash
+helm lint crates/claw/deploy/helm/claw
+helm template claw crates/claw/deploy/helm/claw \
+  --set image.repository=claw-vcs \
+  --set image.tag=<release-tag>
+```
+
+When an official image is published, use the image repository and tag from that release's notes instead of assuming `ghcr.io/shree-git/claw-vcs` is available.
+
 ## TLS guidance
 
 - If daemon is reachable beyond localhost, use TLS.

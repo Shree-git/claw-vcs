@@ -14,6 +14,6 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 | Scoop | unsupported | Revisit after first stable Windows release. |
 | Nix | unsupported | Prefer source build or manual archive install for now. |
 | AUR | unsupported | Revisit after Linux adoption demand. |
-| Docker image | unsupported | Daemon container packaging needs a separate hardening pass. |
+| Docker image | planned | Docker, Helm, Terraform, and systemd deployment assets exist and are validated by CI, but no public OCI image is a launch channel until it is built, signed, attested, pushed, and clean-environment verified. |
 
 Before broad announcement, verify every live channel from a clean machine or container and record expected command output in release notes.

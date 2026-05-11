@@ -385,11 +385,7 @@ Notes:
 
 **WinGet (planned)**
 
-WinGet support is planned. Until a manifest is accepted in the upstream Microsoft repository, use the MSI or PowerShell installer below.
-
-```powershell
-winget install ShreeGit.ClawVCS
-```
+WinGet support is planned, but no WinGet install command is launch-ready until a manifest is accepted in the upstream Microsoft repository. Use the MSI or PowerShell installer below until release notes explicitly mark WinGet live.
 
 **MSI**
 
