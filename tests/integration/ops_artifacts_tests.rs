@@ -274,3 +274,49 @@ fn policy_and_interface_docs_exist_and_include_required_phrases() {
         "deprecation lifecycle for N+2 must mention remove"
     );
 }
+
+#[test]
+fn public_launch_assets_exist_and_are_upload_ready() {
+    for artifact in [
+        "scripts/demo.sh",
+        "examples/basic-demo/scripts/demo.sh",
+        "docs/assets/social-preview.png",
+        "docs/assets/social-preview.svg",
+        "docs/operations/public-launch-checklist.md",
+        "docs/operations/package-registry-strategy.md",
+    ] {
+        let path = workspace_path(artifact);
+        assert!(
+            path.exists(),
+            "missing required public-launch artifact: {}",
+            path.display()
+        );
+    }
+
+    let demo_wrapper = read_workspace_file("scripts/demo.sh");
+    assert!(
+        demo_wrapper.contains("examples/basic-demo/scripts/demo.sh"),
+        "top-level demo wrapper must delegate to the maintained basic demo"
+    );
+
+    let social_preview = fs::read(workspace_path("docs/assets/social-preview.png"))
+        .expect("social preview PNG must be readable");
+    assert!(
+        social_preview.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "social preview asset must be a PNG file"
+    );
+    assert!(
+        social_preview.len() < 1_000_000,
+        "social preview PNG must stay under GitHub's 1 MB upload limit"
+    );
+
+    let launch_checklist = read_workspace_file("docs/operations/public-launch-checklist.md");
+    assert!(
+        launch_checklist.contains("docs/assets/social-preview.png"),
+        "launch checklist must name the upload-ready social preview asset"
+    );
+    assert!(
+        launch_checklist.contains("Package-name checks"),
+        "launch checklist must record package-name verification evidence"
+    );
+}
