@@ -14,7 +14,7 @@ Status as of 2026-05-12:
   unverified secrets.
 - Code scanning uploads are accepted for PR #4 on 2026-05-12:
   CodeQL, Semgrep OSS, and Scorecard analyses exist for `refs/pull/4/merge`.
-- PR #4 head `1a9e71e` has passing CI, release planning, security, SAST,
+- PR #4 has passing CI, release planning, security, SAST,
   dependency-review, compatibility, contract, and deploy-validation checks.
   GitHub still reports `REVIEW_REQUIRED`, so merge is blocked only by
   branch-protection review.

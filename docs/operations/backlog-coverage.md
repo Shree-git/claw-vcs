@@ -44,7 +44,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 20 | Implemented | `ROADMAP.md`. |
 | 21 | Implemented | ADRs in `docs/adr/` cover no staging area, BLAKE3 IDs, Protobuf+COF, gRPC sync, intent/change/revision, capsules, and policy objects. |
 | 22 | Implemented | `docs/spec/object-format.md`. |
-| 23 | Implemented | `tests/vectors/` includes COF, IDs, capsules, policies, patch, and fail-closed vectors. |
+| 23 | Implemented | `tests/vectors/` includes COF, IDs, capsules, policies, patch, and fail-closed vectors; `tests/integration/vector_manifest_tests.rs` validates the standalone launch vectors. |
 | 24 | Implemented | `fuzz/fuzz_targets/` covers COF decode, object IDs, patch apply/codecs, JSON tree merge, Git import parsing, sync chunks, capsules, policy checks, and store objects. |
 | 25 | Implemented | Property tests live in `crates/*/tests/*props.rs`, `crates/claw-core/tests/serialization_props.rs`, and policy/crypto tamper tests. |
 | 26 | Implemented | Git interop tests live in `crates/claw-git/tests/git_bridge_real_git.rs`, `tests/integration/spec_tests.rs`, and CLI Git workflow tests. |
@@ -71,9 +71,9 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 42 | Implemented | `scripts/demo.sh` delegates to `examples/basic-demo/scripts/demo.sh`; CI runs the demo. |
 | 43 | Implemented | `examples/demo-media/basic-demo.cast`, `status-screenshot.svg`, `ship-capsule-screenshot.svg`, and `command-gallery.svg`. |
 | 44 | Implemented | `examples/demo-media/command-gallery.svg` covers status, log, diff, show, policy, failed integrate, successful ship, and Git export. |
-| 45 | Implemented | `docs/migration/from-git.md`. |
+| 45 | Implemented | `docs/migration/from-git.md` covers import/export, rollback, validation, and a Git feature support/lossiness matrix. |
 | 46 | Implemented | `docs/workflows/solo.md`, `human-agent-pair.md`, `multiple-agents.md`, `policy-gated-integration.md`, `sensitive-paths.md`, and `release.md`. |
-| 47 | Implemented | `docs/agents/integration-guide.md`, `agent-registration.md`, and `change-workflow.md`. |
+| 47 | Implemented | `docs/agents/integration-guide.md`, `agent-registration.md`, and `change-workflow.md`, including CLI and daemon/event integration boundaries. |
 | 48 | Implemented | `docs/agents/evidence-schema.md`. |
 | 49 | Implemented | `docs/agents/evidence-freshness.md` plus freshness policy implementation/tests. |
 | 50 | Implemented | `docs/agents/key-rotation-and-revocation.md` plus `claw agent keygen/register/rotate/revoke` support. |
