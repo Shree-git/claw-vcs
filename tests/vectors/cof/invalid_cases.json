@@ -1,0 +1,23 @@
+[
+  {
+    "name": "invalid_magic",
+    "cof_hex": "42414421010100000000000000",
+    "expected_error": "invalid magic"
+  },
+  {
+    "name": "future_version",
+    "cof_hex": "434c57317f0100000000000000",
+    "expected_version": 127,
+    "expected_error": "unsupported cof version"
+  },
+  {
+    "name": "unknown_type_tag",
+    "cof_hex": "434c573101ff00000000000000",
+    "expected_error": "unknown type tag"
+  },
+  {
+    "name": "crc_mismatch",
+    "cof_hex": "434c5731010100000568656c6c6f86a61037",
+    "expected_error": "crc32 mismatch"
+  }
+]

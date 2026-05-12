@@ -1,8 +1,9 @@
-use claw_core::cof::cof_decode;
+use claw_core::cof::{cof_decode, cof_version};
 use claw_core::hash::content_hash;
 use claw_core::id::ObjectId;
 use claw_core::object::TypeTag;
 use serde_json::Value;
+use std::collections::HashSet;
 
 #[test]
 fn standalone_launch_vectors_match_expected_hashes_and_cof() {
@@ -14,53 +15,43 @@ fn standalone_launch_vectors_match_expected_hashes_and_cof() {
         include_str!("../../tests/vectors/policies/basic_required_checks.json"),
     ];
 
+    let mut covered_types = HashSet::new();
+
     for raw in vectors {
         let vector: Value = serde_json::from_str(raw).expect("vector is valid JSON");
-        let name = vector["name"].as_str().expect("vector has name");
-        let input_type = vector["input_object"]["type"]
-            .as_str()
-            .expect("vector has input object type");
-        let tag = type_tag_from_vector(input_type);
-        let payload = decode_hex(
-            vector["canonical_payload_hex"]
-                .as_str()
-                .expect("vector has canonical payload"),
-        );
+        covered_types.insert(assert_object_vector(&vector));
+    }
 
-        let expected_id_hex = vector["expected_object_id_hex"]
-            .as_str()
-            .expect("vector has expected object ID hex");
-        let expected_id = ObjectId::from_hex(expected_id_hex).expect("expected ID hex is valid");
-        assert_eq!(
-            content_hash(tag, &payload),
-            expected_id,
-            "object ID vector changed: {name}"
-        );
-        assert_eq!(
-            expected_id.to_string(),
-            vector["expected_object_id"]
-                .as_str()
-                .expect("vector has display object ID"),
-            "display object ID vector changed: {name}"
-        );
+    let extended: Value = serde_json::from_str(include_str!(
+        "../../tests/vectors/objects/core_object_types.json"
+    ))
+    .expect("extended core object vectors are valid JSON");
+    let extended = extended
+        .as_array()
+        .expect("extended core object vectors are an array");
+    for vector in extended {
+        covered_types.insert(assert_object_vector(vector));
+    }
 
-        if let Some(cof_hex) = vector.get("cof_hex").and_then(Value::as_str) {
-            let encoded = decode_hex(cof_hex);
-            let (decoded_tag, decoded_payload) = cof_decode(&encoded).expect("COF vector decodes");
-            assert_eq!(decoded_tag, tag, "COF tag vector changed: {name}");
-            assert_eq!(
-                decoded_payload, payload,
-                "COF payload vector changed: {name}"
-            );
-        }
-
-        if let Some(signature) = vector.get("expected_signature_hex").and_then(Value::as_str) {
-            assert_eq!(
-                signature.len(),
-                128,
-                "Ed25519 signature vector must be 64 bytes: {name}"
-            );
-        }
+    for tag in [
+        TypeTag::Blob,
+        TypeTag::Tree,
+        TypeTag::Patch,
+        TypeTag::Revision,
+        TypeTag::Snapshot,
+        TypeTag::Intent,
+        TypeTag::Change,
+        TypeTag::Conflict,
+        TypeTag::Capsule,
+        TypeTag::Policy,
+        TypeTag::Workstream,
+        TypeTag::RefLog,
+    ] {
+        assert!(
+            covered_types.contains(&tag),
+            "standalone launch vectors must cover object type: {}",
+            tag.name()
+        );
     }
 }
 
@@ -86,6 +77,39 @@ fn documented_launch_vector_files_are_parseable_and_checked() {
         let (decoded_tag, decoded_payload) = cof_decode(&encoded).expect("COF vector decodes");
         assert_eq!(decoded_tag, tag, "COF tag changed: {name}");
         assert_eq!(decoded_payload, payload, "COF payload changed: {name}");
+    }
+
+    let invalid_cof: Value =
+        serde_json::from_str(include_str!("../../tests/vectors/cof/invalid_cases.json"))
+            .expect("invalid COF vectors are valid JSON");
+    let invalid_cof = invalid_cof
+        .as_array()
+        .expect("invalid COF vectors are an array");
+    assert!(
+        invalid_cof.len() >= 4,
+        "invalid COF vectors must cover magic, version, type tag, and CRC failures"
+    );
+    for vector in invalid_cof {
+        let name = vector["name"]
+            .as_str()
+            .expect("invalid COF vector has name");
+        let encoded = decode_hex(vector["cof_hex"].as_str().expect("invalid COF has bytes"));
+        let err = cof_decode(&encoded).expect_err("invalid COF vector must fail to decode");
+        let rendered = err.to_string().to_lowercase();
+        let expected = vector["expected_error"]
+            .as_str()
+            .expect("invalid COF vector has expected error");
+        assert!(
+            rendered.contains(expected),
+            "invalid COF vector {name} should mention {expected}, got {rendered}"
+        );
+        if let Some(expected_version) = vector.get("expected_version").and_then(Value::as_u64) {
+            assert_eq!(
+                cof_version(&encoded).expect("future-version vector still has valid COF magic"),
+                expected_version as u8,
+                "invalid COF vector {name} version byte changed"
+            );
+        }
     }
 
     let crypto_capsule: Value = serde_json::from_str(include_str!(
@@ -134,6 +158,69 @@ fn documented_launch_vector_files_are_parseable_and_checked() {
             .any(|vector| vector["expected_error"] == "missing required check"),
         "policy vectors must include fail-closed missing-check coverage"
     );
+
+    let core_object_types: Value = serde_json::from_str(include_str!(
+        "../../tests/vectors/objects/core_object_types.json"
+    ))
+    .expect("core object type vectors are valid JSON");
+    let core_object_types = core_object_types
+        .as_array()
+        .expect("core object type vectors are an array");
+    assert_eq!(
+        core_object_types.len(),
+        7,
+        "extended core object vectors must cover patch plus six object types not in the starter set"
+    );
+}
+
+fn assert_object_vector(vector: &Value) -> TypeTag {
+    let name = vector["name"].as_str().expect("vector has name");
+    let input_type = vector["input_object"]["type"]
+        .as_str()
+        .expect("vector has input object type");
+    let tag = type_tag_from_vector(input_type);
+    let payload = decode_hex(
+        vector["canonical_payload_hex"]
+            .as_str()
+            .expect("vector has canonical payload"),
+    );
+
+    let expected_id_hex = vector["expected_object_id_hex"]
+        .as_str()
+        .expect("vector has expected object ID hex");
+    let expected_id = ObjectId::from_hex(expected_id_hex).expect("expected ID hex is valid");
+    assert_eq!(
+        content_hash(tag, &payload),
+        expected_id,
+        "object ID vector changed: {name}"
+    );
+    assert_eq!(
+        expected_id.to_string(),
+        vector["expected_object_id"]
+            .as_str()
+            .expect("vector has display object ID"),
+        "display object ID vector changed: {name}"
+    );
+
+    if let Some(cof_hex) = vector.get("cof_hex").and_then(Value::as_str) {
+        let encoded = decode_hex(cof_hex);
+        let (decoded_tag, decoded_payload) = cof_decode(&encoded).expect("COF vector decodes");
+        assert_eq!(decoded_tag, tag, "COF tag vector changed: {name}");
+        assert_eq!(
+            decoded_payload, payload,
+            "COF payload vector changed: {name}"
+        );
+    }
+
+    if let Some(signature) = vector.get("expected_signature_hex").and_then(Value::as_str) {
+        assert_eq!(
+            signature.len(),
+            128,
+            "Ed25519 signature vector must be 64 bytes: {name}"
+        );
+    }
+
+    tag
 }
 
 fn type_tag_from_vector(input_type: &str) -> TypeTag {
@@ -142,8 +229,14 @@ fn type_tag_from_vector(input_type: &str) -> TypeTag {
         "Tree" | "tree" => TypeTag::Tree,
         "Patch" | "patch" => TypeTag::Patch,
         "Revision" | "revision" => TypeTag::Revision,
+        "Snapshot" | "snapshot" => TypeTag::Snapshot,
+        "Intent" | "intent" => TypeTag::Intent,
+        "Change" | "change" => TypeTag::Change,
+        "Conflict" | "conflict" => TypeTag::Conflict,
         "Capsule" | "capsule" => TypeTag::Capsule,
         "Policy" | "policy" => TypeTag::Policy,
+        "Workstream" | "workstream" => TypeTag::Workstream,
+        "RefLog" | "reflog" => TypeTag::RefLog,
         other => panic!("unsupported vector object type: {other}"),
     }
 }

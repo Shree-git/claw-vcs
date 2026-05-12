@@ -44,7 +44,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 20 | Implemented | `ROADMAP.md`. |
 | 21 | Implemented | ADRs in `docs/adr/` cover no staging area, BLAKE3 IDs, Protobuf+COF, gRPC sync, intent/change/revision, capsules, and policy objects. |
 | 22 | Implemented | `docs/spec/object-format.md`. |
-| 23 | Implemented | `tests/vectors/` includes COF, IDs, capsules, policies, patch, and fail-closed vectors; CI and contract workflows run `tests/integration/vector_manifest_tests.rs` to validate the standalone launch vectors. |
+| 23 | Implemented | `tests/vectors/` includes COF, IDs, capsules, policies, patch, fail-closed, all core object type, and invalid/future COF vectors; CI and contract workflows run `tests/integration/vector_manifest_tests.rs` to validate the standalone launch vectors. |
 | 24 | Implemented | `fuzz/fuzz_targets/` covers COF decode, object IDs, patch apply/codecs, JSON tree merge, Git import parsing, sync chunks, capsules, policy checks, and store objects. |
 | 25 | Implemented | Property tests live in `crates/*/tests/*props.rs`, `crates/claw-core/tests/serialization_props.rs`, and policy/crypto tamper tests. |
 | 26 | Implemented | Git interop tests live in `crates/claw-git/tests/git_bridge_real_git.rs`, `tests/integration/spec_tests.rs`, and CLI Git workflow tests. |
