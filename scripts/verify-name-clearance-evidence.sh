@@ -20,7 +20,17 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd "$script_dir/.." && pwd -P)"
+
 evidence="${1:-${CLAW_PREFLIGHT_NAME_EVIDENCE:-docs/operations/name-clearance-evidence.md}}"
+case "$evidence" in
+  /*)
+    ;;
+  *)
+    evidence="$repo_root/$evidence"
+    ;;
+esac
 failures=0
 
 fail() {

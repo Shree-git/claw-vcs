@@ -20,8 +20,19 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd "$script_dir/.." && pwd -P)"
+
 repo="${CLAW_LABEL_REPO:-Shree-git/claw-vcs}"
-manifest="${CLAW_LABEL_MANIFEST:-.github/labels.yml}"
+manifest="${CLAW_LABEL_MANIFEST:-$repo_root/.github/labels.yml}"
+
+case "$manifest" in
+  /*)
+    ;;
+  *)
+    manifest="$repo_root/$manifest"
+    ;;
+esac
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then

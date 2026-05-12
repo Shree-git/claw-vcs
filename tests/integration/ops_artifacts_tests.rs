@@ -1041,6 +1041,40 @@ fn release_helper_scripts_have_safe_cli_guards() {
         completed_evidence.status.success(),
         "name-clearance evidence verifier should accept completed fixture"
     );
+
+    let docs_operations_dir = root.join("docs/operations");
+    let completed_evidence_from_docs = Command::new("bash")
+        .arg("../../scripts/verify-name-clearance-evidence.sh")
+        .arg(&evidence_path)
+        .current_dir(&docs_operations_dir)
+        .output()
+        .expect("run name-clearance evidence verifier from docs/operations");
+    assert!(
+        completed_evidence_from_docs.status.success(),
+        "name-clearance evidence verifier should resolve repository paths outside repo root"
+    );
+
+    let preflight_help_from_docs = Command::new("bash")
+        .arg("../../scripts/public-launch-preflight.sh")
+        .arg("--help")
+        .current_dir(&docs_operations_dir)
+        .output()
+        .expect("run public-launch preflight help from docs/operations");
+    assert!(
+        preflight_help_from_docs.status.success(),
+        "public-launch preflight help should work outside repo root"
+    );
+
+    let labels_help_from_docs = Command::new("bash")
+        .arg("../../scripts/verify-github-labels.sh")
+        .arg("--help")
+        .current_dir(&docs_operations_dir)
+        .output()
+        .expect("run GitHub label verifier help from docs/operations");
+    assert!(
+        labels_help_from_docs.status.success(),
+        "GitHub label verifier help should work outside repo root"
+    );
     let _ = fs::remove_file(&evidence_path);
 
     let verify_without_tag = Command::new("bash")

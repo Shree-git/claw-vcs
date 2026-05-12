@@ -38,6 +38,16 @@ require_pages="${CLAW_PREFLIGHT_REQUIRE_PAGES:-0}"
 strict="${CLAW_PREFLIGHT_STRICT:-0}"
 name_evidence="${CLAW_PREFLIGHT_NAME_EVIDENCE:-docs/operations/name-clearance-evidence.md}"
 cratesio_owner="${CLAW_PREFLIGHT_CRATESIO_OWNER:-${CLAW_CRATESIO_EXPECTED_OWNER:-}}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd "$script_dir/.." && pwd -P)"
+
+case "$name_evidence" in
+  /*)
+    ;;
+  *)
+    name_evidence="$repo_root/$name_evidence"
+    ;;
+esac
 
 failures=0
 warnings=0
@@ -174,7 +184,7 @@ for topic in \
   fi
 done
 
-if label_output="$(CLAW_LABEL_REPO="$repo" scripts/verify-github-labels.sh 2>&1)"; then
+if label_output="$(CLAW_LABEL_REPO="$repo" "$repo_root/scripts/verify-github-labels.sh" 2>&1)"; then
   pass "$label_output"
 else
   fail "GitHub labels do not match .github/labels.yml: $label_output"
@@ -301,15 +311,16 @@ else
 fi
 
 social_preview="docs/assets/social-preview.png"
-if [[ -f "$social_preview" ]]; then
-  size="$(wc -c < "$social_preview" | tr -d ' ')"
+social_preview_path="$repo_root/$social_preview"
+if [[ -f "$social_preview_path" ]]; then
+  size="$(wc -c < "$social_preview_path" | tr -d ' ')"
   if [[ "$size" -lt 1000000 ]]; then
     pass "social preview asset exists and is under 1 MB"
   else
     fail "social preview asset exceeds GitHub's 1 MB upload limit"
   fi
   dimensions="$(
-    python3 - "$social_preview" <<'PY'
+    python3 - "$social_preview_path" <<'PY'
 import struct
 import sys
 
@@ -351,7 +362,7 @@ else
 fi
 
 if [[ "$strict" == "1" ]]; then
-  if evidence_output="$(scripts/verify-name-clearance-evidence.sh "$name_evidence" 2>&1)"; then
+  if evidence_output="$("$repo_root/scripts/verify-name-clearance-evidence.sh" "$name_evidence" 2>&1)"; then
     pass "$evidence_output"
   else
     fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence; start from docs/operations/name-clearance-evidence.template.md. $evidence_output"
