@@ -654,13 +654,23 @@ impl ReplayProtector {
     }
 
     pub fn accept(&mut self, nonce: impl AsRef<str>, now: Instant) -> Result<(), ReplayError> {
+        self.accept_scoped(nonce, "", now)
+    }
+
+    pub fn accept_scoped(
+        &mut self,
+        nonce: impl AsRef<str>,
+        scope: impl AsRef<str>,
+        now: Instant,
+    ) -> Result<(), ReplayError> {
         let nonce = nonce.as_ref().trim();
         if nonce.is_empty() {
             return Err(ReplayError::EmptyNonce);
         }
+        let key = format!("{}\n{nonce}", scope.as_ref());
 
         self.prune_expired(now);
-        if self.seen.contains_key(nonce) {
+        if self.seen.contains_key(&key) {
             return Err(ReplayError::Replay);
         }
 
@@ -668,7 +678,7 @@ impl ReplayProtector {
             self.evict_oldest();
         }
 
-        self.seen.insert(nonce.to_string(), now);
+        self.seen.insert(key, now);
         Ok(())
     }
 
@@ -1134,6 +1144,38 @@ mod tests {
         assert!(protector
             .accept("nonce-1", now + Duration::from_secs(2))
             .is_ok());
+    }
+
+    #[test]
+    fn replay_protector_binds_nonce_to_scope() {
+        let now = Instant::now();
+        let mut protector = ReplayProtector::new(ReplayProtectionConfig {
+            window: Duration::from_secs(60),
+            max_entries: 16,
+        });
+
+        assert!(protector
+            .accept_scoped(
+                "nonce-1",
+                "principal=a;action=update_refs;resource=heads/main",
+                now
+            )
+            .is_ok());
+        assert!(protector
+            .accept_scoped(
+                "nonce-1",
+                "principal=a;action=update_refs;resource=heads/feature",
+                now + Duration::from_secs(1),
+            )
+            .is_ok());
+        assert_eq!(
+            protector.accept_scoped(
+                "nonce-1",
+                "principal=a;action=update_refs;resource=heads/main",
+                now + Duration::from_secs(2),
+            ),
+            Err(ReplayError::Replay)
+        );
     }
 
     #[test]

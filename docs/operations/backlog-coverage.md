@@ -11,7 +11,7 @@ Status key:
 
 ## Completion Summary
 
-The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening branch. The goal is not complete until the external pending items below are finished: package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, PR review/merge, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
+The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening branch. The goal is not complete until the external pending items below are finished: package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, optional GitHub Pages publication if the landing page should be served publicly, PR review/merge, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
 
 ## P0
 
@@ -103,7 +103,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 64 | Implemented | `crates/claw-sync/src/security.rs` models roles/scopes; daemon docs describe authorization. |
 | 65 | Implemented | Audit logging for sync/security/admin paths is implemented and documented in observability/security docs. |
 | 66 | Implemented | mTLS flags/docs/tests exist for daemon/sync. |
-| 67 | Implemented | Replay protection uses revision binding, nonce metadata, signer context, and tests in sync/capsule paths. |
+| 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, with tests in sync security paths. Capsule evidence freshness separately binds evidence to exact revisions. |
 | 68 | Implemented | `docs/reference/compatibility.md`, `compatibility-matrix.json`, and sync negotiation code. |
 | 69 | Implemented | Remote compatibility/integration tests cover push/pull, partial clone, interruption, auth, TLS, stale token, and protocol mismatch. |
 | 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs. |
@@ -142,7 +142,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 
 | # | Status | Evidence |
 |---:|---|---|
-| 91 | Implemented | `docs/index.html` and `docs/landing-page.md`. |
+| 91 | Implemented | `docs/index.html` and `docs/landing-page.md`; publishing the static page with GitHub Pages is an external repository setting/workflow decision if desired. |
 | 92 | Implemented | README includes restrained CI/license/security badges. |
 | 93 | Implemented | `docs/assets/social-preview.png` upload-ready asset and source SVG. |
 | 94 | External pending | Logo overinvestment intentionally deferred until name/trademark clearance. |
@@ -166,6 +166,6 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 ## Current External Blockers
 
 - PR #4 requires review approval before merge.
-- Package/name reservation, trademark review, domain/social-handle checks, and GitHub social preview upload require maintainer/account access.
+- Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, and optional GitHub Pages publication require maintainer/account access.
 - The next hardened public release must be cut before public artifact attestations, SBOMs, signatures, installers, Homebrew, MSI, and clean-environment channel checks can be verified.
 - GitHub reports low Dependabot findings on the default branch until this branch's dependency updates land on `main`.

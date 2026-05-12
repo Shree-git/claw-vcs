@@ -8,6 +8,9 @@ Audit command:
 rg -n '\bunsafe\b' crates tests proto Cargo.toml
 ```
 
+CI and release quality gates also fail if direct Rust `unsafe` appears under
+`crates/` or `tests/` without an explicit audit update.
+
 If `unsafe` is introduced later, the PR must document:
 
 - why safe Rust is insufficient

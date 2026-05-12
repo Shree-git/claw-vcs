@@ -25,10 +25,10 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Run deterministic chaos suite
-        run: cargo test -p claw-integration-tests --test chaos_tests -- --test-threads=1
+        run: cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
 
       - name: Run deterministic mutating sync stress subset
-        run: cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1
+        run: cargo test -p claw-integration-tests --test load_soak_tests --locked -- --test-threads=1
 
       - name: Run live compatibility drill
-        run: cargo test -p claw-integration-tests --test cross_version_runtime_tests -- --test-threads=1
+        run: cargo test -p claw-integration-tests --test cross_version_runtime_tests --locked -- --test-threads=1

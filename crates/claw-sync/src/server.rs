@@ -278,24 +278,33 @@ impl SyncServer {
         let mut protector = protector
             .lock()
             .map_err(|_| Status::internal("replay protector lock poisoned"))?;
-        protector.accept(&nonce, Instant::now()).map_err(|err| {
-            self.security.audit_sink.record(AuditEvent::denied(
-                now_ms(),
-                request_id_from_request(request),
-                subject_from_request(request),
-                action,
-                resource,
-                err.to_string(),
-            ));
-            match err {
-                crate::security::ReplayError::EmptyNonce => {
-                    Status::invalid_argument("replay nonce cannot be empty")
+        let subject = subject_from_request(request);
+        let replay_scope = format!(
+            "principal={};token={};action={action:?};resource={}",
+            subject.principal.as_deref().unwrap_or(""),
+            subject.token_id.as_deref().unwrap_or(""),
+            resource.as_deref().unwrap_or("")
+        );
+        protector
+            .accept_scoped(&nonce, replay_scope, Instant::now())
+            .map_err(|err| {
+                self.security.audit_sink.record(AuditEvent::denied(
+                    now_ms(),
+                    request_id_from_request(request),
+                    subject,
+                    action,
+                    resource,
+                    err.to_string(),
+                ));
+                match err {
+                    crate::security::ReplayError::EmptyNonce => {
+                        Status::invalid_argument("replay nonce cannot be empty")
+                    }
+                    crate::security::ReplayError::Replay => {
+                        Status::already_exists("replayed request nonce")
+                    }
                 }
-                crate::security::ReplayError::Replay => {
-                    Status::already_exists("replayed request nonce")
-                }
-            }
-        })
+            })
     }
 }
 
@@ -1531,7 +1540,7 @@ mod tests {
 
         let mut second = Request::new(UpdateRefsRequest {
             updates: vec![RefUpdate {
-                name: "heads/other".to_string(),
+                name: "heads/main".to_string(),
                 old_target: None,
                 new_target: Some(crate::proto::common::ObjectId {
                     hash: target.as_bytes().to_vec(),

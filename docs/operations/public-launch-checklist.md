@@ -111,6 +111,12 @@ developer-tools
 
 Suggested labels are tracked in [`.github/labels.yml`](../../.github/labels.yml).
 
+## Landing Page
+
+- [x] Add a static landing page artifact in `docs/index.html`.
+- [ ] If the launch should include a public website, enable and verify GitHub
+  Pages or another docs host for the committed landing page.
+
 ## Social Preview
 
 Suggested card copy:

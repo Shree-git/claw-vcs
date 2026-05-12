@@ -59,10 +59,10 @@ jobs:
 
           while [[ "${SECONDS}" -lt "${END_TIME}" ]]; do
             echo "[iteration ${ITERATION}] Running load_soak_tests"
-            cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1
+            cargo test -p claw-integration-tests --test load_soak_tests --locked -- --test-threads=1
 
             echo "[iteration ${ITERATION}] Running chaos_tests"
-            cargo test -p claw-integration-tests --test chaos_tests -- --test-threads=1
+            cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
 
             ITERATION=$((ITERATION + 1))
           done

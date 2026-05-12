@@ -28,7 +28,7 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
 
       - name: Generate CycloneDX SBOM (JSON)
         run: cargo cyclonedx --all-features --format json

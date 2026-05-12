@@ -60,6 +60,14 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Production panic audit
         run: cargo clippy --workspace --lib --bins --locked -- -D clippy::panic -D clippy::todo -D clippy::unimplemented
+      - name: Unsafe code audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn --include='*.rs' --exclude-dir=generated 'unsafe' crates tests; then
+            echo "unsafe Rust requires an explicit audit entry before release" >&2
+            exit 1
+          fi
       - name: Tests
         run: cargo test --workspace --locked
       - name: Example workflow smoke scripts
@@ -94,10 +102,7 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install dist
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` returned non-0
-        shell: bash
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.30.3/cargo-dist-installer.sh | sh"
+        run: cargo install cargo-dist --version 0.30.3 --locked
       - name: Cache dist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -268,15 +273,15 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --version 0.22.1 --locked
       - name: Run cargo audit
         run: cargo audit --deny warnings
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --version 0.19.6 --locked
       - name: Run cargo-deny
         run: cargo deny check
       - name: Install cargo-vet
-        run: cargo install cargo-vet --locked
+        run: cargo install cargo-vet --version 0.10.2 --locked
       - name: Run cargo-vet
         run: cargo vet
 
@@ -303,9 +308,9 @@ jobs:
           merge-multiple: true
       - name: Run contract tests
         run: |
-          cargo test -p claw -- --nocapture
-          cargo test -p claw-integration-tests --test spec_tests
-          cargo test -p claw-integration-tests --test ops_artifacts_tests
+          cargo test -p claw --locked -- --nocapture
+          cargo test -p claw-integration-tests --test spec_tests --locked
+          cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
 
   artifact-smoke-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}

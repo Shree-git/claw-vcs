@@ -49,6 +49,15 @@ jobs:
       - name: Run production panic audit
         run: cargo clippy --workspace --lib --bins --locked -- -D clippy::panic -D clippy::todo -D clippy::unimplemented
 
+      - name: Run unsafe code audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn --include='*.rs' --exclude-dir=generated 'unsafe' crates tests; then
+            echo "unsafe Rust requires an explicit audit entry before merging" >&2
+            exit 1
+          fi
+
       - name: Run workspace tests
         run: cargo test --workspace --all-targets --locked --exclude claw-integration-tests
 
@@ -76,13 +85,13 @@ jobs:
         run: cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo install cargo-deny --version 0.19.6 --locked
 
       - name: Run cargo-deny
         run: cargo deny check
 
       - name: Install cargo-vet
-        run: cargo install cargo-vet --locked
+        run: cargo install cargo-vet --version 0.10.2 --locked
 
       - name: Run cargo-vet
         run: cargo vet
@@ -109,7 +118,7 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
 
       - name: Generate CycloneDX SBOMs
         run: |

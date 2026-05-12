@@ -156,6 +156,34 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     );
     assert!(decrypted.stdout.contains("\"ticket\":\"SEC-1\""));
 
+    env.run_ok(
+        &repo,
+        [
+            "policy",
+            "create",
+            "--id",
+            "revoked-recipient-policy",
+            "--recipient",
+            "security",
+            "--revoked-recipient",
+            "security",
+        ],
+    );
+    let revoked = env.run_fail(
+        &repo,
+        [
+            "policy",
+            "eval",
+            "revoked-recipient-policy",
+            "--revision",
+            "heads/main",
+            "--capsule",
+            capsule_id.as_str(),
+            "--json",
+        ],
+    );
+    assert!(revoked.combined_output().contains("revoked by policy"));
+
     let intent_show = env.run_ok(&repo, ["intent", "show", intent_id.as_str()]);
     assert!(intent_show.stdout.contains("Status: Done"));
 

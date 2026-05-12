@@ -40,9 +40,12 @@ list` shows the compact form `key:verified`.
 
 ## Current limits
 
-- Agent registration generates or repairs local keys; it does not import a
-  caller-provided public key.
-- Agent rotation and revocation are supported for repository registrations, but
-  there is no standalone `agent keygen` command yet.
+- `claw agent keygen --name <agent>` provisions a local signing key without
+  changing repository trust.
+- `claw agent register --public-key <hex>` and
+  `claw agent rotate --public-key <hex>` support externally managed Ed25519
+  keys.
+- `claw agent rotate` and `claw agent revoke` update repository registrations
+  for future policy decisions.
 - Policy enforcement depends on policies referenced by intents. Creating a
   policy object does not attach it to every intent.

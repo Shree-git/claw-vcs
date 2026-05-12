@@ -41,9 +41,11 @@ This page defines the current compatibility baseline for operators running contr
 ## CLI compatibility
 
 - Command examples in docs target the current `v0.1.x` CLI shape.
-- The agent command surface is `register`, `status`, and `list`; standalone key
-  generation, import, rotation, and revocation commands are not compatibility
-  promises.
+- The current agent command surface is `keygen`, `register`, `rotate`,
+  `revoke`, `status`, and `list`. Public-key import through
+  `register --public-key` and `rotate --public-key` is part of the `v0.1.x`
+  launch-hardening surface, but the exact on-disk agent registration schema is
+  still pre-1.0.
 - `claw ship` defaults `--revision-ref` to `heads/main`; branch automation
   should pass the intended revision ref explicitly.
 - `claw integrate` requires `--right`.

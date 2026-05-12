@@ -13,7 +13,7 @@ Define the current, implemented release gates and operator responsibilities for 
   - `quality` (fmt, clippy, workspace tests).
   - `security-audit-gate` (`cargo audit --deny warnings`).
   - `contract-tests-gate` (core and integration contract suites, including ops artifacts checks).
-  - `artifact-smoke-gate` for Linux, macOS, and Windows release archives/installers before publish.
+  - `artifact-smoke-gate` for Linux, macOS, and Windows release archives and generated installer assets before publish; full installer installability is verified by post-publish release-channel smoke.
   - `compatibility-matrix-gate` on Linux, macOS, and Windows.
 - **Cross-version runtime checks (`cross-version-runtime.yml`):**
   - Runs on PRs and pushes to `main`.

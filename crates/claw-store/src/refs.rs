@@ -176,7 +176,7 @@ fn collect_refs(
             if let Ok(id) = ObjectId::from_hex(content.trim()) {
                 let rel = path
                     .strip_prefix(refs_root)
-                    .unwrap()
+                    .map_err(|_| StoreError::RefPathEscapesRoot(path.clone()))?
                     .to_string_lossy()
                     .to_string();
                 results.push((rel, id));
