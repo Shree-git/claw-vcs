@@ -37,7 +37,7 @@ Status as of 2026-05-12:
   that WinGet, trademark, domain/social-handle review, and GitHub social
   preview upload require maintainer action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
-- Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
+- Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, launch-hardening release publication, and clean-environment verification for each release channel after the hardened changes are published.
 
 Before announcement, run the maintainer preflight from an authenticated local checkout:
 
@@ -66,7 +66,6 @@ access; they cannot be completed by editing this repository alone.
 ```bash
 scripts/public-launch-preflight.sh
 scripts/verify-release-channel.sh <launch-tag>
-gh attestation verify <artifact-path> --repo Shree-git/claw-vcs
 ```
 
 7. Record clean-environment verification results for every live install channel
@@ -107,7 +106,9 @@ Release/install verification evidence is tracked in [install-verification-log.md
 
 ## Release Channel Verification
 
-On a clean Unix host, use the helper script for the archive, shell installer, and tagged cargo install path:
+On a clean Unix host, use the helper script for the archive, checksum,
+signatures, attestations, SBOM readability, shell installer, and tagged cargo
+install path:
 
 ```bash
 scripts/verify-release-channel.sh <launch-tag>
@@ -115,7 +116,7 @@ scripts/verify-release-channel.sh <launch-tag>
 
 Before announcement, test each live channel from a clean environment:
 
-- [ ] GitHub release archive
+- [ ] GitHub release archive, checksum, signatures, attestations, and SBOM
 - [ ] shell installer
 - [ ] PowerShell installer
 - [ ] Homebrew formula
