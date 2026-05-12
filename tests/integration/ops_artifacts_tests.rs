@@ -491,10 +491,73 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     );
 
     let backlog_coverage = read_workspace_file("docs/operations/backlog-coverage.md");
-    for item in ["| 1 |", "| 50 |", "| 100 |", "| 110 |"] {
+    let allowed_coverage_statuses: HashSet<&str> = [
+        "Implemented",
+        "Verified",
+        "External pending",
+        "Not applicable",
+        "Implemented + external setting",
+        "Implemented + external run state",
+        "Implemented + external ingestion",
+    ]
+    .into_iter()
+    .collect();
+    let mut covered_backlog_items = HashSet::new();
+    for line in backlog_coverage.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('|') {
+            continue;
+        }
+        let cells: Vec<&str> = trimmed
+            .trim_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect();
+        if cells.len() < 3 {
+            continue;
+        }
+        let Ok(item) = cells[0].parse::<usize>() else {
+            continue;
+        };
+
         assert!(
-            backlog_coverage.contains(item),
-            "backlog coverage must include item marker {item}"
+            (1..=110).contains(&item),
+            "backlog coverage has out-of-range item: {item}"
+        );
+        assert!(
+            covered_backlog_items.insert(item),
+            "backlog coverage item is duplicated: {item}"
+        );
+        assert!(
+            allowed_coverage_statuses.contains(cells[1]),
+            "backlog coverage item {item} has unexpected status: {}",
+            cells[1]
+        );
+        assert!(
+            !cells[2].is_empty(),
+            "backlog coverage item {item} must include evidence"
+        );
+    }
+    for item in 1..=110 {
+        assert!(
+            covered_backlog_items.contains(&item),
+            "backlog coverage is missing item {item}"
+        );
+    }
+    assert_eq!(
+        covered_backlog_items.len(),
+        110,
+        "backlog coverage must include exactly the 110 backlog items"
+    );
+    for blocker in [
+        "PR #4 requires review approval before merge.",
+        "Package/name reservation",
+        "hardened public release",
+        "Dependabot findings",
+    ] {
+        assert!(
+            backlog_coverage.contains(blocker),
+            "backlog coverage must preserve external blocker: {blocker}"
         );
     }
 
