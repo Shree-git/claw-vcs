@@ -53,7 +53,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 29 | Implemented | `deny.toml`; CI runs `cargo deny check` across configured release targets including macOS, Linux x86_64/aarch64, and Windows. |
 | 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`, and `tests/integration/ops_artifacts_tests.rs` validates the cargo-vet metadata and dependency-policy shape. |
 | 31 | Implemented | `.github/workflows/sbom.yml` and release/CI SBOM attestation jobs; public release SBOM verification remains part of release-channel verification. |
-| 32 | Implemented + external run state | `.github/workflows/scorecard.yml`; Scorecard pass status is verified from GitHub Actions/PR checks, not from repository files alone. |
+| 32 | Implemented + external run state | `.github/workflows/scorecard.yml`; Scorecard runs on `main`, branch-protection changes, the weekly schedule, and manual dispatch. Pass status is verified from GitHub Actions, not from repository files alone. |
 | 33 | Implemented + external ingestion | `.github/workflows/codeql.yml` and `.github/workflows/semgrep.yml`; code-scanning upload success and SARIF ingestion are verified in GitHub code scanning/PR checks, not from repository files alone. |
 | 34 | Implemented | `docs/security/verifying-releases.md` documents single-asset checksum checks plus Cosign OIDC issuer/certificate identity constraints that match the verifier script. |
 | 35 | Implemented | `docs/operations/upgrade-and-rollback.md`, `docs/runbooks/emergency-rollback.md`, and `docs/runbooks/backup-and-restore.md`. |

@@ -1,7 +1,6 @@
 name: OSSF Scorecard
 
 on:
-  pull_request:
   push:
     branches:
       - main
