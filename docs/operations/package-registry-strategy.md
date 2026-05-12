@@ -6,7 +6,7 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 |---|---|---|
 | GitHub Releases | historical artifact live; launch verification pending | `v0.1.0` exists with archives, checksums, signatures, installers, and MSI, but it predates the current launch-hardening checks. A new launch-hardening release still needs clean-environment verification before release archives are documented as launch-ready. |
 | Homebrew | tap live; launch verification pending | Formula exists as `Formula/claw.rb` in `shree-git/homebrew-tap`; Homebrew exposes that repository as tap `shree-git/tap`, so install with `brew install shree-git/tap/claw` only after the formula points at the launch-hardening release and passes clean-host verification. Homebrew core did not have a `claw` formula in the local `brew info claw` check on 2026-05-11. |
-| crates.io | planned | Checked on 2026-05-12: `claw-vcs` and the `claw-vcs-*` internal package names returned 404 from the crates.io crate API, while `claw`, `claw-core`, `claw-crypto`, and `claw-sync` are occupied by unrelated crates. The workspace package identities are configured for `claw-vcs`; reserve or publish the full package set before documenting a crates.io install path. |
+| crates.io | planned | Checked on 2026-05-12: `claw-vcs` and the `claw-vcs-*` internal package names returned 404 from the crates.io crate API, while `claw`, `claw-core`, `claw-crypto`, and `claw-sync` are occupied by unrelated crates. The `claw-vcs-core` publish dry-run packaged and verified successfully; dependent packages dry-run only after their internal registry dependencies are live. Reserve or publish the full package set before documenting a crates.io install path. |
 | WinGet | planned | Planned package id: `ShreeGit.ClawVCS`; checked on 2026-05-11 and no manifest path exists in `microsoft/winget-pkgs`. First publish requires manual PR to `microsoft/winget-pkgs`. |
 | Windows MSI | historical artifact live; launch verification pending | `v0.1.0` MSI exists; verify the launch-hardening release on Windows before treating MSI install as launch-ready. |
 | Shell installer | historical artifact live; launch verification pending | `v0.1.0` shell installer exists; keep non-pipe manual download path documented and verify the launch-hardening release before treating installer output as launch-ready. |
@@ -59,7 +59,8 @@ claw-vcs
 The internal packages publish under `claw-vcs-*` names while preserving Rust
 crate imports such as `claw_core` and dependency aliases such as `claw-core`.
 `scripts/publish-cratesio.sh --package claw-vcs-core` is expected to pass before
-reservation. Later packages resolve earlier `claw-vcs-*` crates from the
+reservation; it passed on 2026-05-12 and stopped before upload as expected in
+dry-run mode. Later packages resolve earlier `claw-vcs-*` crates from the
 registry during dry-run, so verify each one after its dependencies are live.
 The default dry-run checks packages whose internal registry dependencies are
 already live and skips the rest with an explicit dependency list; explicit

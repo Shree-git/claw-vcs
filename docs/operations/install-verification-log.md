@@ -38,6 +38,40 @@ No commits yet.
 
 Status: pass for the local hardened tree.
 
+## 2026-05-12
+
+Environment:
+
+```text
+Darwin arm64
+```
+
+### crates.io Publish Dry-Run
+
+Command:
+
+```bash
+scripts/publish-cratesio.sh --dry-run
+```
+
+Observed result:
+
+```text
+claw-vcs-core v0.1.0 packaged, verified, and stopped before upload because this was a dry run.
+claw-vcs-store skipped until registry dependency is live: claw-vcs-core.
+claw-vcs-patch skipped until registry dependency is live: claw-vcs-core.
+claw-vcs-crypto skipped until registry dependency is live: claw-vcs-core.
+claw-vcs-policy skipped until registry dependency is live: claw-vcs-core.
+claw-vcs-merge skipped until registry dependencies are live: claw-vcs-core claw-vcs-patch claw-vcs-store.
+claw-vcs-sync skipped until registry dependencies are live: claw-vcs-core claw-vcs-store claw-vcs-crypto.
+claw-vcs-git skipped until registry dependencies are live: claw-vcs-core claw-vcs-store.
+claw-vcs skipped until registry dependencies are live: claw-vcs-core claw-vcs-store claw-vcs-patch claw-vcs-merge claw-vcs-crypto claw-vcs-policy claw-vcs-sync claw-vcs-git.
+```
+
+Status: pass for the first publishable crate. The rest of the package-set dry-run
+is intentionally blocked until the internal crates are published or reserved on
+crates.io in dependency order.
+
 ### GitHub Release Archive
 
 Checked release:
