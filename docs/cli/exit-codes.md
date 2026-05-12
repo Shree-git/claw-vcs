@@ -1,6 +1,9 @@
 # Claw CLI Exit Codes
 
-Claw keeps CLI exit codes stable for scripts. Clap argument parsing still uses its own usage failure behavior, which maps to code `2`.
+Claw keeps CLI exit codes deliberate and documented for scripts, but they are
+not a stable pre-1.0 compatibility contract. Clap argument parsing uses code
+`2`; validations that run after parsing may return a command-specific code or
+the general error code `1` until a narrower diagnostic exists.
 
 | Code | Constant | Meaning |
 | ---: | --- | --- |

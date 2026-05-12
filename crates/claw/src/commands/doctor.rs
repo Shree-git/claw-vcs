@@ -8,10 +8,13 @@ use claw_core::cof::{cof_decode, cof_encode};
 use claw_core::object::Object;
 use claw_core::types::Blob;
 use claw_store::{ClawStore, HeadState};
+use claw_sync::client::{RetryPolicy, SyncClient};
+use claw_sync::protocol::{negotiated_protocol_version, SYNC_PROTOCOL_VERSION};
+use claw_sync::transport::RemoteTransportConfig;
 
 use crate::commands::remote::RemotesConfig;
 use crate::config::find_repo_root;
-use crate::{auth_store, config};
+use crate::{auth_store, commands::remote, config};
 
 #[derive(Args)]
 pub struct DoctorArgs {
@@ -69,8 +72,8 @@ struct DoctorReport {
     summary: DoctorSummary,
 }
 
-pub fn run(args: DoctorArgs) -> anyhow::Result<()> {
-    let report = build_report();
+pub async fn run(args: DoctorArgs) -> anyhow::Result<()> {
+    let report = build_report().await;
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&report)?);
@@ -85,7 +88,7 @@ pub fn run(args: DoctorArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn build_report() -> DoctorReport {
+async fn build_report() -> DoctorReport {
     let mut checks = Vec::new();
     checks.push(check(
         "cli",
@@ -145,6 +148,7 @@ fn build_report() -> DoctorReport {
         add_store_checks(root, &mut checks);
         add_refs_validity_check(root, &mut checks);
         add_remote_check(root, &mut checks);
+        add_daemon_reachability_check(root, &mut checks).await;
         add_daemon_auth_check(root, &mut checks);
         add_writable_check(root, &mut checks);
     } else {
@@ -154,6 +158,7 @@ fn build_report() -> DoctorReport {
             "head",
             "refs",
             "remotes",
+            "daemon_reachable",
             "daemon_auth",
             "writable",
         ] {
@@ -425,6 +430,128 @@ fn add_remote_check(root: &Path, checks: &mut Vec<DoctorCheck>) {
             Some("Fix .claw/remotes.toml, or remove and recreate remotes with `claw remote add`."),
         )),
     }
+}
+
+async fn add_daemon_reachability_check(root: &Path, checks: &mut Vec<DoctorCheck>) {
+    let config_path = root.join(".claw").join("remotes.toml");
+    if !config_path.exists() {
+        checks.push(check(
+            "daemon_reachable",
+            CheckStatus::Skipped,
+            "no remotes configured".to_string(),
+            Some("Add a daemon remote with `claw remote add origin <url>` if this repository should sync."),
+        ));
+        return;
+    }
+
+    let config = match std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| toml::from_str::<RemotesConfig>(&content).ok())
+    {
+        Some(config) => config,
+        None => {
+            checks.push(check(
+                "daemon_reachable",
+                CheckStatus::Skipped,
+                format!("invalid {}; remote reachability not checked", config_path.display()),
+                Some("Fix .claw/remotes.toml, or remove and recreate remotes with `claw remote add`."),
+            ));
+            return;
+        }
+    };
+
+    if config.remotes.is_empty() {
+        checks.push(check(
+            "daemon_reachable",
+            CheckStatus::Skipped,
+            "no remotes configured".to_string(),
+            Some("Add a daemon remote with `claw remote add origin <url>` if this repository should sync."),
+        ));
+        return;
+    }
+
+    let mut messages = Vec::new();
+    let mut has_warning = false;
+
+    for name in config.remotes.keys() {
+        match probe_remote(root, name).await {
+            Ok(message) => messages.push(format!("{name}: {message}")),
+            Err(err) => {
+                has_warning = true;
+                messages.push(format!("{name}: unreachable ({err})"));
+            }
+        }
+    }
+
+    checks.push(check(
+        "daemon_reachable",
+        if has_warning {
+            CheckStatus::Warning
+        } else {
+            CheckStatus::Ok
+        },
+        messages.join("; "),
+        if has_warning {
+            Some("Start the configured daemon, fix the remote URL/TLS/auth settings, or remove stale remotes with `claw remote remove`.")
+        } else {
+            None
+        },
+    ));
+}
+
+async fn probe_remote(root: &Path, name: &str) -> anyhow::Result<String> {
+    let resolved = remote::resolve_remote(root, name)?;
+    let transport = match resolved {
+        remote::ResolvedRemote::Grpc {
+            addr,
+            token_profile,
+        } => RemoteTransportConfig::Grpc {
+            addr,
+            bearer_token: token_profile
+                .as_deref()
+                .and_then(|profile| auth_store::resolve_access_token(Some(profile))),
+            tls: None,
+        },
+        remote::ResolvedRemote::ClawLab {
+            base_url,
+            repo,
+            token_profile,
+        } => RemoteTransportConfig::Http {
+            base_url,
+            repo,
+            bearer_token: auth_store::resolve_access_token(token_profile.as_deref()),
+        },
+    };
+
+    let probe = async move {
+        let mut client = SyncClient::connect_with_transport_and_retry(
+            transport,
+            RetryPolicy {
+                max_attempts: 1,
+                ..RetryPolicy::default()
+            },
+        )
+        .await?;
+        let hello = client.hello().await?;
+        let protocol = negotiated_protocol_version(&hello.capabilities)
+            .map(str::to_string)
+            .unwrap_or_else(|| "missing protocol marker".to_string());
+        if protocol == SYNC_PROTOCOL_VERSION {
+            Ok(format!(
+                "reachable, server {}, protocol {}",
+                hello.server_version, protocol
+            ))
+        } else {
+            Ok(format!(
+                "reachable, server {}, protocol {} (expected {})",
+                hello.server_version, protocol, SYNC_PROTOCOL_VERSION
+            ))
+        }
+    };
+
+    tokio::time::timeout(std::time::Duration::from_secs(2), probe)
+        .await
+        .map_err(|_| anyhow::anyhow!("probe timed out after 2s"))?
 }
 
 fn add_daemon_auth_check(root: &Path, checks: &mut Vec<DoctorCheck>) {

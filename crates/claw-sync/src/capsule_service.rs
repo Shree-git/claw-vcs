@@ -236,13 +236,13 @@ fn recipient_id_matches_principal(recipient_id: &str, principal: &str) -> bool {
     recipient_id.eq_ignore_ascii_case(principal)
 }
 
-fn capsule_for_principal(
+pub(crate) fn capsule_private_visible_to_principal(
     capsule: &Capsule,
     principal: Option<&str>,
     can_read_private: bool,
-) -> Capsule {
+) -> bool {
     if capsule.encrypted_private.is_none() {
-        return capsule.clone();
+        return true;
     }
 
     let authorized = principal.is_some_and(|principal| {
@@ -252,7 +252,15 @@ fn capsule_for_principal(
             .any(|recipient| recipient_id_matches_principal(&recipient.recipient_id, principal))
     });
 
-    if authorized && can_read_private {
+    authorized && can_read_private
+}
+
+fn capsule_for_principal(
+    capsule: &Capsule,
+    principal: Option<&str>,
+    can_read_private: bool,
+) -> Capsule {
+    if capsule_private_visible_to_principal(capsule, principal, can_read_private) {
         return capsule.clone();
     }
 

@@ -131,11 +131,13 @@ Type and version are included in the hash domain so two object kinds with identi
 Test vectors live under `tests/vectors/`:
 
 - `cof/blob_empty.json`
+- `cof/invalid_cases.json`
 - `cof/tree_single_file.json`
 - `ids/revision_basic.json`
 - `capsules/signed_basic.json`
 - `policies/basic_required_checks.json`
 - `core_cof_vectors.json`
+- `objects/core_object_types.json`
 - `crypto_capsule_vector.json`
 - `patch_vectors.json`
 - `policy_fail_closed_vectors.json`

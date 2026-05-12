@@ -1,13 +1,15 @@
 ---
-name: Security bug
-about: Report a security-sensitive bug without exposing vulnerability details publicly
-title: "[security] "
-labels: security
+name: Security hardening
+about: Public coordination for hardening work after vulnerability details are private
+title: "[security-hardening] "
+labels: security, needs-triage
 assignees: Shree-git
 ---
 
-Please do not include exploit details, secrets, or private logs in this public issue.
+Do not report vulnerabilities with this public template.
 
-For vulnerabilities, use GitHub Security Advisories as described in `SECURITY.md`.
+For vulnerabilities, secrets, exploit details, or private logs, use GitHub
+Security Advisories as described in `SECURITY.md`.
 
-Use this issue type only for public coordination after sensitive details have been reported privately.
+Use this issue type only for public hardening work or coordination after
+sensitive details have been reported privately.

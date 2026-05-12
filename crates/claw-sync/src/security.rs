@@ -604,6 +604,20 @@ impl ServiceSecurity {
         self
     }
 
+    pub fn decision<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> AuthorizationDecision {
+        let auth_request = AuthorizationRequest {
+            subject: subject_from_request(request),
+            action,
+            resource,
+        };
+        self.authorizer.authorize(&auth_request)
+    }
+
     #[allow(clippy::result_large_err)]
     pub fn authorize<T>(
         &self,
@@ -650,7 +664,7 @@ impl ServiceSecurity {
         action: AuthorizationAction,
         resource: Option<String>,
     ) -> bool {
-        self.authorize(request, action, resource).is_ok()
+        self.decision(request, action, resource).is_allowed()
     }
 }
 
@@ -1202,6 +1216,42 @@ mod tests {
             events[1]["reason"],
             "missing required scope capsules:private-read"
         );
+    }
+
+    #[derive(Default)]
+    struct RecordingAuditSink {
+        events: Mutex<Vec<AuditEvent>>,
+    }
+
+    impl AuditSink for RecordingAuditSink {
+        fn record(&self, event: AuditEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    #[test]
+    fn service_security_allows_probe_does_not_emit_denied_audit_event() {
+        let audit_sink = Arc::new(RecordingAuditSink::default());
+        let security = ServiceSecurity::default()
+            .with_authorizer(Arc::new(
+                RoleBasedAuthorizer::new().grant_role("agent-a", AuthorizationRole::Reader),
+            ))
+            .with_audit_sink(audit_sink.clone());
+        let mut request = Request::new(());
+        request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "agent-a".parse().unwrap());
+
+        assert!(!security.allows(&request, AuthorizationAction::ReadPrivateCapsule, None));
+        assert!(audit_sink.events.lock().unwrap().is_empty());
+
+        security
+            .authorize(&request, AuthorizationAction::ReadCapsule, None)
+            .unwrap();
+        let events = audit_sink.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuthorizationAction::ReadCapsule);
+        assert_eq!(events[0].outcome, AuditOutcome::Allowed);
     }
 
     #[test]

@@ -44,6 +44,8 @@ Default values below are the baseline generated/used by Claw when `.claw/config.
 
 - `auth.require_auth_for_daemon = true` means production deployments should require bearer auth.
 - `tls.require_for_non_localhost = true` means you should enforce TLS when binding beyond localhost.
+- `queues.rate_limit_per_minute` applies to sync service work and to repeated
+  missing/invalid bearer-token failures before those requests reach a service.
 - Non-local health/metrics binds are blocked in the production profile unless
   the daemon is started with `--allow-public-health`.
 - Policy and backup defaults are fail-closed and integrity-focused.

@@ -74,6 +74,25 @@ proptest! {
 
         prop_assert_eq!(recoded, payload);
     }
+
+    #[test]
+    fn object_dependencies_are_sorted_unique_and_survive_roundtrip(
+        selector in 0u8..12,
+        data in prop::collection::vec(any::<u8>(), 0..128),
+        raw_name in "[A-Za-z0-9._-]{1,16}"
+    ) {
+        let object = object_for(selector, &data, &safe_tree_name(&raw_name));
+        let payload = object.serialize_payload().unwrap();
+        let decoded = Object::deserialize_payload(object.type_tag(), &payload).unwrap();
+        let dependencies = decoded.dependencies();
+        let mut expected = dependencies.clone();
+        expected.sort_by_key(|id| id.to_hex());
+        expected.dedup();
+
+        prop_assert_eq!(dependencies, expected);
+        let dependencies = decoded.dependencies();
+        prop_assert_eq!(dependencies, object.dependencies());
+    }
 }
 
 fn object_for(selector: u8, data: &[u8], name: &str) -> Object {

@@ -218,7 +218,7 @@ verify_cosign_blob() {
     --signature "$assets/$file.sig" \
     --certificate "$assets/$file.pem" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/.github/workflows/.*@refs/tags/${tag}$" \
+    --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/\\.github/workflows/release\\.yml@refs/tags/${tag}$" \
     "$assets/$file"
 }
 

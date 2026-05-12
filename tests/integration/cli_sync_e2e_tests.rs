@@ -198,6 +198,24 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
                 && event["subject"]["principal"] == "daemon-token"),
         "expected allowed update_refs audit event, got {audit_events:#?}"
     );
+
+    let audit_log_contents = fs::read_to_string(&audit_log).expect("read audit log");
+    let sensitive_outputs = [
+        denied.combined_output(),
+        stale_denied.combined_output(),
+        clone_a_out.combined_output(),
+        auth_metrics.body,
+        daemon.stdout_log(),
+        daemon.stderr_log(),
+        audit_log_contents,
+    ]
+    .join("\n");
+    for secret in ["super-secret-token", "stale-or-wrong-token"] {
+        assert!(
+            !sensitive_outputs.contains(secret),
+            "secret token leaked into daemon or CLI output: {secret}"
+        );
+    }
 }
 
 #[test]

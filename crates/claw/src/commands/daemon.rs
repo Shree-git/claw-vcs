@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
@@ -34,7 +34,7 @@ use claw_sync::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
 use claw_sync::security::{
     now_ms, request_id_from_request, subject_from_request, AuditEvent, AuditSink,
     AuthorizationAction, AuthorizationRole, AuthorizationScope, Authorizer, JsonlAuditSink,
-    ReplayProtectionConfig, RoleBasedAuthorizer, TeeAuditSink, TracingAuditSink,
+    RateLimiter, ReplayProtectionConfig, RoleBasedAuthorizer, TeeAuditSink, TracingAuditSink,
     PRINCIPAL_METADATA_KEY, TOKEN_ID_METADATA_KEY,
 };
 use claw_sync::server::{SyncServer, SyncServerOptions};
@@ -110,6 +110,7 @@ struct BearerAuthInterceptor {
     token_id: Arc<str>,
     metrics: Arc<DaemonMetrics>,
     audit_sink: Arc<dyn AuditSink>,
+    auth_failure_limiter: Option<Arc<Mutex<RateLimiter>>>,
 }
 
 impl BearerAuthInterceptor {
@@ -125,7 +126,14 @@ impl BearerAuthInterceptor {
             principal: Arc::<str>::from(principal),
             metrics,
             audit_sink,
+            auth_failure_limiter: None,
         }
+    }
+
+    fn with_auth_failure_rate_limit(mut self, limit_per_minute: Option<u32>) -> Self {
+        self.auth_failure_limiter = limit_per_minute
+            .map(|limit| Arc::new(Mutex::new(RateLimiter::per_minute(limit, Instant::now()))));
+        self
     }
 
     fn record_auth_denied(&self, request: &Request<()>, reason: &'static str) {
@@ -137,6 +145,27 @@ impl BearerAuthInterceptor {
             None,
             reason,
         ));
+    }
+
+    fn enforce_auth_failure_rate_limit(&self, request: &Request<()>) -> Result<(), Status> {
+        let Some(limiter) = &self.auth_failure_limiter else {
+            return Ok(());
+        };
+        let mut limiter = limiter
+            .lock()
+            .map_err(|_| Status::internal("auth failure limiter lock poisoned"))?;
+        if limiter.try_acquire(Instant::now()) {
+            return Ok(());
+        }
+
+        self.metrics
+            .auth_failures
+            .with_label_values(&["throttled"])
+            .inc();
+        self.record_auth_denied(request, "auth failure rate limit exceeded");
+        Err(Status::resource_exhausted(
+            "auth failure rate limit exceeded",
+        ))
     }
 }
 
@@ -164,6 +193,7 @@ impl tonic::service::Interceptor for BearerAuthInterceptor {
                 Ok(request)
             }
             Some(_) => {
+                self.enforce_auth_failure_rate_limit(&request)?;
                 self.metrics
                     .auth_failures
                     .with_label_values(&["invalid"])
@@ -172,6 +202,7 @@ impl tonic::service::Interceptor for BearerAuthInterceptor {
                 Err(Status::unauthenticated("invalid bearer token"))
             }
             None => {
+                self.enforce_auth_failure_rate_limit(&request)?;
                 self.metrics
                     .auth_failures
                     .with_label_values(&["missing"])
@@ -234,6 +265,7 @@ impl DaemonMetrics {
         request_latency.with_label_values(&["unknown"]);
         auth_failures.with_label_values(&["missing"]);
         auth_failures.with_label_values(&["invalid"]);
+        auth_failures.with_label_values(&["throttled"]);
 
         queue_depth.set(0);
         worker_pool_size_gauge.set(worker_pool_size as i64);
@@ -883,6 +915,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
             .or(cfg.queues.rate_limit_per_minute)
             .or(sync_defaults.rate_limit_per_minute),
     };
+    let auth_failure_rate_limit = sync_options.rate_limit_per_minute;
     let grpc_message_limit = grpc_message_limit_bytes(&sync_options);
     let mut sync_server = SyncServer::from_shared_with_options_and_events(
         shared_store.clone(),
@@ -944,7 +977,8 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
                 auth_principal,
                 grpc_metrics.clone(),
                 audit_sink.clone(),
-            );
+            )
+            .with_auth_failure_rate_limit(auth_failure_rate_limit);
             grpc_builder
                 .add_service(tonic::service::interceptor::InterceptedService::new(
                     SyncServiceServer::new(sync_server)
@@ -1256,6 +1290,54 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| event.reason.as_deref() == Some("invalid bearer token")));
+    }
+
+    #[test]
+    fn auth_failure_rate_limit_throttles_invalid_bearer_floods() {
+        let metrics = test_metrics();
+        let audit = TestAuditSink::default();
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics.clone(),
+            Arc::new(audit.clone()),
+        )
+        .with_auth_failure_rate_limit(Some(1));
+
+        let mut first = Request::new(());
+        first.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer wrong-token-1").expect("valid metadata value"),
+        );
+        assert!(interceptor.call(first).is_err());
+
+        let mut second = Request::new(());
+        second.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer wrong-token-2").expect("valid metadata value"),
+        );
+        let throttled = interceptor
+            .call(second)
+            .expect_err("second auth failure should be throttled");
+
+        assert_eq!(throttled.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(
+            metrics.auth_failures.with_label_values(&["invalid"]).get(),
+            1
+        );
+        assert_eq!(
+            metrics
+                .auth_failures
+                .with_label_values(&["throttled"])
+                .get(),
+            1
+        );
+        assert!(audit
+            .events
+            .lock()
+            .expect("audit lock")
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("auth failure rate limit exceeded")));
     }
 
     #[test]

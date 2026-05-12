@@ -53,7 +53,8 @@ claw show --json <capsule-id>
 ## Exit Codes
 
 - `0`: revision and capsule were written.
-- `2`: invalid CLI usage or malformed evidence/recipient input.
+- `1`: malformed evidence/recipient input or other post-parse validation failure.
+- `2`: invalid CLI usage.
 - `3`: not in a Claw repository.
 - `5`: object/ref/key store read or write failure.
 - `10`: policy evaluation denied shipping.

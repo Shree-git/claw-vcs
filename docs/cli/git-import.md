@@ -28,7 +28,8 @@ Dry-run output is human-readable and names each planned Git-to-Claw ref import.
 ## Exit Codes
 
 - `0`: import or dry-run completed.
-- `2`: invalid CLI usage or invalid destination ref path.
+- `1`: invalid destination ref path or other post-parse validation failure.
+- `2`: invalid CLI usage.
 - `3`: not in a Claw repository.
 - `5`: Git object read or Claw object/ref write failure.
 

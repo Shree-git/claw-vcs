@@ -63,7 +63,7 @@ This page defines the current compatibility baseline for operators running contr
 | `0.2.x` | v1-v2 planned | v2 planned | `claw-sync/1` or `claw-sync/2` planned | Migration support must be documented before release. |
 | `0.3.x` | v1-v3 planned | newest stable planned | negotiated planned | Remote sync hardening target. |
 
-Future COF versions must reject unsupported future writes, document read-only migration behavior, and include test vectors before release.
+Future COF versions must reject unsupported future writes, document migration behavior that maps to the runtime `full`, `limited`, or `unsupported` classifications, and include test vectors before release.
 
 ## Platform compatibility
 

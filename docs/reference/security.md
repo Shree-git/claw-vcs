@@ -89,7 +89,7 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 
 - Sync `Hello` capability negotiation returns only daemon-supported capabilities plus the protocol marker. Current baseline: `protocol:claw-sync/1`, `partial-clone`, `event-bus`, `request-limits`. Clients run compatibility checks by default and fail closed when the negotiated protocol marker is absent.
 - Event subscriptions use an internal event bus for daemon-generated ref changes. The stream emits `ref_created` and `ref_updated` events from sync ref updates.
-- Sync server options enforce per-minute request rate limits when configured with `--rate-limit-per-minute` or `queues.rate_limit_per_minute`.
+- Sync server options enforce per-minute request rate limits when configured with `--rate-limit-per-minute` or `queues.rate_limit_per_minute`. The same configured rate also throttles invalid or missing bearer-token failures at the gRPC auth interceptor before requests reach service handlers.
 - Push object uploads enforce per-chunk and per-request byte limits, configurable with `--max-push-chunk-bytes`, `--max-push-request-bytes`, `queues.max_push_chunk_bytes`, and `queues.max_push_request_bytes`.
 - Authorized gRPC service actions emit structured `sync_audit_event` tracing records with request ID, principal, token ID, action, resource, outcome, and denial reason when available.
 - Use `claw daemon --audit-log <path>` to append the same authorization events to a durable JSON Lines file. Each line is one audit event with `timestamp_ms`, `request_id`, `subject.principal`, `subject.token_id`, optional `subject.peer_addr`, `action`, optional `resource`, `outcome`, and optional `reason`.
@@ -104,6 +104,6 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 Known limitations:
 
 - Local unauthenticated daemon usage still uses allow-all authorization for compatibility. Shared daemon deployments should enable bearer authentication and configure role/scope grants.
-- Capsule private field disclosure requires both a matching recipient principal and `capsules:private-read`; callers without both receive public capsule fields only. Capsule private data without recipient envelopes is rejected on daemon create and redacted if encountered in stored legacy data.
+- Capsule private field disclosure through capsule service reads requires both a matching recipient principal and `capsules:private-read`; callers without both receive public capsule fields only. Generic object sync does not stream private capsule objects unless the caller has the same recipient/scope authorization, because rewriting raw object bytes would break object IDs. Capsule private data without recipient envelopes is rejected on daemon create and redacted if encountered in stored legacy data.
 - Evidence freshness is enforced by policy only when `require_fresh_evidence`
   is enabled on the policy object.

@@ -53,9 +53,8 @@ fn compatibility_matrix_json_is_valid_and_has_required_keys() {
         .and_then(Value::as_array)
         .expect("compatibility matrix supportLevels must be an array");
 
-    let allowed_support_levels: HashSet<&str> = ["full", "limited", "read-only", "unsupported"]
-        .into_iter()
-        .collect();
+    let allowed_support_levels: HashSet<&str> =
+        ["full", "limited", "unsupported"].into_iter().collect();
 
     let mut support_levels = HashSet::new();
     for (idx, level) in declared_support_levels.iter().enumerate() {
@@ -729,6 +728,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "Implemented + external setting",
         "Implemented + external run state",
         "Implemented + external ingestion",
+        "Implemented + audit backlog",
     ]
     .into_iter()
     .collect();

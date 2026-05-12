@@ -8,9 +8,11 @@ use tonic::{Request, Response, Status};
 
 use claw_core::cof::cof_encode;
 use claw_core::id::ObjectId;
+use claw_core::object::Object;
 use claw_store::ClawStore;
 
 use crate::ancestry::is_ancestor;
+use crate::capsule_service::capsule_private_visible_to_principal;
 use crate::event_service::EventBus;
 use crate::negotiation::{find_reachable_objects, find_reachable_objects_with_depth};
 use crate::partial_clone::{CapsuleVisibilityFilter, PartialCloneFilter};
@@ -245,6 +247,19 @@ impl SyncServer {
                 Err(Status::permission_denied(reason))
             }
         }
+    }
+
+    fn authorization_decision(
+        &self,
+        subject: &AuthorizationSubject,
+        action: AuthorizationAction,
+        resource: Option<String>,
+    ) -> AuthorizationDecision {
+        self.security.authorizer.authorize(&AuthorizationRequest {
+            subject: subject.clone(),
+            action,
+            resource,
+        })
     }
 
     #[allow(clippy::result_large_err)]
@@ -550,6 +565,11 @@ impl SyncService for SyncServer {
             AuthorizationAction::FetchObjects,
             Some(object_fetch_resource(request.get_ref())),
         )?;
+        let subject = subject_from_request(&request);
+        let principal = subject.principal.clone();
+        let can_read_private_capsules = self
+            .authorization_decision(&subject, AuthorizationAction::ReadPrivateCapsule, None)
+            .is_allowed();
         let req = request.into_inner();
         let store = self.store.clone();
         let filter = req.filter.as_ref().map(convert_filter);
@@ -634,6 +654,20 @@ impl SyncService for SyncServer {
                 // Send candidates in deterministic order.
                 for id in candidate_ids {
                     if let Ok(obj) = store.load_object(&id) {
+                        if let Object::Capsule(capsule) = &obj {
+                            if !capsule_private_visible_to_principal(
+                                capsule,
+                                principal.as_deref(),
+                                can_read_private_capsules,
+                            ) {
+                                let _ = tx
+                                    .send(Err(Status::permission_denied(
+                                        "private capsule object requires capsules:private-read scope and a matching recipient principal; use capsule get for public capsule fields",
+                                    )))
+                                    .await;
+                                return;
+                            }
+                        }
                         let payload = obj.serialize_payload().unwrap_or_default();
                         let type_tag = obj.type_tag();
                         let cof_data = cof_encode(type_tag, &payload).unwrap_or_default();
@@ -864,16 +898,21 @@ mod tests {
     use crate::event_service::EventBus;
     use crate::security::{
         AuditOutcome, AuditSink, AuthorizationDecision, AuthorizationRequest, AuthorizationRole,
-        Authorizer, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY, REPLAY_NONCE_METADATA_KEY,
+        AuthorizationScope, Authorizer, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY,
+        REPLAY_NONCE_METADATA_KEY,
     };
+    use claw_core::cof::cof_decode;
     use claw_core::hash::content_hash;
     use claw_core::id::{ChangeId, IntentId};
     use claw_core::object::Object;
     use claw_core::object::TypeTag;
-    use claw_core::types::{Blob, Capsule, CapsulePublic, Change, ChangeStatus, Patch, Revision};
+    use claw_core::types::{
+        Blob, Capsule, CapsulePublic, CapsuleRecipient, Change, ChangeStatus, Patch, Revision,
+    };
     use std::sync::Mutex as StdMutex;
     use std::time::Duration;
     use tokio_stream::StreamExt;
+    use tonic::Code;
 
     async fn collect_streamed_ids(
         response: Response<<SyncServer as SyncService>::FetchObjectsStream>,
@@ -891,6 +930,27 @@ mod tests {
             ids.push(ObjectId::from_bytes(bytes));
         }
         ids
+    }
+
+    async fn collect_streamed_objects(
+        response: Response<<SyncServer as SyncService>::FetchObjectsStream>,
+    ) -> Result<Vec<Object>, Status> {
+        let mut objects = Vec::new();
+        let mut stream = response.into_inner();
+        while let Some(item) = stream.next().await {
+            let chunk = item?;
+            if chunk.is_last {
+                break;
+            }
+
+            let (type_tag, payload) =
+                cof_decode(&chunk.data).map_err(|err| Status::internal(err.to_string()))?;
+            objects.push(
+                Object::deserialize_payload(type_tag, &payload)
+                    .map_err(|err| Status::internal(err.to_string()))?,
+            );
+        }
+        Ok(objects)
     }
 
     #[derive(Clone, Default)]
@@ -1261,6 +1321,124 @@ mod tests {
         assert!(ids.contains(&capsule_public));
         assert!(!ids.contains(&rev_private_with_capsule));
         assert!(!ids.contains(&capsule_private));
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_denies_private_capsule_without_private_read_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let revision_id = content_hash(TypeTag::Revision, b"private-capsule-revision");
+        let capsule_id = store
+            .store_object(&Object::Capsule(Capsule {
+                revision_id,
+                public_fields: CapsulePublic {
+                    agent_id: "agent".to_string(),
+                    agent_version: None,
+                    toolchain_digest: None,
+                    env_fingerprint: None,
+                    evidence: vec![],
+                },
+                encrypted_private: Some(b"private-ciphertext".to_vec()),
+                encryption: "xchacha20poly1305+recipient-envelope-v1".to_string(),
+                key_id: None,
+                recipients: vec![CapsuleRecipient {
+                    recipient_id: "runner-a".to_string(),
+                    key_id: "key-1".to_string(),
+                    algorithm: "x25519-blake3-xchacha20poly1305".to_string(),
+                    ephemeral_public_key: vec![1, 2, 3],
+                    encrypted_content_key: vec![4, 5, 6],
+                }],
+                signatures: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store).with_authorizer(Arc::new(
+            RoleBasedAuthorizer::new().grant_role("runner-a", AuthorizationRole::Reader),
+        ));
+        let mut request = Request::new(FetchObjectsRequest {
+            want: vec![crate::proto::common::ObjectId {
+                hash: capsule_id.as_bytes().to_vec(),
+            }],
+            have: vec![],
+            filter: None,
+        });
+        request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "runner-a".parse().unwrap());
+
+        let response = server.fetch_objects(request).await.unwrap();
+        let mut stream = response.into_inner();
+        let err = stream
+            .next()
+            .await
+            .expect("private capsule denial")
+            .unwrap_err();
+
+        assert_eq!(err.code(), Code::PermissionDenied);
+        assert!(err.message().contains("private capsule object requires"));
+    }
+
+    #[tokio::test]
+    async fn fetch_objects_allows_private_capsule_for_authorized_recipient() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let revision_id = content_hash(TypeTag::Revision, b"authorized-private-capsule-revision");
+        let capsule_id = store
+            .store_object(&Object::Capsule(Capsule {
+                revision_id,
+                public_fields: CapsulePublic {
+                    agent_id: "agent".to_string(),
+                    agent_version: None,
+                    toolchain_digest: None,
+                    env_fingerprint: None,
+                    evidence: vec![],
+                },
+                encrypted_private: Some(b"private-ciphertext".to_vec()),
+                encryption: "xchacha20poly1305+recipient-envelope-v1".to_string(),
+                key_id: None,
+                recipients: vec![CapsuleRecipient {
+                    recipient_id: "runner-a".to_string(),
+                    key_id: "key-1".to_string(),
+                    algorithm: "x25519-blake3-xchacha20poly1305".to_string(),
+                    ephemeral_public_key: vec![1, 2, 3],
+                    encrypted_content_key: vec![4, 5, 6],
+                }],
+                signatures: vec![],
+            }))
+            .unwrap();
+
+        let server = SyncServer::new(store).with_authorizer(Arc::new(
+            RoleBasedAuthorizer::new()
+                .grant_role("runner-a", AuthorizationRole::Reader)
+                .grant_scope("runner-a", AuthorizationScope::CapsulesPrivateRead),
+        ));
+        let mut request = Request::new(FetchObjectsRequest {
+            want: vec![crate::proto::common::ObjectId {
+                hash: capsule_id.as_bytes().to_vec(),
+            }],
+            have: vec![],
+            filter: None,
+        });
+        request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "runner-a".parse().unwrap());
+
+        let objects = collect_streamed_objects(server.fetch_objects(request).await.unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(objects.len(), 1);
+        match &objects[0] {
+            Object::Capsule(capsule) => {
+                assert_eq!(
+                    capsule.encrypted_private.as_deref(),
+                    Some(&b"private-ciphertext"[..])
+                );
+                assert_eq!(capsule.recipients.len(), 1);
+                assert_eq!(capsule.recipients[0].recipient_id, "runner-a");
+            }
+            other => panic!("expected capsule, got {other:?}"),
+        }
     }
 
     #[tokio::test]

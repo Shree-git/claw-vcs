@@ -59,10 +59,15 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders through the project maintainer GitHub contact
-path:
+reported through the project maintainer's private GitHub contact methods when
+available:
 
 - [https://github.com/Shree-git](https://github.com/Shree-git)
+
+If a private contact method is not available, open a minimal public issue titled
+`[conduct contact request]` with no incident details so the maintainer can
+arrange a private channel. Security-sensitive incidents should use the private
+GitHub Security Advisory flow described in `SECURITY.md`.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

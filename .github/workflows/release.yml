@@ -179,6 +179,57 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Validate dist matrix inputs
+        shell: bash
+        env:
+          DIST_CONTAINER_IMAGE: ${{ matrix.container && matrix.container.image || '' }}
+          DIST_INSTALL_RUN: ${{ matrix.install_dist.run }}
+          DIST_PACKAGES_INSTALL: ${{ matrix.packages_install }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$DIST_CONTAINER_IMAGE" ]]; then
+            case "$DIST_CONTAINER_IMAGE" in
+              ghcr.io/axodotdev/*|messense/rust-musl-cross:*|quay.io/pypa/manylinux*|ubuntu:*|debian:*|fedora:*|centos:*)
+                ;;
+              *)
+                echo "Unapproved dist container image: $DIST_CONTAINER_IMAGE" >&2
+                exit 1
+                ;;
+            esac
+            if [[ "$DIST_CONTAINER_IMAGE" != *@sha256:* ]]; then
+              echo "::warning::dist container image is allowlisted but not digest-pinned: $DIST_CONTAINER_IMAGE"
+            fi
+          fi
+
+          validate_dist_command_lines() {
+            local label="$1"
+            local value="$2"
+            while IFS= read -r line; do
+              line="${line#"${line%%[![:space:]]*}"}"
+              line="${line%"${line##*[![:space:]]}"}"
+              [[ -z "$line" || "$line" == \#* ]] && continue
+              case "$line" in
+                "cargo install cargo-dist --version 0.30.3 --locked"*|\
+                "rustup target add "*|\
+                "sudo apt-get update"*|\
+                "sudo apt-get install "*|\
+                "brew install "*|\
+                "choco install "*|\
+                "pwsh "*|\
+                "powershell "*|\
+                "true"|":")
+                  ;;
+                *)
+                  echo "Unapproved generated dist command in $label: $line" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$value"
+          }
+
+          validate_dist_command_lines "matrix.install_dist.run" "$DIST_INSTALL_RUN"
+          validate_dist_command_lines "matrix.packages_install" "$DIST_PACKAGES_INSTALL"
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -696,7 +747,7 @@ jobs:
               --signature "${artifact}.sig" \
               --certificate "${artifact}.pem" \
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${RELEASE_TAG}$" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/\\.github/workflows/release\\.yml@refs/tags/${RELEASE_TAG}$" \
               "$artifact"
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
               --source-ref "refs/tags/${RELEASE_TAG}" \

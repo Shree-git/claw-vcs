@@ -112,7 +112,7 @@ impl Commands {
             Commands::Admin(args) => admin::run(args, runtime),
             Commands::Init(args) => init::run(args),
             Commands::Completions(args) => completion::run(args),
-            Commands::Doctor(args) => doctor::run(args),
+            Commands::Doctor(args) => doctor::run(args).await,
             Commands::Version(args) => version::run(args),
             Commands::Intent(args) => intent::run(args),
             Commands::Change(args) => change::run(args),

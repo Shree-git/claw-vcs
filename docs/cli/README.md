@@ -77,7 +77,7 @@ Use `claw doctor --json` for a structured report. Use `claw doctor --strict` whe
 
 ## JSON Output
 
-The following workflow commands support structured output:
+Common workflow commands with structured output include:
 
 ```console
 claw init --json
@@ -89,10 +89,15 @@ claw checkout --json <target>
 claw snapshot --json -m "message"
 claw intent --json list
 claw intent --json show <intent-id>
+claw intent --json create --title "..." --goal "..."
 claw change --json list
+claw change --json create --intent <intent-id>
 claw remote --json list
+claw remote --json add origin http://localhost:50051 --dry-run
 claw show --json <object-or-ref>
 claw policy eval <policy-id> --revision <revision> --json
+claw policy apply --id default --check test --dry-run --json
+claw agent --json list
 ```
 
 Global runtime errors can be emitted as a JSON envelope with:

@@ -9,6 +9,46 @@ fn to_hex(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn cli_dx_aliases_completions_and_init_hints_are_executable() {
+    let env = CliTestEnv::new();
+    let repo = env.repo_path("cli-dx-surfaces");
+    std::fs::create_dir_all(&repo).expect("create repo dir");
+
+    let init = env.run_ok(
+        env.temp_root(),
+        ["init", repo.to_str().expect("repo path utf-8")],
+    );
+    assert!(init.stdout.contains("Next steps:"));
+    assert!(init.stdout.contains("claw status"));
+    assert!(init
+        .stdout
+        .contains("claw snapshot -m \"initial snapshot\""));
+    assert!(init.stdout.contains("claw intent create"));
+
+    let completions = env.run_ok(env.temp_root(), ["completion", "bash"]);
+    assert!(completions.stdout.contains("claw"));
+    assert!(completions.stdout.contains("COMPREPLY"));
+
+    let serve_help = env.run_ok(env.temp_root(), ["serve", "--help"]);
+    assert!(serve_help.stdout.contains("Run the sync daemon"));
+
+    let intent = env.run_ok(
+        &repo,
+        [
+            "intent",
+            "create",
+            "--title",
+            "Alias coverage",
+            "--goal",
+            "Exercise documented aliases",
+        ],
+    );
+    let intent_id = intent.value_after("Created intent: ");
+    let change = env.run_ok(&repo, ["change", "create", "--intent", intent_id.as_str()]);
+    assert!(!change.value_after("Created change: ").is_empty());
+}
+
+#[test]
 fn core_cli_workflow_covers_init_snapshot_and_ship() {
     let env = CliTestEnv::new();
     let repo = env.init_repo("core-workflow");

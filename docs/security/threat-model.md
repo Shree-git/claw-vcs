@@ -109,8 +109,11 @@ Daemon capsule reads redact recipient-encrypted private fields and recipient
 envelopes unless the authenticated principal matches a capsule recipient and is
 granted `capsules:private-read`. The same role/scope model gates sync, intent,
 change, capsule, workstream, and event-stream gRPC methods when bearer auth is
-enabled. This protects private ciphertext from broad read paths, but it does
-not replace recipient key management.
+enabled. Generic object sync denies private capsule object transfer without the
+same recipient/scope authorization rather than rewriting object bytes, because
+redacted raw objects would not match their object IDs. This protects private
+ciphertext from broad read paths, but it does not replace recipient key
+management.
 
 ## Policy Weakness
 

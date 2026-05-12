@@ -183,7 +183,7 @@ jobs:
                 --signature "$sig_file" \
                 --certificate "$cert_file" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-                --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/.github/workflows/.*@refs/tags/${RELEASE_TAG}$" \
+                --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/\\.github/workflows/release\\.yml@refs/tags/${RELEASE_TAG}$" \
                 "$artifact"
             else
               cosign verify-blob \

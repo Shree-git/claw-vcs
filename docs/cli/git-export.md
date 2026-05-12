@@ -29,7 +29,8 @@ Dry-run output is human-readable and names each planned branch export.
 ## Exit Codes
 
 - `0`: export or dry-run completed.
-- `2`: invalid CLI usage or invalid branch/ref path.
+- `1`: invalid branch/ref path or other post-parse validation failure.
+- `2`: invalid CLI usage.
 - `3`: not in a Claw repository.
 - `5`: object read or Git object/ref write failure.
 

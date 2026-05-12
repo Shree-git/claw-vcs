@@ -3,6 +3,7 @@ description: Ask a usage, workflow, or operator question
 title: "[Question]: "
 labels:
   - question
+  - needs-triage
 body:
   - type: markdown
     attributes:

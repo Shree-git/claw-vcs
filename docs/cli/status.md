@@ -31,9 +31,6 @@ that need stable field names instead of human text.
 }
 ```
 
-Modified and deleted paths include object IDs when the comparison has a stored
-side for that path.
-
 For machine-readable failures, use the global JSON error format:
 
 ```bash

@@ -331,29 +331,30 @@ claw init
 claw status
 ```
 
+**Manual download**
+
+Grab the verified macOS archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
+verify it with [release verification](docs/security/verifying-releases.md), extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
+
 **Installer script**
 
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
-```
-
-Non-pipe alternative:
+Prefer downloading and inspecting the installer before running it:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh
 sh ./claw-installer.sh
 ```
 
-**Manual download**
+Pipe-to-shell convenience form, after you have verified the release:
 
-Grab the verified macOS archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
-extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
+```
 
 Install to a custom location:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh \
-  | CLAW_HOME="$HOME/.claw" sh
+CLAW_HOME="$HOME/.claw" sh ./claw-installer.sh
 ```
 
 Verify:
@@ -368,29 +369,30 @@ claw status
 
 ### Linux
 
+**Manual download**
+
+Grab the verified Linux archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
+verify it with [release verification](docs/security/verifying-releases.md), extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
+
 **Installer script**
 
-```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
-```
-
-Non-pipe alternative:
+Prefer downloading and inspecting the installer before running it:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh
 sh ./claw-installer.sh
 ```
 
-**Manual download**
+Pipe-to-shell convenience form, after you have verified the release:
 
-Grab the verified Linux archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
-extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
+```
 
 Install to a custom location:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh \
-  | CLAW_HOME="$HOME/.claw" sh
+CLAW_HOME="$HOME/.claw" sh ./claw-installer.sh
 ```
 
 Verify:
@@ -419,15 +421,17 @@ Download the verified `.msi` for `<launch-tag>` from GitHub Releases and run it.
 
 **PowerShell installer (no MSI)**
 
-```powershell
-iwr -useb https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.ps1 | iex
-```
-
-Non-pipe alternative:
+Prefer downloading and inspecting the installer before running it:
 
 ```powershell
 iwr -useb https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.ps1 -OutFile claw-installer.ps1
 powershell -ExecutionPolicy Bypass -File .\claw-installer.ps1
+```
+
+Pipe-to-`iex` convenience form, after you have verified the release:
+
+```powershell
+iwr -useb https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.ps1 | iex
 ```
 
 Verify:
@@ -497,8 +501,17 @@ See [uninstall instructions](docs/operations/uninstall.md) for Homebrew, MSI, ma
 ## Documentation
 
 - Full operator docs: [docs/README.md](docs/README.md)
-- Production readiness checklist: [docs/reference/production-readiness-checklist.md](docs/reference/production-readiness-checklist.md)
 - Quickstart: [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
+- Concepts: [docs/concepts/index.md](docs/concepts/index.md)
+- Workflows: [docs/workflows/index.md](docs/workflows/index.md)
+- Agent integration: [docs/agents/index.md](docs/agents/index.md)
+- Migration from Git: [docs/migration/index.md](docs/migration/index.md)
+- Persona guide: [docs/persona/index.md](docs/persona/index.md)
+- CLI reference: [docs/cli/README.md](docs/cli/README.md)
+- Support: [SUPPORT.md](SUPPORT.md)
+- Roadmap: [ROADMAP.md](ROADMAP.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Production readiness checklist: [docs/reference/production-readiness-checklist.md](docs/reference/production-readiness-checklist.md)
 - Basic demo: [scripts/demo.sh](scripts/demo.sh) and [examples/basic-demo/README.md](examples/basic-demo/README.md)
 - Backup/restore demo: [examples/backup-restore/README.md](examples/backup-restore/README.md)
 - Demo media: [examples/demo-media/README.md](examples/demo-media/README.md)

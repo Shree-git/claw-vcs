@@ -6,7 +6,7 @@ pinned client and daemon versions, backups, and rollback practice.
 ## Get help
 
 - Bugs: open a GitHub issue with the bug report form.
-- Usage questions: open a GitHub discussion or use the question issue form.
+- Usage questions: use the question issue form.
 - Docs gaps: open a docs issue or send a docs PR.
 - Demo problems: include the output from `examples/basic-demo/scripts/demo.sh`
   and the value of `CLAW_BIN`.

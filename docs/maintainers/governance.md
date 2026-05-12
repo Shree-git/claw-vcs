@@ -12,8 +12,10 @@ This page records maintainer rules for public launch work.
 
 ## Ownership
 
-`CODEOWNERS` is the routing layer for reviews. Maintainers can request extra
-review from release, security, or operator owners when a change crosses areas.
+`CODEOWNERS` is the routing layer for reviews. Today every protected area routes
+to the single maintainer account. Release, security, and operator owner groups
+are future governance roles; until those teams exist, area-specific review means
+explicit maintainer review against the relevant checklist or runbook.
 
 Claw VCS is currently maintained by Shree. Governance will evolve as contributor
 volume grows. Shree is the final decision-maker for roadmap, release, and

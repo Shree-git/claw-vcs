@@ -38,7 +38,7 @@ cosign verify-blob \
   --signature ./claw-x86_64-unknown-linux-gnu.tar.xz.sig \
   --certificate ./claw-x86_64-unknown-linux-gnu.tar.xz.pem \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/Shree-git/(claw|claw-vcs)/.github/workflows/.*@refs/tags/vX.Y.Z$' \
+  --certificate-identity-regexp '^https://github.com/Shree-git/(claw|claw-vcs)/\.github/workflows/release\.yml@refs/tags/vX.Y.Z$' \
   ./claw-x86_64-unknown-linux-gnu.tar.xz
 ```
 

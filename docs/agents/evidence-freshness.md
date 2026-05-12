@@ -8,7 +8,7 @@ Policies should support:
 - evidence is newer than the revision
 - evidence is produced by a trusted runner key
 - evidence expires after a bounded duration
-- evidence artifact and log digests match stored artifacts
+- evidence includes artifact or log digests for later verification
 - evidence includes command and exit code
 - evidence includes environment or toolchain digest
 
@@ -27,7 +27,7 @@ Example failure modes:
 - `test` passed on an old revision
 - runner key is not trusted for the repository
 - evidence expired before integration
-- log digest no longer matches the stored log
+- log or artifact digest is missing, so reviewers cannot bind the claim to a reproducible record
 - command is missing, so reviewers cannot reproduce the check
 
 ## v0.1 behavior
@@ -62,3 +62,9 @@ claw policy create \
 
 The same checks run during `claw policy eval`, fail-closed shipping when
 `policy.fail_closed_ship = true`, and integration policy evaluation.
+
+In `v0.1.x`, freshness policy validates that digests are present and tied to the
+capsule evidence record. Claw does not yet store logs/artifacts or compare
+stored bytes against those digests during policy evaluation; CI, release, or
+artifact systems must perform that equality check until the artifact store is
+wired into policy execution.
