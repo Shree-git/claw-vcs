@@ -580,6 +580,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     .into_iter()
     .collect();
     let mut covered_backlog_items = HashSet::new();
+    let mut external_pending_items = Vec::new();
+    let mut not_applicable_items = Vec::new();
     for line in backlog_coverage.lines() {
         let trimmed = line.trim();
         if !trimmed.starts_with('|') {
@@ -614,6 +616,11 @@ fn public_launch_assets_exist_and_are_upload_ready() {
             !cells[2].is_empty(),
             "backlog coverage item {item} must include evidence"
         );
+        match cells[1] {
+            "External pending" => external_pending_items.push(item),
+            "Not applicable" => not_applicable_items.push(item),
+            _ => {}
+        }
     }
     for item in 1..=110 {
         assert!(
@@ -625,6 +632,16 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         covered_backlog_items.len(),
         110,
         "backlog coverage must include exactly the 110 backlog items"
+    );
+    assert_eq!(
+        external_pending_items,
+        vec![10, 74, 94],
+        "only owner/release/name-clearance items should remain external pending"
+    );
+    assert_eq!(
+        not_applicable_items,
+        vec![100],
+        "only optional funding should remain not applicable"
     );
     for blocker in [
         "PR #4 requires review approval before merge.",
