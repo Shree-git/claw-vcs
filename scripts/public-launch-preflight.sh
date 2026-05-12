@@ -315,7 +315,7 @@ if [[ "$strict" == "1" ]]; then
     grep -Eq '^- GitHub social preview uploaded: yes' "$name_evidence"; then
     pass "name-clearance evidence is recorded in $name_evidence"
   else
-    fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence"
+    fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence; start from docs/operations/name-clearance-evidence.template.md"
   fi
 else
   warn "trademark clearance, domain checks, and social-handle checks require manual maintainer verification"

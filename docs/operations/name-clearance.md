@@ -108,6 +108,12 @@ claw-vcs-git
 Record the crates.io owner account and recovery path. Do not document
 `cargo install claw-vcs` until the package set is live and verified.
 
+Copy the template:
+
+```bash
+cp docs/operations/name-clearance-evidence.template.md docs/operations/name-clearance-evidence.md
+```
+
 Save completed launch evidence in:
 
 ```text
@@ -137,22 +143,9 @@ uploaded.
 
 ## Evidence Template
 
-Copy this block into the launch issue or release notes:
-
-```md
-## Name Clearance Evidence
-
-- Date:
-- Reviewer:
-- Trademark databases checked:
-- Similar marks and disposition:
-- Domains checked/reserved:
-- Social handles checked/reserved:
-- crates.io packages reserved/published:
-- GitHub social preview uploaded:
-- Counsel review required: yes/no
-- Final decision:
-```
+Use [name-clearance-evidence.template.md](name-clearance-evidence.template.md)
+as the source template. Copy supporting links, screenshots, or account records
+into the launch issue when they do not belong in the repository.
 
 Strict preflight treats the evidence as complete only when the final decision,
 domain, social-handle, crates.io, and social-preview upload fields are filled

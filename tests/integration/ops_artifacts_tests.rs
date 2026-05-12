@@ -291,6 +291,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/operations/backlog-coverage.md",
         "docs/operations/package-registry-strategy.md",
         "docs/operations/name-clearance.md",
+        "docs/operations/name-clearance-evidence.template.md",
         ".github/workflows/release-channel-smoke.yml",
     ] {
         let path = workspace_path(artifact);
@@ -461,6 +462,21 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         assert!(
             backlog_coverage.contains(item),
             "backlog coverage must include item marker {item}"
+        );
+    }
+
+    let name_clearance_template =
+        read_workspace_file("docs/operations/name-clearance-evidence.template.md");
+    for phrase in [
+        "Domains checked/reserved:",
+        "Social handles checked/reserved:",
+        "crates.io packages reserved/published:",
+        "GitHub social preview uploaded: no",
+        "Final decision:",
+    ] {
+        assert!(
+            name_clearance_template.contains(phrase),
+            "name-clearance evidence template must include phrase: {phrase}"
         );
     }
     assert!(

@@ -81,9 +81,11 @@ access; they cannot be completed by editing this repository alone.
    from the exact release tag once credentials are configured.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready. Use
-   [name-clearance.md](name-clearance.md) to record evidence in
-   `docs/operations/name-clearance-evidence.md`, or set
-   `CLAW_PREFLIGHT_NAME_EVIDENCE` to the evidence file used by strict preflight.
+   [name-clearance.md](name-clearance.md) and
+   [name-clearance-evidence.template.md](name-clearance-evidence.template.md)
+   to record evidence in `docs/operations/name-clearance-evidence.md`, or set
+   `CLAW_PREFLIGHT_NAME_EVIDENCE` to the evidence file used by strict
+   preflight.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
 5. If the launch includes a public website, enable GitHub Pages or another docs
    host for `docs/index.html`. After this PR lands on `main`, the manual
