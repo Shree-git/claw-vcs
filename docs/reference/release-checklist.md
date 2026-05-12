@@ -35,6 +35,7 @@ Use this checklist for every tag release and hotfix.
 
 - [ ] Rollback tested in staging with a known restore point.
 - [ ] `soak-24h.yml` completed for a 24h run (scheduled or manual) and results reviewed.
+- [ ] `large-repo-drill.yml` 10k-file drill completed within the 30-minute timeout, or a capacity follow-up is recorded.
 - [ ] No unresolved Sev1/Sev2 incidents linked to the candidate.
 - [ ] Latest `nightly-chaos.yml` run reviewed; follow-up recorded for any failures.
 - [ ] Go/No-go recorded (Release Owner, Tech Lead, SRE), with release notes and rollback pointer published.

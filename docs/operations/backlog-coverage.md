@@ -129,7 +129,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 80 | Implemented | `#![deny(missing_docs)]` is selectively enabled on the first public library targets: core, crypto, policy, and patch. |
 | 81 | Implemented | MVP/TODO audit recorded in `docs/reference/panic-audit.md`; stale production markers were removed or documented. |
 | 82 | Implemented | Criterion benchmark scaffolds and docs in `crates/*/benches/` and `docs/reference/benchmarks.md`. |
-| 83 | Implemented | Large-repo scenarios are covered in `tests/integration/backlog_gap_tests.rs`, including CI-enforced synthetic workflow coverage, varied large JSON/binary/path-filter fixtures, and an ignored 10k-file operator drill, plus benchmark fixtures. |
+| 83 | Implemented | Large-repo scenarios are covered in `tests/integration/backlog_gap_tests.rs`, including CI-enforced synthetic workflow coverage, varied large JSON/binary/path-filter fixtures, and the ignored 10k-file drill. The 10k drill is wired to `.github/workflows/large-repo-drill.yml` for weekly/manual execution because a local run on 2026-05-12 passed in 628.87 seconds, which is too heavy for the required PR gate. |
 | 84 | Implemented | Windows path/release-channel coverage is in compatibility matrix CI and path safety tests; broader real-world validation remains called out before rollout. |
 | 85 | Implemented | `docs/reference/unsafe-audit.md` documents unsafe audit status. |
 | 86 | Implemented | Panic audit guidance and CI clippy panic/todo/unimplemented checks. |

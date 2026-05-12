@@ -39,12 +39,16 @@ Define the current, implemented release gates and operator responsibilities for 
   - Scheduled daily at `03:00 UTC`.
   - Runs deterministic failure drills via `chaos_tests`.
   - Runs deterministic mutating-sync load pressure (`load_soak_tests`) and live compatibility drills (`cross_version_runtime_tests`) in serial mode.
+- **Large repository capacity drill (`large-repo-drill.yml`):**
+  - Scheduled weekly and manually dispatchable.
+  - Runs the ignored 10k-file `backlog_gap_tests` drill separately from required PR gates so capacity regressions are visible without making every review wait on the large fixture.
 
 ## Recommended Operator Practice (Not CI-Enforced)
 
 - Run/review `soak-24h.yml` for a full 24h soak before stable promotion.
 - Run rollback drill in staging for each release candidate.
 - Review release-channel smoke results before broad promotion.
+- Review the latest large-repo drill result and record a follow-up if the 10k-file run exceeds its timeout.
 - Record go/no-go decision with Release Owner, Tech Lead, and SRE.
 - Publish release notes with migration notes, known issues, and rollback reference.
 - Review nightly chaos workflow results and track remediation tasks.

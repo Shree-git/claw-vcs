@@ -312,6 +312,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/operations/package-registry-strategy.md",
         "docs/operations/name-clearance.md",
         "docs/operations/name-clearance-evidence.template.md",
+        ".github/workflows/large-repo-drill.yml",
         ".github/workflows/release-channel-smoke.yml",
     ] {
         let path = workspace_path(artifact);
@@ -659,6 +660,20 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         release_channel_smoke.contains("--tag \"$RELEASE_TAG\""),
         "cargo install from Git smoke must install the exact release tag under validation"
     );
+
+    let large_repo_drill = read_workspace_file(".github/workflows/large-repo-drill.yml");
+    for phrase in [
+        "large_repo_10k_file_snapshot_status_and_path_filter_drill",
+        "--ignored --test-threads=1",
+        "timeout-minutes: 30",
+        "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
+        "dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8",
+    ] {
+        assert!(
+            large_repo_drill.contains(phrase),
+            "large-repo drill workflow must include phrase: {phrase}"
+        );
+    }
 
     let release_workflow = read_workspace_file(".github/workflows/release.yml");
     for phrase in [

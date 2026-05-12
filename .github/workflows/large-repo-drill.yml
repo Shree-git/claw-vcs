@@ -1,0 +1,25 @@
+name: Large Repo Drill
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ten-thousand-file-drill:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Run 10k-file large repo drill
+        run: cargo test -p claw-integration-tests --test backlog_gap_tests --locked large_repo_10k_file_snapshot_status_and_path_filter_drill -- --ignored --test-threads=1
