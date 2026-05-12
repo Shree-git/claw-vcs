@@ -666,7 +666,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "large_repo_10k_file_snapshot_status_and_path_filter_drill",
         "--ignored --test-threads=1",
         "timeout-minutes: 30",
-        "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
+        "actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd",
         "dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8",
     ] {
         assert!(
