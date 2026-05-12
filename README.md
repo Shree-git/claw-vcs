@@ -454,6 +454,12 @@ claw init
 claw status
 ```
 
+For a release-specific source install, add the tag:
+
+```bash
+cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw --locked
+```
+
 ## Verify releases
 
 Before trusting a downloaded artifact, verify checksums, signatures, and attestations when release assets provide them. See [release verification](docs/security/verifying-releases.md).

@@ -290,8 +290,11 @@ jobs:
           Pop-Location
 
   cargo-install-git-smoke:
+    needs: release-metadata
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
     steps:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -302,7 +305,7 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/claw-cargo-install"
-          cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked --root "$root"
+          cargo install --git https://github.com/shree-git/claw-vcs.git --tag "$RELEASE_TAG" --package claw --locked --root "$root"
           "$root/bin/claw" --version
           "$root/bin/claw" doctor
           mkdir -p "$RUNNER_TEMP/claw-cargo-install-repo"

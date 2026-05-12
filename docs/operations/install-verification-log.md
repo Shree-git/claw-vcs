@@ -77,4 +77,4 @@ Status: checksum and binary launch pass, but this release predates the hardened 
 - PowerShell installer on Windows.
 - Windows MSI on Windows.
 - Homebrew formula after the tap points at the launch-hardening release.
-- `cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked` after the hardened changes are published to the default branch.
+- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag <launch-tag> --package claw --locked` for the next launch-hardening release tag.

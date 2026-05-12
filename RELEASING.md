@@ -78,6 +78,7 @@ Verify release assets:
 - SBOM is present and readable
 - Homebrew formula installs the tagged version
 - Windows MSI installs and adds `claw` to `PATH`
+- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw --locked` installs the tagged version
 
 See [docs/security/verifying-releases.md](docs/security/verifying-releases.md).
 
