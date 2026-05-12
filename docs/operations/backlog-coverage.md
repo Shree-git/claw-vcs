@@ -169,3 +169,6 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 - Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, strict launch evidence, and optional GitHub Pages publication require maintainer/account access.
 - The next hardened public release must be cut before public artifact attestations, SBOMs, signatures, installers, Homebrew, MSI, and clean-environment channel checks can be verified.
 - GitHub reports low Dependabot findings on the default branch until this branch's dependency updates land on `main`.
+
+Owner-only launch blockers are tracked in
+<https://github.com/Shree-git/claw-vcs/issues/5>.
