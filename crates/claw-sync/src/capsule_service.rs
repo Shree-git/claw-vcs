@@ -232,6 +232,10 @@ fn principal_from_request<T>(request: &Request<T>) -> Option<String> {
     metadata_value(request, PRINCIPAL_METADATA_KEY)
 }
 
+fn recipient_id_matches_principal(recipient_id: &str, principal: &str) -> bool {
+    recipient_id.eq_ignore_ascii_case(principal)
+}
+
 fn capsule_for_principal(
     capsule: &Capsule,
     principal: Option<&str>,
@@ -245,7 +249,7 @@ fn capsule_for_principal(
         capsule
             .recipients
             .iter()
-            .any(|recipient| recipient.recipient_id == principal)
+            .any(|recipient| recipient_id_matches_principal(&recipient.recipient_id, principal))
     });
 
     if authorized && can_read_private {
@@ -534,6 +538,16 @@ mod tests {
         let capsule = recipient_capsule();
 
         let visible = capsule_for_principal(&capsule, Some("runner-a"), true);
+
+        assert_eq!(visible.encrypted_private, capsule.encrypted_private);
+        assert_eq!(visible.recipients.len(), 1);
+    }
+
+    #[test]
+    fn capsule_private_fields_use_case_insensitive_recipient_principal_match() {
+        let capsule = recipient_capsule();
+
+        let visible = capsule_for_principal(&capsule, Some("RUNNER-A"), true);
 
         assert_eq!(visible.encrypted_private, capsule.encrypted_private);
         assert_eq!(visible.recipients.len(), 1);

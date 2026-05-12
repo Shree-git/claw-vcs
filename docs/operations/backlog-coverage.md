@@ -106,7 +106,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, authorizes before nonce consumption, and has sync tests proving unauthorized requests cannot poison replay state. Capsule evidence freshness separately binds evidence to exact revisions. |
 | 68 | Implemented | `docs/reference/compatibility.md`, `compatibility-matrix.json`, and sync negotiation code. |
 | 69 | Implemented | Remote compatibility/integration tests cover push/pull, full CLI clone, interruption, auth, stale token rejection, protocol mismatch, and live TLS/mTLS clone behavior. Partial-clone filters are implemented and tested at the daemon fetch protocol layer; CLI `sync clone` filter flags remain a documented limitation. |
-| 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs. |
+| 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs; daemon private-field redaction uses the same case-insensitive recipient matching as crypto decryption and policy checks. |
 
 ## P1: Release And Packaging
 
