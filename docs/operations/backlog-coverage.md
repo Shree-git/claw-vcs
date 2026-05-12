@@ -103,7 +103,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 64 | Implemented | `crates/claw-sync/src/security.rs` models roles/scopes; daemon docs describe authorization. |
 | 65 | Implemented | Audit logging for daemon sync/security paths is implemented with tracing plus `claw daemon --audit-log <path>` JSONL records, and documented in observability/security docs. Admin backup/restore keeps separate migration and verification records. |
 | 66 | Implemented | mTLS flags/docs/tests exist for daemon/sync; `tests/integration/cli_sync_e2e_tests.rs` exercises a live TLS daemon that requires a client certificate. |
-| 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, with tests in sync security paths. Capsule evidence freshness separately binds evidence to exact revisions. |
+| 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, authorizes before nonce consumption, and has sync tests proving unauthorized requests cannot poison replay state. Capsule evidence freshness separately binds evidence to exact revisions. |
 | 68 | Implemented | `docs/reference/compatibility.md`, `compatibility-matrix.json`, and sync negotiation code. |
 | 69 | Implemented | Remote compatibility/integration tests cover push/pull, full CLI clone, interruption, auth, stale token rejection, protocol mismatch, and live TLS/mTLS clone behavior. Partial-clone filters are implemented and tested at the daemon fetch protocol layer; CLI `sync clone` filter flags remain a documented limitation. |
 | 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs. |

@@ -248,11 +248,61 @@ impl SyncServer {
     }
 
     #[allow(clippy::result_large_err)]
-    fn enforce_replay_nonce<T>(
+    fn authorize_and_enforce_replay_nonce<T>(
         &self,
         request: &Request<T>,
         action: AuthorizationAction,
         resource: Option<String>,
+    ) -> Result<(), Status> {
+        let subject = subject_from_request(request);
+        let request_id = request_id_from_request(request);
+        let auth_request = AuthorizationRequest {
+            subject: subject.clone(),
+            action: action.clone(),
+            resource: resource.clone(),
+        };
+
+        match self.security.authorizer.authorize(&auth_request) {
+            AuthorizationDecision::Deny { reason } => {
+                self.security.audit_sink.record(AuditEvent::denied(
+                    now_ms(),
+                    request_id,
+                    subject,
+                    action,
+                    resource,
+                    reason.clone(),
+                ));
+                return Err(Status::permission_denied(reason));
+            }
+            AuthorizationDecision::Allow => {}
+        }
+
+        self.enforce_replay_nonce_after_authorization(
+            request,
+            action.clone(),
+            resource.clone(),
+            subject.clone(),
+            request_id.clone(),
+        )?;
+
+        self.security.audit_sink.record(AuditEvent::allowed(
+            now_ms(),
+            request_id,
+            subject,
+            action,
+            resource,
+        ));
+        Ok(())
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn enforce_replay_nonce_after_authorization<T>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        resource: Option<String>,
+        subject: AuthorizationSubject,
+        request_id: String,
     ) -> Result<(), Status> {
         let Some(protector) = &self.security.replay_protector else {
             return Ok(());
@@ -263,8 +313,8 @@ impl SyncServer {
             let reason = "missing replay nonce".to_string();
             self.security.audit_sink.record(AuditEvent::denied(
                 now_ms(),
-                request_id_from_request(request),
-                subject_from_request(request),
+                request_id,
+                subject,
                 action,
                 resource,
                 reason.clone(),
@@ -279,7 +329,6 @@ impl SyncServer {
         let mut protector = protector
             .lock()
             .map_err(|_| Status::internal("replay protector lock poisoned"))?;
-        let subject = subject_from_request(request);
         let replay_scope = format!(
             "principal={};token={};action={action:?};resource={}",
             subject.principal.as_deref().unwrap_or(""),
@@ -291,7 +340,7 @@ impl SyncServer {
             .map_err(|err| {
                 self.security.audit_sink.record(AuditEvent::denied(
                     now_ms(),
-                    request_id_from_request(request),
+                    request_id,
                     subject,
                     action,
                     resource,
@@ -639,8 +688,11 @@ impl SyncService for SyncServer {
         request: Request<tonic::Streaming<ObjectChunk>>,
     ) -> Result<Response<PushObjectsResponse>, Status> {
         let resource = Some("objects:push".to_string());
-        self.enforce_replay_nonce(&request, AuthorizationAction::PushObjects, resource.clone())?;
-        self.authorize_request(&request, AuthorizationAction::PushObjects, resource)?;
+        self.authorize_and_enforce_replay_nonce(
+            &request,
+            AuthorizationAction::PushObjects,
+            resource,
+        )?;
         self.run_bounded("push_objects", async move {
             let mut stream = request.into_inner();
             let store = self.store.write().await;
@@ -686,8 +738,11 @@ impl SyncService for SyncServer {
         request: Request<UpdateRefsRequest>,
     ) -> Result<Response<UpdateRefsResponse>, Status> {
         let resource = Some(ref_update_resource(request.get_ref()));
-        self.enforce_replay_nonce(&request, AuthorizationAction::UpdateRefs, resource.clone())?;
-        self.authorize_request(&request, AuthorizationAction::UpdateRefs, resource)?;
+        self.authorize_and_enforce_replay_nonce(
+            &request,
+            AuthorizationAction::UpdateRefs,
+            resource,
+        )?;
         let event_bus = self.event_bus.clone();
         self.run_bounded("update_refs", async move {
             let req = request.into_inner();
@@ -808,8 +863,8 @@ mod tests {
     use super::*;
     use crate::event_service::EventBus;
     use crate::security::{
-        AuditOutcome, AuditSink, AuthorizationRole, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY,
-        REPLAY_NONCE_METADATA_KEY,
+        AuditOutcome, AuditSink, AuthorizationDecision, AuthorizationRequest, AuthorizationRole,
+        Authorizer, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY, REPLAY_NONCE_METADATA_KEY,
     };
     use claw_core::hash::content_hash;
     use claw_core::id::{ChangeId, IntentId};
@@ -846,6 +901,25 @@ mod tests {
     impl AuditSink for TestAuditSink {
         fn record(&self, event: AuditEvent) {
             self.events.lock().unwrap().push(event);
+        }
+    }
+
+    #[derive(Default)]
+    struct DenyOnceAuthorizer {
+        has_denied: StdMutex<bool>,
+    }
+
+    impl Authorizer for DenyOnceAuthorizer {
+        fn authorize(&self, _request: &AuthorizationRequest) -> AuthorizationDecision {
+            let mut has_denied = self.has_denied.lock().unwrap();
+            if !*has_denied {
+                *has_denied = true;
+                return AuthorizationDecision::Deny {
+                    reason: "temporary authorization denial".to_string(),
+                };
+            }
+
+            AuthorizationDecision::Allow
         }
     }
 
@@ -1638,6 +1712,68 @@ mod tests {
             .await
             .expect_err("duplicate nonce should be rejected");
         assert_eq!(replayed.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[tokio::test]
+    async fn authorization_denial_does_not_consume_replay_nonce() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let server = SyncServer::new(store)
+            .with_authorizer(Arc::new(DenyOnceAuthorizer::default()))
+            .with_replay_protection(
+                ReplayProtectionConfig {
+                    window: Duration::from_secs(60),
+                    max_entries: 16,
+                },
+                true,
+            );
+        let target = content_hash(TypeTag::Blob, b"target");
+
+        let mut denied_request = Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/main".to_string(),
+                old_target: None,
+                new_target: Some(crate::proto::common::ObjectId {
+                    hash: target.as_bytes().to_vec(),
+                }),
+                force: false,
+            }],
+        });
+        denied_request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "operator".parse().unwrap());
+        denied_request
+            .metadata_mut()
+            .insert(REPLAY_NONCE_METADATA_KEY, "shared-nonce".parse().unwrap());
+        let denied = server
+            .update_refs(denied_request)
+            .await
+            .expect_err("first call should be denied before replay is recorded");
+        assert_eq!(denied.code(), tonic::Code::PermissionDenied);
+
+        let mut allowed_retry = Request::new(UpdateRefsRequest {
+            updates: vec![RefUpdate {
+                name: "heads/main".to_string(),
+                old_target: None,
+                new_target: Some(crate::proto::common::ObjectId {
+                    hash: target.as_bytes().to_vec(),
+                }),
+                force: false,
+            }],
+        });
+        allowed_retry
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "operator".parse().unwrap());
+        allowed_retry
+            .metadata_mut()
+            .insert(REPLAY_NONCE_METADATA_KEY, "shared-nonce".parse().unwrap());
+
+        let accepted = server
+            .update_refs(allowed_retry)
+            .await
+            .expect("authorized retry should be allowed to use the nonce")
+            .into_inner();
+        assert!(accepted.success);
     }
 
     #[tokio::test]
