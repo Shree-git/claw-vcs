@@ -275,6 +275,26 @@ fn policy_and_interface_docs_exist_and_include_required_phrases() {
         n_plus_2_line.contains("remove"),
         "deprecation lifecycle for N+2 must mention remove"
     );
+
+    for runbook in [
+        "docs/runbooks/policy-timeout-storm.md",
+        "docs/runbooks/degraded-git-backend.md",
+    ] {
+        let content = read_workspace_file(runbook);
+        for stale_metric in [
+            "claw_policy_eval_duration_seconds",
+            "claw_policy_eval_total",
+            "claw_retries_total",
+            "claw_git_bridge_operation_duration_seconds",
+            "claw_sync_queue_depth",
+            "claw_sync_oldest_job_age_seconds",
+        ] {
+            assert!(
+                !content.contains(stale_metric),
+                "{runbook} must not reference unimplemented metric {stale_metric}"
+            );
+        }
+    }
 }
 
 #[test]

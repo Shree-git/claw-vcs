@@ -3,9 +3,10 @@
 ## Symptoms
 
 - `sync pull`/`sync push` latency and failure rate increase.
-- `claw_git_bridge_operation_duration_seconds` and `claw_retries_total` spike.
-- `claw_sync_queue_depth` and `claw_sync_oldest_job_age_seconds` trend upward.
-- Logs show repeated git bridge timeouts/errors for the same remotes/refs.
+- `claw_daemon_queue_depth` trends upward while worker capacity stays flat in
+  `claw_daemon_worker_pool_size`.
+- Logs show repeated sync or Git bridge timeout/error messages for the same
+  remotes/refs.
 
 ## Immediate triage
 
@@ -35,8 +36,7 @@ claw sync pull --remote origin --ref-name heads/main
 ## Validation checks
 
 - `claw sync pull` and a controlled `claw sync push` succeed for representative repos.
-- `claw_git_bridge_operation_duration_seconds` returns near baseline.
-- Queue depth/oldest age fall and remain stable for at least 15 minutes.
+- `claw_daemon_queue_depth` falls and remains stable for at least 15 minutes.
 - Error logs no longer show repeating bridge timeout/failure patterns.
 
 ## Escalation
