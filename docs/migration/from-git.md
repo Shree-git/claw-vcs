@@ -29,7 +29,7 @@ claw status
 ## 3. Import Git history
 
 ```bash
-claw git-import --git-ref refs/heads/main --ref heads/imported
+claw git-import --git-ref refs/heads/main --ref-name heads/imported
 ```
 
 For multiple branches:
@@ -42,21 +42,21 @@ If you rely on Git notes for provenance, include notes in the trial and record
 the notes ref in your migration notes:
 
 ```bash
-claw git-import --git-ref refs/heads/main --ref heads/imported --read-notes
+claw git-import --git-ref refs/heads/main --ref-name heads/imported --read-notes
 ```
 
 ## 4. Verify interop
 
 ```bash
-claw git-roundtrip --ref heads/imported
-claw log --ref heads/imported --limit 5
+claw git-roundtrip --ref-name heads/imported
+claw log --ref-name heads/imported --limit 5
 claw checkout imported --dry-run
 ```
 
 Then export back to Git and validate with Git:
 
 ```bash
-claw git-export --ref heads/imported --branch claw/imported --git-notes
+claw git-export --ref-name heads/imported --branch claw/imported --git-notes
 git fsck --strict
 git log --oneline refs/heads/claw/imported -5
 ```

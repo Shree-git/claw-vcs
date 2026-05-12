@@ -20,7 +20,7 @@ use.
 ## Export Claw history to Git
 
 ```bash
-claw git-export --ref heads/main --branch claw/main
+claw git-export --ref-name heads/main --branch claw/main
 ```
 
 Export all heads:
@@ -32,7 +32,7 @@ claw git-export --all-heads
 To write provenance into Git notes when supported by the command path:
 
 ```bash
-claw git-export --ref heads/main --branch claw/main --git-notes
+claw git-export --ref-name heads/main --branch claw/main --git-notes
 ```
 
 Validate the exported Git repository with Git itself:
@@ -46,7 +46,7 @@ git cat-file -t refs/heads/claw/main
 ## Import Git history into Claw
 
 ```bash
-claw git-import --git-ref refs/heads/main --ref heads/imported
+claw git-import --git-ref refs/heads/main --ref-name heads/imported
 ```
 
 Import all branches:
@@ -59,13 +59,13 @@ When reading provenance notes is part of the migration, use the command's notes
 option and record the notes ref in the migration log:
 
 ```bash
-claw git-import --git-ref refs/heads/main --ref heads/imported --read-notes
+claw git-import --git-ref refs/heads/main --ref-name heads/imported --read-notes
 ```
 
 ## Verify a round trip
 
 ```bash
-claw git-roundtrip --ref heads/main
+claw git-roundtrip --ref-name heads/main
 ```
 
 Use round-trip checks before adopting Git interop in release automation.

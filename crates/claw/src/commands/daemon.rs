@@ -7,8 +7,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
-    Registry, TextEncoder,
+    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounterVec, IntGauge, Opts, Registry,
+    TextEncoder,
 };
 use serde::Deserialize;
 use serde::Serialize;
@@ -165,7 +165,6 @@ struct DaemonMetrics {
     registry: Registry,
     request_latency: HistogramVec,
     auth_failures: IntCounterVec,
-    retry_total: IntCounter,
     policy_eval_duration: Histogram,
     queue_depth: IntGauge,
     worker_pool_size: IntGauge,
@@ -189,10 +188,6 @@ impl DaemonMetrics {
             ),
             &["reason"],
         )?;
-        let retry_total = IntCounter::new(
-            "claw_daemon_retry_total",
-            "Retry attempts made by daemon workers",
-        )?;
         let policy_eval_duration = Histogram::with_opts(HistogramOpts::new(
             "claw_daemon_policy_eval_duration_seconds",
             "Duration of policy evaluations",
@@ -205,7 +200,6 @@ impl DaemonMetrics {
 
         registry.register(Box::new(request_latency.clone()))?;
         registry.register(Box::new(auth_failures.clone()))?;
-        registry.register(Box::new(retry_total.clone()))?;
         registry.register(Box::new(policy_eval_duration.clone()))?;
         registry.register(Box::new(queue_depth.clone()))?;
         registry.register(Box::new(worker_pool_size_gauge.clone()))?;
@@ -225,7 +219,6 @@ impl DaemonMetrics {
             registry,
             request_latency,
             auth_failures,
-            retry_total,
             policy_eval_duration,
             queue_depth,
             worker_pool_size: worker_pool_size_gauge,
@@ -257,7 +250,6 @@ impl DaemonMetrics {
     }
 
     fn register_metric_families(&self) {
-        let _ = self.retry_total.get();
         let _ = self.policy_eval_duration.get_sample_count();
         let _ = self.queue_depth.get();
         let _ = self.worker_pool_size.get();
@@ -1100,7 +1092,6 @@ mod tests {
         assert!(head.contains("content-type: text/plain; version=0.0.4; charset=utf-8"));
         assert!(body.contains("# HELP claw_daemon_http_request_latency_seconds"));
         assert!(body.contains("# HELP claw_daemon_auth_failures_total"));
-        assert!(body.contains("# HELP claw_daemon_retry_total"));
         assert!(body.contains("# HELP claw_daemon_policy_eval_duration_seconds"));
         assert!(body.contains("# HELP claw_daemon_queue_depth"));
         assert!(body.contains("# HELP claw_daemon_worker_pool_size"));

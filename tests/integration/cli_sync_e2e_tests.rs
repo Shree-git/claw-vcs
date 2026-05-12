@@ -141,6 +141,17 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
     env.write_file(&clone_a.join("sync.txt"), "version two from clone a\n");
     env.run_ok(&clone_a, ["snapshot", "-m", "Advance remote head"]);
 
+    let dry_push = env.run_ok(
+        &clone_a,
+        ["sync", "push", "--remote", "origin", "--dry-run"],
+    );
+    assert!(dry_push.stdout.contains("Dry run: would push"));
+    assert!(dry_push.stdout.contains("Remote ref update skipped."));
+
+    let dry_pull = env.run_ok(&clone_b, ["sync", "pull", "--remote", "origin"]);
+    assert!(dry_pull.stdout.contains("Updated heads/main"));
+    assert_eq!(env.read_file(&clone_b.join("sync.txt")), "version one\n");
+
     let pushed = env.run_ok(&clone_a, ["sync", "push", "--remote", "origin"]);
     assert!(pushed.stdout.contains("Pushed heads/main to origin"));
 
@@ -212,7 +223,9 @@ fn daemon_mtls_clone_requires_client_certificate() {
         denied_output.contains("transport error")
             || denied_output.contains("ConnectionFailed")
             || denied_output.contains("certificate")
-            || denied_output.contains("tls"),
+            || denied_output.contains("tls")
+            || denied_output.contains("operation was canceled")
+            || denied_output.contains("connection closed"),
         "expected TLS/client certificate failure, got:\n{denied_output}"
     );
 

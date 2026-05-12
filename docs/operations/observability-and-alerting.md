@@ -34,8 +34,6 @@ use daemon-local names and low-cardinality labels.
   - `claw_daemon_worker_pool_size` (gauge)
 - **Auth failures**
   - `claw_daemon_auth_failures_total` (counter; label `reason=missing|invalid`)
-- **Retries**
-  - `claw_daemon_retry_total` (counter)
 - **Policy evaluation**
   - `claw_daemon_policy_eval_duration_seconds` (histogram)
 
@@ -61,8 +59,6 @@ Build one dashboard named **Claw Operations** with these panels:
      added.
 5. **Auth Anomalies**
    - `rate(claw_daemon_auth_failures_total[5m])` split by reason.
-6. **Retry Pressure**
-   - `rate(claw_daemon_retry_total[5m])`.
 
 ## Starter Alerts
 

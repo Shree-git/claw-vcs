@@ -285,14 +285,14 @@ For the current working tree, the source install path has been smoke-tested with
 **Homebrew**
 
 ```bash
-brew install shree-git/homebrew-tap/claw
+brew install shree-git/tap/claw
 ```
 
 Or, if you prefer:
 
 ```bash
-brew tap shree-git/homebrew-tap
-brew install claw
+brew tap shree-git/tap
+brew install shree-git/tap/claw
 ```
 
 Verify:
@@ -326,8 +326,8 @@ extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin
 Install to a custom location:
 
 ```bash
-CLAW_HOME="$HOME/.claw" \
-  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh \
+  | CLAW_HOME="$HOME/.claw" sh
 ```
 
 Verify:
@@ -363,8 +363,8 @@ extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin
 Install to a custom location:
 
 ```bash
-CLAW_HOME="$HOME/.claw" \
-  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh \
+  | CLAW_HOME="$HOME/.claw" sh
 ```
 
 Verify:

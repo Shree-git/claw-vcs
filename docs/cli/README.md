@@ -117,8 +117,8 @@ claw remote remove <name> --dry-run
 claw integrate --right <ref> --dry-run
 claw intent --json policy add <intent-id> <policy-id> --dry-run
 claw intent --json policy remove <intent-id> <policy-id> --dry-run
-claw agent rotate <agent-id> --public-key <hex> --dry-run
-claw agent revoke <agent-id> --reason "compromised key" --dry-run
+claw agent rotate --name <agent-id> --public-key <hex> --dry-run
+claw agent revoke --name <agent-id> --reason "compromised key" --dry-run
 claw admin migrate apply --dry-run
 claw policy apply --id <policy-id> --dry-run
 claw sync push --remote origin --ref-name heads/main --dry-run

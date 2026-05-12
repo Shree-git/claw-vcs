@@ -1,6 +1,7 @@
 mod support;
 
 use claw_crypto::recipient::recipient_public_key;
+use claw_store::ClawStore;
 use support::CliTestEnv;
 
 fn to_hex(bytes: &[u8]) -> String {
@@ -313,6 +314,50 @@ fn agent_revoke_blocks_ship_until_rotation() {
         ],
     );
     assert!(shipped.stdout.contains("Capsule: "));
+}
+
+#[test]
+fn integrate_dry_run_skips_ref_and_worktree_mutation() {
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("integrate-dry-run");
+
+    env.write_file(&repo.join("app.txt"), "base\n");
+    env.run_ok(&repo, ["snapshot", "-m", "Base"]);
+    let main_before = ClawStore::open(&repo)
+        .expect("open repo")
+        .get_ref("heads/main")
+        .expect("read main ref")
+        .expect("main ref exists");
+
+    env.run_ok(&repo, ["branch", "create", "feature"]);
+    env.run_ok(&repo, ["checkout", "feature"]);
+    env.write_file(&repo.join("app.txt"), "feature\n");
+    env.run_ok(&repo, ["snapshot", "-m", "Feature"]);
+
+    env.run_ok(&repo, ["checkout", "main"]);
+    assert_eq!(env.read_file(&repo.join("app.txt")), "base\n");
+
+    let dry_run = env.run_ok(
+        &repo,
+        ["integrate", "--right", "heads/feature", "--dry-run"],
+    );
+    assert!(dry_run
+        .stdout
+        .contains("Dry run: integration can be applied cleanly."));
+    assert!(dry_run.stdout.contains("Ref update skipped."));
+    assert!(dry_run.stdout.contains("Worktree update skipped."));
+
+    let store = ClawStore::open(&repo).expect("open repo after dry-run");
+    let main_after = store
+        .get_ref("heads/main")
+        .expect("read main ref after dry-run")
+        .expect("main ref exists after dry-run");
+    assert_eq!(main_after, main_before);
+    assert_eq!(env.read_file(&repo.join("app.txt")), "base\n");
+    assert!(
+        !repo.join(".claw").join("MERGE_STATE.toml").exists(),
+        "integrate --dry-run must not write merge state"
+    );
 }
 
 #[test]

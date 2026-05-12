@@ -8,4 +8,6 @@ claw doctor --json
 claw doctor --strict
 ```
 
-Use `--strict` in automation when warnings should fail the command. JSON output includes check names, status, messages, and remediation hints.
+Use `--strict` in automation when errors should fail the command. Warnings are
+reported in the summary but do not make `--strict` fail. JSON output includes
+check names, status, messages, and remediation hints.

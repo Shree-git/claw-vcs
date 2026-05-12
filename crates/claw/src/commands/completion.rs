@@ -48,6 +48,29 @@ const COMMANDS: &[(&str, &str)] = &[
     ("version", "Show version information"),
 ];
 
+const COMMON_COMMAND_OPTIONS: &[&str] = &[
+    "--all-branches",
+    "--all-heads",
+    "--branch",
+    "--check",
+    "--dry-run",
+    "--git-dir",
+    "--git-ref",
+    "--id",
+    "--json",
+    "--name",
+    "--public-key",
+    "--reason",
+    "--ref-name",
+    "--remote",
+    "--right",
+    "--token-profile",
+    "--client-cert",
+    "--client-key",
+    "--tls-ca-cert",
+    "--tls-domain",
+];
+
 pub fn run(args: CompletionArgs) -> anyhow::Result<()> {
     let script = match args.shell {
         CompletionShell::Bash => bash_completion(),
@@ -69,17 +92,23 @@ fn command_words() -> String {
         .join(" ")
 }
 
+fn command_option_words() -> String {
+    COMMON_COMMAND_OPTIONS.join(" ")
+}
+
 fn bash_completion() -> String {
     let commands = command_words();
+    let command_opts = command_option_words();
     format!(
         r#"# bash completion for claw
 _claw()
 {{
-    local cur prev commands global_opts
+    local cur prev commands global_opts command_opts
     COMPREPLY=()
     cur="${{COMP_WORDS[COMP_CWORD]}}"
     prev="${{COMP_WORDS[COMP_CWORD-1]}}"
     commands="{commands}"
+    command_opts="{command_opts}"
     global_opts="-h --help -V --version --profile --compat-check --no-compat-check --error-format"
 
     case "$prev" in
@@ -99,6 +128,8 @@ _claw()
 
     if [[ $COMP_CWORD -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$commands $global_opts" -- "$cur") )
+    else
+        COMPREPLY=( $(compgen -W "$command_opts $global_opts" -- "$cur") )
     fi
 }}
 complete -F _claw claw
@@ -107,6 +138,11 @@ complete -F _claw claw
 }
 
 fn zsh_completion() -> String {
+    let command_options = COMMON_COMMAND_OPTIONS
+        .iter()
+        .map(|option| format!("    '{}[Command option]'", option))
+        .collect::<Vec<_>>()
+        .join(" \\\n");
     let command_entries = COMMANDS
         .iter()
         .map(|(command, description)| format!("    '{}:{}'", command, description))
@@ -128,6 +164,7 @@ _claw() {{
     '--compat-check[Validate client/server compatibility]' \
     '--no-compat-check[Skip client/server compatibility validation]' \
     '--error-format[Runtime error format]:format:(human json)' \
+{command_options} \
     '1:command:->commands' \
     '*::arg:->args'
 
@@ -163,6 +200,12 @@ fn fish_completion() -> String {
             command, description
         ));
     }
+    for option in COMMON_COMMAND_OPTIONS {
+        script.push_str(&format!(
+            "complete -c claw -l '{}' -d 'Command option'\n",
+            option.trim_start_matches("--")
+        ));
+    }
     script.push_str(
         "complete -c claw -n '__fish_seen_subcommand_from completions completion' -a 'bash zsh fish powershell elvish'\n",
     );
@@ -171,6 +214,7 @@ fn fish_completion() -> String {
 
 fn powershell_completion() -> String {
     let commands = command_words();
+    let command_opts = command_option_words();
     format!(
         r#"# PowerShell completion for claw
 Register-ArgumentCompleter -Native -CommandName claw -ScriptBlock {{
@@ -179,6 +223,7 @@ Register-ArgumentCompleter -Native -CommandName claw -ScriptBlock {{
     $profiles = "dev", "prod"
     $formats = "human", "json"
     $shells = "bash", "zsh", "fish", "powershell", "elvish"
+    $commandOptions = "{command_opts}".Split(" ")
     $words = $commandAst.CommandElements | ForEach-Object {{ $_.Extent.Text }}
 
     $candidates = if ($words[-1] -eq "--profile") {{
@@ -188,7 +233,7 @@ Register-ArgumentCompleter -Native -CommandName claw -ScriptBlock {{
     }} elseif ($words -contains "completions" -or $words -contains "completion") {{
         $shells
     }} else {{
-        $commands + "--help" + "--version" + "--profile" + "--compat-check" + "--no-compat-check" + "--error-format"
+        $commands + $commandOptions + "--help" + "--version" + "--profile" + "--compat-check" + "--no-compat-check" + "--error-format"
     }}
 
     $candidates |
@@ -205,14 +250,22 @@ fn elvish_completion() -> String {
         .map(|(command, _)| format!("'{command}'"))
         .collect::<Vec<_>>()
         .join(" ");
+    let command_options = COMMON_COMMAND_OPTIONS
+        .iter()
+        .map(|option| format!("'{option}'"))
+        .collect::<Vec<_>>()
+        .join(" ");
     format!(
         r#"# elvish completion for claw
 set edit:completion:arg-completer[claw] = {{|@words|
     var commands = [{commands}]
+    var command-options = [{command_options}]
     if (<= (count $words) 2) {{
         put $@commands --help --version --profile --compat-check --no-compat-check --error-format
     }} elif (or (has-value $words completions) (has-value $words completion)) {{
         put bash zsh fish powershell elvish
+    }} else {{
+        put $@command-options --help --version --profile --compat-check --no-compat-check --error-format
     }}
 }}
 "#
@@ -232,5 +285,8 @@ mod tests {
 
         let fish = fish_completion();
         assert!(fish.contains("claw -l profile"));
+        assert!(bash.contains("--ref-name"));
+        assert!(bash.contains("--id"));
+        assert!(fish.contains("claw -l 'json'"));
     }
 }

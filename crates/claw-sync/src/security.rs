@@ -517,7 +517,24 @@ pub struct JsonlAuditSink {
 impl JsonlAuditSink {
     /// Open or create an append-only JSONL audit file.
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
-        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        let path = path.as_ref();
+        let mut options = OpenOptions::new();
+        options.create(true).append(true);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let file = options.open(path)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+
         Ok(Self {
             file: Mutex::new(file),
         })
@@ -1136,6 +1153,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("audit.jsonl");
         let sink = JsonlAuditSink::open(&path).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
 
         sink.record(AuditEvent::allowed(
             42,

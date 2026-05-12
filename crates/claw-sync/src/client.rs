@@ -131,8 +131,8 @@ impl SyncClient {
         }
     }
 
-    async fn retry_wait(&self, attempt: u32) {
-        let delay = self.retry_policy.backoff_delay(attempt);
+    async fn retry_wait(policy: RetryPolicy, attempt: u32) {
+        let delay = policy.backoff_delay(attempt);
         sleep(delay).await;
     }
 
@@ -149,7 +149,7 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
@@ -175,7 +175,7 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
@@ -203,7 +203,69 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
+    }
+
+    async fn retry_update_refs(
+        &mut self,
+        updates: &[(String, Option<ObjectId>, ObjectId)],
+        force: bool,
+    ) -> Result<UpdateRefsResponse, SyncError> {
+        if self.retry_policy.idempotent_only {
+            return self.inner.update_refs(updates, force).await;
+        }
+
+        let attempts = self.retry_policy.attempts();
+        let mut last_err = None;
+
+        for attempt in 1..=attempts {
+            match self.inner.update_refs(updates, force).await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    let retryable = self.should_retry(&err);
+                    last_err = Some(err);
+                    if !retryable || attempt == attempts {
+                        break;
+                    }
+                    Self::retry_wait(self.retry_policy, attempt).await;
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
+    }
+
+    async fn retry_push_objects(
+        &mut self,
+        store: &ClawStore,
+        ids: &[ObjectId],
+    ) -> Result<PushObjectsResponse, SyncError> {
+        if self.retry_policy.idempotent_only {
+            return self.inner.push_objects(store, ids).await;
+        }
+
+        let attempts = self.retry_policy.attempts();
+        let mut last_err = None;
+
+        for attempt in 1..=attempts {
+            match self.inner.push_objects(store, ids).await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    let retryable = self.should_retry(&err);
+                    last_err = Some(err);
+                    if !retryable || attempt == attempts {
+                        break;
+                    }
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
@@ -238,7 +300,7 @@ impl SyncClient {
         updates: &[(String, Option<ObjectId>, ObjectId)],
         force: bool,
     ) -> Result<UpdateRefsResponse, SyncError> {
-        self.inner.update_refs(updates, force).await
+        self.retry_update_refs(updates, force).await
     }
 
     pub async fn push_objects(
@@ -246,7 +308,7 @@ impl SyncClient {
         store: &ClawStore,
         ids: &[ObjectId],
     ) -> Result<PushObjectsResponse, SyncError> {
-        self.inner.push_objects(store, ids).await
+        self.retry_push_objects(store, ids).await
     }
 }
 
@@ -595,9 +657,10 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_retry_non_idempotent_update_refs() {
-        let transport = Box::new(MockTransport::new(0));
+        let transport = MockTransport::new(0);
+        let calls = Arc::clone(&transport.update_refs_calls);
         let mut client = SyncClient::from_transport_for_test(
-            transport,
+            Box::new(transport),
             RetryPolicy {
                 idempotent_only: true,
                 max_attempts: 5,
@@ -615,5 +678,32 @@ mod tests {
             SyncError::Grpc(status) => assert_eq!(status.code(), Code::Unavailable),
             other => panic!("unexpected error: {other}"),
         }
+        assert_eq!(*calls.lock().await, 1);
+    }
+
+    #[tokio::test]
+    async fn retries_non_idempotent_update_refs_when_explicitly_enabled() {
+        let transport = MockTransport::new(0);
+        let calls = Arc::clone(&transport.update_refs_calls);
+        let mut client = SyncClient::from_transport_for_test(
+            Box::new(transport),
+            RetryPolicy {
+                idempotent_only: false,
+                max_attempts: 3,
+                base_backoff_ms: 1,
+                max_backoff_ms: 4,
+                jitter: false,
+            },
+        );
+
+        let err = client
+            .update_refs(&[], false)
+            .await
+            .expect_err("update_refs should fail after configured attempts");
+        match err {
+            SyncError::Grpc(status) => assert_eq!(status.code(), Code::Unavailable),
+            other => panic!("unexpected error: {other}"),
+        }
+        assert_eq!(*calls.lock().await, 3);
     }
 }

@@ -49,7 +49,7 @@ cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -run
 5. Run a release dry-run if supported by the local `cargo-dist` version:
 
 ```bash
-cargo dist plan
+dist plan
 ```
 
 6. Commit the version and changelog update.

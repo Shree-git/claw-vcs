@@ -6,7 +6,7 @@ These paths are defaults. Confirm your installation and environment before delet
 
 ```bash
 brew uninstall claw
-brew untap shree-git/homebrew-tap
+brew untap shree-git/tap
 ```
 
 ## Windows MSI

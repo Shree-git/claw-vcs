@@ -49,6 +49,8 @@ require gh
 require tar
 require shasum
 
+expected_version="${tag#v}"
+
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) archive="claw-aarch64-apple-darwin.tar.xz" ;;
   Darwin:x86_64) archive="claw-x86_64-apple-darwin.tar.xz" ;;
@@ -102,8 +104,13 @@ verify_sha256_entry "claw-installer.sh"
 smoke_repo() {
   local binary="$1"
   local repo_dir="$2"
+  local actual_version
 
-  "$binary" --version
+  actual_version="$("$binary" --version | awk '{ print $2 }')"
+  if [[ "$actual_version" != "$expected_version" ]]; then
+    echo "version mismatch for $binary: expected $expected_version, got ${actual_version:-<empty>}" >&2
+    exit 1
+  fi
   "$binary" doctor
   mkdir -p "$repo_dir"
   (
@@ -146,8 +153,8 @@ fi
 
 if [[ "$(uname -s)" == "Darwin" && "${CLAW_VERIFY_HOMEBREW:-0}" == "1" ]]; then
   require brew
-  brew tap shree-git/homebrew-tap
-  brew install shree-git/homebrew-tap/claw
+  brew tap shree-git/tap
+  brew install shree-git/tap/claw
   smoke_repo "$(command -v claw)" "$workdir/homebrew-repo"
 else
   echo "Skipping Homebrew check; set CLAW_VERIFY_HOMEBREW=1 on macOS to enable it."

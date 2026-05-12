@@ -143,6 +143,12 @@ conversation_resolution="$(gh_value "$protection" '.required_conversation_resolu
 allow_force_pushes="$(gh_value "$protection" '.allow_force_pushes.enabled // false')"
 allow_deletions="$(gh_value "$protection" '.allow_deletions.enabled // false')"
 signed_commits="$(gh_value "$protection/required_signatures" '.enabled')"
+required_contexts=()
+while IFS= read -r context; do
+  required_contexts+=("$context")
+done < <(
+  gh api "$protection" --jq '(.required_status_checks.contexts // [])[], (.required_status_checks.checks // [] | .[].context)' 2>/dev/null || true
+)
 
 if [[ "${required_reviews:-0}" -ge 1 ]]; then
   pass "branch protection requires at least one approving review"
@@ -158,6 +164,17 @@ if [[ "${required_context_count:-0}" -gt 0 ]]; then
 else
   fail "branch protection must include required status checks"
 fi
+for context in \
+  "Rust quality gate" \
+  "Dependency Review" \
+  "CodeQL analysis" \
+  "Semgrep analysis"; do
+  if contains_line "$context" "${required_contexts[@]}"; then
+    pass "required status check present: $context"
+  else
+    fail "required status check missing: $context"
+  fi
+done
 expect_value "conversation resolution requirement" "$conversation_resolution" "true"
 expect_value "signed commits requirement" "$signed_commits" "true"
 expect_value "force pushes allowed" "$allow_force_pushes" "false"

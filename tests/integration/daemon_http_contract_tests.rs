@@ -111,7 +111,6 @@ async fn live_metrics_and_error_paths_match_documented_http_behavior() {
     let metrics_body = String::from_utf8(metrics.body).expect("metrics body should be utf-8");
     assert!(metrics_body.contains("# HELP claw_daemon_http_request_latency_seconds"));
     assert!(metrics_body.contains("# HELP claw_daemon_auth_failures_total"));
-    assert!(metrics_body.contains("# HELP claw_daemon_retry_total"));
     assert!(metrics_body.contains("# HELP claw_daemon_policy_eval_duration_seconds"));
     assert!(metrics_body.contains("# HELP claw_daemon_queue_depth"));
     assert!(metrics_body.contains("# HELP claw_daemon_worker_pool_size"));
