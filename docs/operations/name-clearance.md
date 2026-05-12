@@ -157,6 +157,7 @@ as the source template. Copy supporting links, screenshots, or account records
 into the launch issue when they do not belong in the repository.
 
 Strict preflight treats the evidence as complete only when the final decision,
-domain, social-handle, crates.io, and social-preview upload fields are filled
-in with non-placeholder values, and `GitHub social preview uploaded` is `yes`.
-The offline verifier also requires `Date` and `Reviewer`.
+domain, social-handle, crates.io, trademark-search, similar-mark,
+social-preview upload, reviewer, and counsel-review fields are filled in with
+non-placeholder values, `Date` uses `YYYY-MM-DD`, `Counsel review required` is
+`yes` or `no`, and `GitHub social preview uploaded` is `yes`.

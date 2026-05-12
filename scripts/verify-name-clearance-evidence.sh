@@ -64,20 +64,49 @@ require_completed_field() {
   fi
 }
 
+require_yyyy_mm_dd() {
+  local label="$1"
+  local value
+
+  value="$(field_value "$label")"
+  if ! printf '%s' "$value" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+    fail "$label must use YYYY-MM-DD format"
+  fi
+}
+
+require_yes_no() {
+  local label="$1"
+  local value
+
+  value="$(printf '%s' "$(field_value "$label")" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    yes | no)
+      ;;
+    *)
+      fail "$label must be yes or no"
+      ;;
+  esac
+}
+
 if [[ ! -f "$evidence" ]]; then
   echo "missing name-clearance evidence file: $evidence" >&2
   exit 1
 fi
 
+require_yyyy_mm_dd "Date"
+
 for label in \
-  "Date" \
   "Reviewer" \
+  "Trademark databases checked" \
+  "Similar marks and disposition" \
   "Final decision" \
   "Domains checked/reserved" \
   "Social handles checked/reserved" \
   "crates.io packages reserved/published"; do
   require_completed_field "$label"
 done
+
+require_yes_no "Counsel review required"
 
 social_preview="$(printf '%s' "$(field_value "GitHub social preview uploaded")" | tr '[:upper:]' '[:lower:]')"
 if [[ "$social_preview" != "yes" ]]; then

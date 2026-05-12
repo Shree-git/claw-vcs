@@ -857,6 +857,41 @@ fn release_helper_scripts_have_safe_cli_guards() {
         &evidence_path,
         r#"# Name Clearance Evidence
 
+- Date: May 12 2026
+- Reviewer: Launch maintainer
+- Trademark databases checked: USPTO, WIPO, EUIPO
+- Similar marks and disposition: no conflicting developer-tool marks found
+- Domains checked/reserved: clawvcs.dev reserved by maintainer account
+- Social handles checked/reserved: clawvcs reserved on launch channels
+- crates.io packages reserved/published: claw-vcs package set owned by maintainer
+- GitHub social preview uploaded: yes
+- Counsel review required: maybe
+- Final decision: approved for Claw VCS public launch
+"#,
+    )
+    .expect("write malformed evidence fixture");
+    let malformed_evidence = Command::new("bash")
+        .arg("scripts/verify-name-clearance-evidence.sh")
+        .arg(&evidence_path)
+        .current_dir(&root)
+        .output()
+        .expect("run name-clearance evidence verifier on malformed fixture");
+    assert_eq!(
+        malformed_evidence.status.code(),
+        Some(1),
+        "name-clearance evidence verifier must reject malformed date and counsel values"
+    );
+    let stderr = String::from_utf8(malformed_evidence.stderr).expect("stderr is utf-8");
+    assert!(
+        stderr.contains("Date must use YYYY-MM-DD format")
+            && stderr.contains("Counsel review required must be yes or no"),
+        "malformed evidence rejection should name date and counsel fields"
+    );
+
+    fs::write(
+        &evidence_path,
+        r#"# Name Clearance Evidence
+
 - Date: 2026-05-12
 - Reviewer: Launch maintainer
 - Trademark databases checked: USPTO, WIPO, EUIPO
