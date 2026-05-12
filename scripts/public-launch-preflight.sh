@@ -8,6 +8,7 @@ Usage: scripts/public-launch-preflight.sh
 Checks public-launch state that depends on GitHub or package-registry access:
   - GitHub repository identity, visibility, topics, and security settings
   - main branch protection and signed-commit enforcement
+  - repository labels declared in .github/labels.yml
   - open Dependabot alert state
   - package-name availability/reservation signals
   - local social preview asset readiness and GitHub upload state
@@ -171,6 +172,12 @@ for topic in \
     fail "repository topic missing: $topic"
   fi
 done
+
+if label_output="$(CLAW_LABEL_REPO="$repo" scripts/verify-github-labels.sh 2>&1)"; then
+  pass "$label_output"
+else
+  fail "GitHub labels do not match .github/labels.yml: $label_output"
+fi
 
 secret_scanning="$(gh_value "repos/$repo" '.security_and_analysis.secret_scanning.status // "unavailable"')"
 push_protection="$(gh_value "repos/$repo" '.security_and_analysis.secret_scanning_push_protection.status // "unavailable"')"

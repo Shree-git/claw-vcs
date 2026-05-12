@@ -48,6 +48,10 @@ Status as of 2026-05-12:
   publication, trademark, domain, and social-handle review require maintainer
   action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
+- Live GitHub labels were verified on 2026-05-12 with
+  `scripts/verify-github-labels.sh`; every manifest label was present with the
+  expected color and description. The public-launch preflight now runs the same
+  verifier so label drift is launch-gated.
 - PR #4 review conversations have been replied to and resolved. The PR remains
   blocked by the required independent approval.
 - Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, optional GitHub Pages publication, launch-hardening release publication, and clean-environment verification for each release channel after the hardened changes are published.

@@ -152,7 +152,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 98 | Implemented | `docs/maintainers/guide.md` and related maintainer docs. |
 | 99 | Implemented | `docs/maintainers/governance.md`. |
 | 100 | Not applicable | Funding file is optional; no funding channel is configured unless maintainers choose one. |
-| 101 | Implemented | `.github/labels.yml`; live GitHub labels verified with `gh label list`. |
+| 101 | Implemented | `.github/labels.yml`; live GitHub labels verified with `scripts/verify-github-labels.sh`, and `scripts/public-launch-preflight.sh` now gates on manifest/live label drift. |
 | 102 | Implemented | `docs/reference/stability.md` and `docs/reference/public-interface-manifest.md` state the pre-1.0 experimental guarantee hierarchy. |
 | 103 | Implemented | `docs/reference/deprecation-policy.md` and `docs/maintainers/deprecations.md`. |
 | 104 | Implemented | `docs/reference/telemetry.md` and `docs/maintainers/telemetry.md`. |

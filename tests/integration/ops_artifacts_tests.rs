@@ -302,6 +302,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
         "scripts/public-launch-preflight.sh",
+        "scripts/verify-github-labels.sh",
         "scripts/publish-cratesio.sh",
         "scripts/verify-release-channel.sh",
         "examples/basic-demo/scripts/demo.sh",
@@ -343,6 +344,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "CLAW_PREFLIGHT_STRICT",
         "CLAW_PREFLIGHT_NAME_EVIDENCE",
         "CLAW_PREFLIGHT_CRATESIO_OWNER",
+        "scripts/verify-github-labels.sh",
+        "GitHub labels do not match .github/labels.yml",
         "crates.io owner verified for $crate_name",
         "social preview dimensions are 1280x640",
         "name-clearance-evidence.md",
@@ -759,6 +762,19 @@ fn release_helper_scripts_have_safe_cli_guards() {
     );
     let preflight_help = String::from_utf8(preflight_help.stdout).expect("help is utf-8");
     assert!(preflight_help.contains("CLAW_PREFLIGHT_STRICT"));
+
+    let labels_help = Command::new("bash")
+        .arg("scripts/verify-github-labels.sh")
+        .arg("--help")
+        .current_dir(&root)
+        .output()
+        .expect("run GitHub label verifier help");
+    assert!(
+        labels_help.status.success(),
+        "GitHub label verifier --help should exit successfully"
+    );
+    let labels_help = String::from_utf8(labels_help.stdout).expect("help is utf-8");
+    assert!(labels_help.contains("CLAW_LABEL_REPO"));
 
     let verify_without_tag = Command::new("bash")
         .arg("scripts/verify-release-channel.sh")
