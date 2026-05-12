@@ -330,6 +330,27 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "top-level demo wrapper must delegate to the maintained basic demo"
     );
 
+    let label_manifest = read_workspace_file(".github/labels.yml");
+    for label in [
+        "good first issue",
+        "help wanted",
+        "docs",
+        "security",
+        "protocol",
+        "git-interop",
+        "needs-design",
+        "known-limitation",
+        "bug",
+        "enhancement",
+        "policy",
+        "capsules",
+    ] {
+        assert!(
+            label_manifest.contains(&format!("- name: {label}")),
+            "label manifest must preserve backlog label: {label}"
+        );
+    }
+
     let launch_preflight = read_workspace_file("scripts/public-launch-preflight.sh");
     for phrase in [
         "secret_scanning",
