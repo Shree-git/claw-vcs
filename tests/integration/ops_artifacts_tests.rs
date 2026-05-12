@@ -316,6 +316,10 @@ fn public_launch_assets_exist_and_are_upload_ready() {
             "public-launch preflight must include phrase: {phrase}"
         );
     }
+    assert!(
+        !launch_preflight.contains("mapfile"),
+        "public-launch preflight must remain compatible with macOS system Bash"
+    );
 
     let release_verifier = read_workspace_file("scripts/verify-release-channel.sh");
     for phrase in [

@@ -24,6 +24,12 @@ Status as of 2026-05-11:
   unrelated crates.io crate, the planned WinGet manifest path
   `ShreeGit.ClawVCS` was absent from `microsoft/winget-pkgs`, and
   `Formula/claw.rb` exists in `Shree-git/homebrew-tap`.
+- Maintainer preflight on 2026-05-12 passed repository identity, visibility,
+  topics, security settings, branch protection, signed commits, Homebrew tap
+  presence, and social preview asset checks. It still blocks launch on
+  unreserved `claw-vcs` crates.io identity and warns that WinGet, trademark,
+  domain/social-handle review, and GitHub social preview upload require
+  maintainer action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
 - Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
 

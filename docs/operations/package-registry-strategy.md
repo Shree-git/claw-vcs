@@ -18,6 +18,10 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 
 Before broad announcement, verify every live channel from a clean machine or container and record expected command output in release notes.
 
+Latest preflight result on 2026-05-12: repository, branch-protection,
+security-setting, Homebrew tap, and social-preview asset checks passed;
+`claw-vcs` was still unreserved on crates.io, and WinGet remained planned.
+
 Maintainer preflight:
 
 ```bash

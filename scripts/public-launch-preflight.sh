@@ -98,7 +98,10 @@ is_private="$(gh repo view "$repo" --json isPrivate --jq '.isPrivate')"
 expect_value "repository name" "$name_with_owner" "$repo"
 expect_value "repository private flag" "$is_private" "false"
 
-mapfile -t topics < <(gh repo view "$repo" --json repositoryTopics --jq '.repositoryTopics[].name')
+topics=()
+while IFS= read -r topic; do
+  topics+=("$topic")
+done < <(gh repo view "$repo" --json repositoryTopics --jq '.repositoryTopics[].name')
 for topic in \
   version-control \
   vcs \
