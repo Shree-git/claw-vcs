@@ -126,7 +126,13 @@ If evidence is stored elsewhere, run strict preflight with:
 CLAW_PREFLIGHT_STRICT=1 \
   CLAW_PREFLIGHT_NAME_EVIDENCE=/path/to/evidence.md \
   CLAW_PREFLIGHT_CRATESIO_OWNER=<owner> \
-  scripts/public-launch-preflight.sh
+scripts/public-launch-preflight.sh
+```
+
+You can validate the evidence file without hitting GitHub or crates.io:
+
+```bash
+scripts/verify-name-clearance-evidence.sh docs/operations/name-clearance-evidence.md
 ```
 
 ## GitHub Social Preview
@@ -153,3 +159,4 @@ into the launch issue when they do not belong in the repository.
 Strict preflight treats the evidence as complete only when the final decision,
 domain, social-handle, crates.io, and social-preview upload fields are filled
 in with non-placeholder values, and `GitHub social preview uploaded` is `yes`.
+The offline verifier also requires `Date` and `Reviewer`.

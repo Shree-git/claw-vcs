@@ -303,6 +303,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "scripts/demo.sh",
         "scripts/public-launch-preflight.sh",
         "scripts/verify-github-labels.sh",
+        "scripts/verify-name-clearance-evidence.sh",
         "scripts/publish-cratesio.sh",
         "scripts/verify-release-channel.sh",
         "examples/basic-demo/scripts/demo.sh",
@@ -366,12 +367,12 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "CLAW_PREFLIGHT_NAME_EVIDENCE",
         "CLAW_PREFLIGHT_CRATESIO_OWNER",
         "scripts/verify-github-labels.sh",
+        "scripts/verify-name-clearance-evidence.sh",
         "GitHub labels do not match .github/labels.yml",
         "crates.io owner verified for $crate_name",
         "social preview dimensions are 1280x640",
         "name-clearance-evidence.md",
-        "evidence_field_complete",
-        "pending | unknown",
+        "completed name/domain/social/package evidence",
     ] {
         assert!(
             launch_preflight.contains(phrase),
@@ -800,6 +801,86 @@ fn release_helper_scripts_have_safe_cli_guards() {
     );
     let labels_help = String::from_utf8(labels_help.stdout).expect("help is utf-8");
     assert!(labels_help.contains("CLAW_LABEL_REPO"));
+
+    let evidence_help = Command::new("bash")
+        .arg("scripts/verify-name-clearance-evidence.sh")
+        .arg("--help")
+        .current_dir(&root)
+        .output()
+        .expect("run name-clearance evidence verifier help");
+    assert!(
+        evidence_help.status.success(),
+        "name-clearance evidence verifier --help should exit successfully"
+    );
+    let evidence_help = String::from_utf8(evidence_help.stdout).expect("help is utf-8");
+    assert!(evidence_help.contains("name-clearance-evidence.md"));
+
+    let evidence_path = std::env::temp_dir().join(format!(
+        "claw-name-clearance-evidence-{}.md",
+        std::process::id()
+    ));
+    fs::write(
+        &evidence_path,
+        r#"# Name Clearance Evidence
+
+- Date: 2026-05-12
+- Reviewer: Launch maintainer
+- Trademark databases checked: USPTO, WIPO, EUIPO
+- Similar marks and disposition: none relevant
+- Domains checked/reserved: pending owner review
+- Social handles checked/reserved: clawvcs reserved
+- crates.io packages reserved/published: claw-vcs package set reserved
+- GitHub social preview uploaded: yes
+- Counsel review required: no
+- Final decision: approve launch identity
+"#,
+    )
+    .expect("write placeholder evidence fixture");
+    let placeholder_evidence = Command::new("bash")
+        .arg("scripts/verify-name-clearance-evidence.sh")
+        .arg(&evidence_path)
+        .current_dir(&root)
+        .output()
+        .expect("run name-clearance evidence verifier on placeholder fixture");
+    assert_eq!(
+        placeholder_evidence.status.code(),
+        Some(1),
+        "name-clearance evidence verifier must reject placeholder values"
+    );
+    let stderr = String::from_utf8(placeholder_evidence.stderr).expect("stderr is utf-8");
+    assert!(
+        stderr.contains("Domains checked/reserved"),
+        "placeholder evidence rejection should name the bad field"
+    );
+
+    fs::write(
+        &evidence_path,
+        r#"# Name Clearance Evidence
+
+- Date: 2026-05-12
+- Reviewer: Launch maintainer
+- Trademark databases checked: USPTO, WIPO, EUIPO
+- Similar marks and disposition: no conflicting developer-tool marks found
+- Domains checked/reserved: clawvcs.dev reserved by maintainer account
+- Social handles checked/reserved: clawvcs reserved on launch channels
+- crates.io packages reserved/published: claw-vcs package set owned by maintainer
+- GitHub social preview uploaded: yes
+- Counsel review required: no
+- Final decision: approved for Claw VCS public launch
+"#,
+    )
+    .expect("write completed evidence fixture");
+    let completed_evidence = Command::new("bash")
+        .arg("scripts/verify-name-clearance-evidence.sh")
+        .arg(&evidence_path)
+        .current_dir(&root)
+        .output()
+        .expect("run name-clearance evidence verifier on completed fixture");
+    assert!(
+        completed_evidence.status.success(),
+        "name-clearance evidence verifier should accept completed fixture"
+    );
+    let _ = fs::remove_file(&evidence_path);
 
     let verify_without_tag = Command::new("bash")
         .arg("scripts/verify-release-channel.sh")

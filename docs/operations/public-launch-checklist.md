@@ -91,7 +91,8 @@ access; they cannot be completed by editing this repository alone.
    [name-clearance-evidence.template.md](name-clearance-evidence.template.md)
    to record evidence in `docs/operations/name-clearance-evidence.md`, or set
    `CLAW_PREFLIGHT_NAME_EVIDENCE` to the evidence file used by strict
-   preflight.
+   preflight. Run `scripts/verify-name-clearance-evidence.sh` before strict
+   preflight to catch blank or placeholder fields offline.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
 5. If the launch includes a public website, enable GitHub Pages or another docs
    host for `docs/index.html`. After this PR lands on `main`, the manual

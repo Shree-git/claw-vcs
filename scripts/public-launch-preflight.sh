@@ -9,6 +9,7 @@ Checks public-launch state that depends on GitHub or package-registry access:
   - GitHub repository identity, visibility, topics, and security settings
   - main branch protection and signed-commit enforcement
   - repository labels declared in .github/labels.yml
+  - completed name-clearance evidence in strict mode
   - open Dependabot alert state
   - package-name availability/reservation signals
   - local social preview asset readiness and GitHub upload state
@@ -349,57 +350,11 @@ else
   warn "GitHub Pages is not configured; leave optional unless the launch includes a public website"
 fi
 
-evidence_value() {
-  local label="$1"
-  awk -v prefix="- ${label}:" '
-    index($0, prefix) == 1 {
-      value = substr($0, length(prefix) + 1)
-      sub(/^[[:space:]]+/, "", value)
-      sub(/[[:space:]]+$/, "", value)
-      print value
-      exit
-    }
-  ' "$name_evidence"
-}
-
-evidence_field_complete() {
-  local label="$1"
-  local value
-  local normalized
-
-  value="$(evidence_value "$label")"
-  normalized="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-  case "$normalized" in
-    "" | tbd | todo | pending | unknown | none | n/a | no | "not done" | "not complete" | incomplete)
-      return 1
-      ;;
-  esac
-  return 0
-}
-
 if [[ "$strict" == "1" ]]; then
-  evidence_complete=1
-  if [[ ! -f "$name_evidence" ]]; then
-    evidence_complete=0
+  if evidence_output="$(scripts/verify-name-clearance-evidence.sh "$name_evidence" 2>&1)"; then
+    pass "$evidence_output"
   else
-    for evidence_label in \
-      "Final decision" \
-      "Domains checked/reserved" \
-      "Social handles checked/reserved" \
-      "crates.io packages reserved/published"; do
-      if ! evidence_field_complete "$evidence_label"; then
-        evidence_complete=0
-      fi
-    done
-    if [[ "$(evidence_value "GitHub social preview uploaded")" != "yes" ]]; then
-      evidence_complete=0
-    fi
-  fi
-
-  if [[ "$evidence_complete" == "1" ]]; then
-    pass "name-clearance evidence is recorded in $name_evidence"
-  else
-    fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence; start from docs/operations/name-clearance-evidence.template.md"
+    fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence; start from docs/operations/name-clearance-evidence.template.md. $evidence_output"
   fi
 else
   warn "trademark clearance, domain checks, and social-handle checks require manual maintainer verification"

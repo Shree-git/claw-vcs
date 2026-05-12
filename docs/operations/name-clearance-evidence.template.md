@@ -22,3 +22,8 @@ complete and the fields below contain real evidence.
 - Strict preflight requires completed domain, social-handle, crates.io, and
   final decision fields, plus `GitHub social preview uploaded: yes`. Placeholder
   values such as `pending`, `TBD`, `unknown`, or `not complete` do not pass.
+- Validate the completed file before launch:
+
+  ```bash
+  scripts/verify-name-clearance-evidence.sh docs/operations/name-clearance-evidence.md
+  ```
