@@ -47,16 +47,16 @@ import os
 import sys
 
 
-def parse_scalar(raw: str) -> str:
+def parse_scalar(raw):
     value = raw.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         value = value[1:-1]
     return value
 
 
-def read_manifest(path: str) -> list[dict[str, str]]:
-    labels: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
+def read_manifest(path):
+    labels = []
+    current = None
 
     with open(path, encoding="utf-8") as handle:
         for raw_line in handle:
@@ -107,7 +107,7 @@ live = {
     for label in json.loads(os.environ["CLAW_LIVE_LABELS_JSON"])
 }
 
-errors: list[str] = []
+errors = []
 for label in expected:
     name = label["name"]
     actual = live.get(name)
