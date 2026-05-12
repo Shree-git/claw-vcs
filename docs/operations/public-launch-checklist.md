@@ -5,6 +5,8 @@ Some items require repository owner access or external account access and cannot
 Backlog item-by-item coverage is tracked in [backlog-coverage.md](backlog-coverage.md).
 Owner-only launch blockers are tracked in
 [GitHub issue #5](https://github.com/Shree-git/claw-vcs/issues/5).
+The machine-readable blocker manifest is
+[external-blockers.json](external-blockers.json).
 
 Status as of 2026-05-12:
 
@@ -55,7 +57,8 @@ Status as of 2026-05-12:
 - PR #4 review conversations have been replied to and resolved. The PR remains
   blocked by the required independent approval.
 - Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, optional GitHub Pages publication, launch-hardening release publication, and clean-environment verification for each release channel after the hardened changes are published.
-  These are tracked in [issue #5](https://github.com/Shree-git/claw-vcs/issues/5).
+  These are tracked in [issue #5](https://github.com/Shree-git/claw-vcs/issues/5)
+  and [external-blockers.json](external-blockers.json).
 
 Before announcement, run the maintainer preflight from an authenticated local checkout:
 

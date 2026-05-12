@@ -165,6 +165,9 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 
 ## Current External Blockers
 
+The structured blocker list lives in
+[external-blockers.json](external-blockers.json).
+
 - PR #4 requires review approval before merge.
 - Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, strict launch evidence, and optional GitHub Pages publication require maintainer/account access.
 - The next hardened public release must be cut before public artifact attestations, SBOMs, signatures, installers, Homebrew, MSI, and clean-environment channel checks can be verified.

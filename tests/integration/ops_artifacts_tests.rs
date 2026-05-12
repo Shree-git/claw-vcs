@@ -311,6 +311,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/assets/social-preview.svg",
         "docs/operations/public-launch-checklist.md",
         "docs/operations/backlog-coverage.md",
+        "docs/operations/external-blockers.json",
         "docs/operations/package-registry-strategy.md",
         "docs/operations/name-clearance.md",
         "docs/operations/name-clearance-evidence.template.md",
@@ -568,6 +569,74 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     );
 
     let backlog_coverage = read_workspace_file("docs/operations/backlog-coverage.md");
+    let external_blockers_raw = read_workspace_file("docs/operations/external-blockers.json");
+    let external_blockers: Value = serde_json::from_str(&external_blockers_raw)
+        .expect("external blockers manifest must parse as JSON");
+    assert_eq!(
+        external_blockers
+            .get("schemaVersion")
+            .and_then(Value::as_i64),
+        Some(1),
+        "external blockers manifest must declare schema version 1"
+    );
+    assert_eq!(
+        external_blockers.get("repository").and_then(Value::as_str),
+        Some("Shree-git/claw-vcs"),
+        "external blockers manifest must name the public repository"
+    );
+    let blockers = external_blockers
+        .get("blockers")
+        .and_then(Value::as_array)
+        .expect("external blockers manifest must include blockers array");
+    let blocker_ids: HashSet<&str> = blockers
+        .iter()
+        .map(|blocker| {
+            blocker
+                .get("id")
+                .and_then(Value::as_str)
+                .expect("each external blocker must have an id")
+        })
+        .collect();
+    let expected_blocker_ids: HashSet<&str> = [
+        "pr-review-merge",
+        "dependabot-default-branch-alerts",
+        "cratesio-package-reservation",
+        "name-clearance-evidence",
+        "github-social-preview-upload",
+        "release-channel-verification",
+        "github-pages-publication",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        blocker_ids, expected_blocker_ids,
+        "external blockers manifest must preserve the owner-side launch blocker set"
+    );
+    for blocker in blockers {
+        let id = blocker
+            .get("id")
+            .and_then(Value::as_str)
+            .expect("blocker id must be a string");
+        for key in [
+            "category",
+            "ownerAction",
+            "requiredBefore",
+            "description",
+            "verification",
+        ] {
+            assert!(
+                blocker.get(key).is_some(),
+                "external blocker {id} must include key: {key}"
+            );
+        }
+        assert!(
+            blocker
+                .get("verification")
+                .and_then(Value::as_array)
+                .is_some_and(|commands| !commands.is_empty()),
+            "external blocker {id} must include at least one verification command"
+        );
+    }
     let allowed_coverage_statuses: HashSet<&str> = [
         "Implemented",
         "Verified",
@@ -648,12 +717,17 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "Package/name reservation",
         "hardened public release",
         "Dependabot findings",
+        "external-blockers.json",
     ] {
         assert!(
             backlog_coverage.contains(blocker),
             "backlog coverage must preserve external blocker: {blocker}"
         );
     }
+    assert!(
+        launch_checklist.contains("external-blockers.json"),
+        "launch checklist must link to the structured external blocker manifest"
+    );
 
     let name_clearance_template =
         read_workspace_file("docs/operations/name-clearance-evidence.template.md");
