@@ -160,4 +160,6 @@ Strict preflight treats the evidence as complete only when the final decision,
 domain, social-handle, crates.io, trademark-search, similar-mark,
 social-preview upload, reviewer, and counsel-review fields are filled in with
 non-placeholder values, `Date` uses `YYYY-MM-DD`, `Counsel review required` is
-`yes` or `no`, and `GitHub social preview uploaded` is `yes`.
+`yes` or `no`, `GitHub social preview uploaded` is `yes`, trademark evidence
+mentions USPTO/WIPO/EUIPO, and package evidence mentions every `claw-vcs`
+crates.io package name.

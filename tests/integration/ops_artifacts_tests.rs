@@ -894,11 +894,46 @@ fn release_helper_scripts_have_safe_cli_guards() {
 
 - Date: 2026-05-12
 - Reviewer: Launch maintainer
-- Trademark databases checked: USPTO, WIPO, EUIPO
+- Trademark databases checked: USPTO, EUIPO
 - Similar marks and disposition: no conflicting developer-tool marks found
 - Domains checked/reserved: clawvcs.dev reserved by maintainer account
 - Social handles checked/reserved: clawvcs reserved on launch channels
 - crates.io packages reserved/published: claw-vcs package set owned by maintainer
+- GitHub social preview uploaded: yes
+- Counsel review required: no
+- Final decision: approved for Claw VCS public launch
+"#,
+    )
+    .expect("write incomplete concrete evidence fixture");
+    let incomplete_concrete_evidence = Command::new("bash")
+        .arg("scripts/verify-name-clearance-evidence.sh")
+        .arg(&evidence_path)
+        .current_dir(&root)
+        .output()
+        .expect("run name-clearance evidence verifier on incomplete concrete fixture");
+    assert_eq!(
+        incomplete_concrete_evidence.status.code(),
+        Some(1),
+        "name-clearance evidence verifier must require named trademark databases and packages"
+    );
+    let stderr = String::from_utf8(incomplete_concrete_evidence.stderr).expect("stderr is utf-8");
+    assert!(
+        stderr.contains("Trademark databases checked must mention WIPO")
+            && stderr.contains("crates.io packages reserved/published must mention claw-vcs-core"),
+        "incomplete concrete evidence rejection should name missing database and package"
+    );
+
+    fs::write(
+        &evidence_path,
+        r#"# Name Clearance Evidence
+
+- Date: 2026-05-12
+- Reviewer: Launch maintainer
+- Trademark databases checked: USPTO, WIPO, EUIPO
+- Similar marks and disposition: no conflicting developer-tool marks found
+- Domains checked/reserved: clawvcs.dev reserved by maintainer account
+- Social handles checked/reserved: clawvcs reserved on launch channels
+- crates.io packages reserved/published: claw-vcs, claw-vcs-core, claw-vcs-store, claw-vcs-patch, claw-vcs-merge, claw-vcs-crypto, claw-vcs-policy, claw-vcs-sync, claw-vcs-git owned by maintainer
 - GitHub social preview uploaded: yes
 - Counsel review required: no
 - Final decision: approved for Claw VCS public launch

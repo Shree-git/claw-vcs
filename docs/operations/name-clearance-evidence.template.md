@@ -22,8 +22,10 @@ complete and the fields below contain real evidence.
 - Strict preflight requires completed domain, social-handle, crates.io,
   trademark-search, similar-mark, reviewer, and final decision fields, plus
   `Date` in `YYYY-MM-DD` format, `Counsel review required: yes/no`, and
-  `GitHub social preview uploaded: yes`. Placeholder values such as `pending`,
-  `TBD`, `unknown`, or `not complete` do not pass.
+  `GitHub social preview uploaded: yes`. Trademark evidence must mention
+  USPTO, WIPO, and EUIPO. Package evidence must mention every `claw-vcs`
+  crates.io package name. Placeholder values such as `pending`, `TBD`,
+  `unknown`, or `not complete` do not pass.
 - Validate the completed file before launch:
 
   ```bash

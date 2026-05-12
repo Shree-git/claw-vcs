@@ -88,6 +88,25 @@ require_yes_no() {
   esac
 }
 
+require_field_mentions() {
+  local label="$1"
+  local needle="$2"
+  local value
+  local normalized_value
+  local normalized_needle
+
+  value="$(field_value "$label")"
+  normalized_value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  normalized_needle="$(printf '%s' "$needle" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized_value" in
+    *"$normalized_needle"*)
+      ;;
+    *)
+      fail "$label must mention $needle"
+      ;;
+  esac
+}
+
 if [[ ! -f "$evidence" ]]; then
   echo "missing name-clearance evidence file: $evidence" >&2
   exit 1
@@ -107,6 +126,23 @@ for label in \
 done
 
 require_yes_no "Counsel review required"
+
+for database in USPTO WIPO EUIPO; do
+  require_field_mentions "Trademark databases checked" "$database"
+done
+
+for crate_name in \
+  claw-vcs \
+  claw-vcs-core \
+  claw-vcs-store \
+  claw-vcs-patch \
+  claw-vcs-merge \
+  claw-vcs-crypto \
+  claw-vcs-policy \
+  claw-vcs-sync \
+  claw-vcs-git; do
+  require_field_mentions "crates.io packages reserved/published" "$crate_name"
+done
 
 social_preview="$(printf '%s' "$(field_value "GitHub social preview uploaded")" | tr '[:upper:]' '[:lower:]')"
 if [[ "$social_preview" != "yes" ]]; then
