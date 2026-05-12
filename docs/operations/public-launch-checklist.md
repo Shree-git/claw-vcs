@@ -4,7 +4,7 @@ Some items require repository owner access or external account access and cannot
 
 Backlog item-by-item coverage is tracked in [backlog-coverage.md](backlog-coverage.md).
 
-Status as of 2026-05-11:
+Status as of 2026-05-12:
 
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
@@ -12,15 +12,19 @@ Status as of 2026-05-11:
   `gitleaks 8.30.0` scanned 77 commits with no leaks found, and
   `trufflehog 3.95.2` scanned 2,130 chunks with 0 verified and 0
   unverified secrets.
-- Code scanning uploads are accepted for PR #4 on 2026-05-11:
+- Code scanning uploads are accepted for PR #4 on 2026-05-12:
   CodeQL, Semgrep OSS, and Scorecard analyses exist for `refs/pull/4/merge`.
+- PR #4 head `1a9e71e` has passing CI, release planning, security, SAST,
+  dependency-review, compatibility, contract, and deploy-validation checks.
+  GitHub still reports `REVIEW_REQUIRED`, so merge is blocked only by
+  branch-protection review.
 - `main` branch protection is enabled with required reviews, code-owner review, stale approval dismissal, required checks, conversation resolution, signed commits, no force pushes, and no deletions.
-- `main` branch protection was verified with the GitHub API on 2026-05-11.
-- Repository topics were verified with `gh repo view` on 2026-05-11:
+- `main` branch protection was verified with the GitHub API on 2026-05-12.
+- Repository topics were verified with `gh repo view` on 2026-05-12:
   `ai-agents`, `cli`, `developer-tools`, `provenance`, `rust`,
   `version-control`, `git`, `sigstore`, `slsa`, `supply-chain-security`, and
   `vcs`.
-- Package-name checks on 2026-05-11:
+- Package-name checks on 2026-05-12:
   `claw-vcs` was not published on crates.io, `claw` was occupied by an
   unrelated crates.io crate, the planned WinGet manifest path
   `ShreeGit.ClawVCS` was absent from `microsoft/winget-pkgs`, and
@@ -39,6 +43,31 @@ Before announcement, run the maintainer preflight from an authenticated local ch
 ```bash
 scripts/public-launch-preflight.sh
 ```
+
+## Owner-Only Launch Handoff
+
+These steps require repository owner, package registry, release, or account
+access; they cannot be completed by editing this repository alone.
+
+1. Review and merge PR #4 after the required approval is recorded.
+2. Reserve or publish the `claw-vcs` identity on crates.io before documenting a
+   crates.io install path.
+3. Complete trademark, domain, and social-handle checks before treating the name
+   and permanent visual identity as launch-ready.
+4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
+5. If the launch includes a public website, enable GitHub Pages or another docs
+   host for `docs/index.html` and verify the rendered page.
+6. Cut the launch-hardening release tag, then verify the published release
+   artifacts:
+
+```bash
+scripts/public-launch-preflight.sh
+scripts/verify-release-channel.sh <launch-tag>
+gh attestation verify <artifact-path> --repo Shree-git/claw-vcs
+```
+
+7. Record clean-environment verification results for every live install channel
+   in [install-verification-log.md](install-verification-log.md).
 
 ## Repository Identity
 
