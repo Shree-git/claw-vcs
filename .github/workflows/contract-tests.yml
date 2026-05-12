@@ -49,6 +49,7 @@ jobs:
         run: |
           cargo test -p claw-integration-tests --test spec_tests --locked
           cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
+          cargo test -p claw-integration-tests --test vector_manifest_tests --locked
           cargo test -p claw-integration-tests --test backlog_gap_tests --locked -- --test-threads=1
           cargo test -p claw-integration-tests --test daemon_http_contract_tests --locked
           cargo test -p claw-integration-tests --test cross_version_runtime_tests --locked
