@@ -104,6 +104,11 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
             || stale_denied.combined_output().contains("Unauthenticated")
     );
 
+    let auth_metrics = daemon.get("/v1/metrics");
+    assert_eq!(auth_metrics.status_code, 200);
+    assert!(auth_metrics.body.contains("reason=\"missing\""));
+    assert!(auth_metrics.body.contains("reason=\"invalid\""));
+
     let clone_a = env.repo_path("clone-a");
     let clone_b = env.repo_path("clone-b");
 
@@ -164,6 +169,18 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
     );
 
     let audit_events = read_audit_events(&audit_log);
+    assert!(
+        audit_events.iter().any(|event| event["action"] == "hello"
+            && event["outcome"] == "denied"
+            && event["reason"] == "missing bearer token"),
+        "expected missing-token denied audit event, got {audit_events:#?}"
+    );
+    assert!(
+        audit_events.iter().any(|event| event["action"] == "hello"
+            && event["outcome"] == "denied"
+            && event["reason"] == "invalid bearer token"),
+        "expected invalid-token denied audit event, got {audit_events:#?}"
+    );
     assert!(
         audit_events.iter().any(|event| event["action"] == "hello"
             && event["outcome"] == "allowed"
