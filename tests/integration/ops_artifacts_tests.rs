@@ -310,6 +310,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     let launch_preflight = read_workspace_file("scripts/public-launch-preflight.sh");
     for phrase in [
         "secret_scanning",
+        "dependabot/alerts?state=open",
         "required_signatures",
         "https://crates.io/api/v1/crates/$crate_name",
         "claw-vcs-core",

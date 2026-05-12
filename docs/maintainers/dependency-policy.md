@@ -6,6 +6,8 @@ This repository uses layered dependency checks:
 - `cargo deny check` for advisories, licenses, duplicate versions, and allowed sources.
 - GitHub Dependency Review for pull requests.
 - Dependabot for security and ecosystem updates.
+- `scripts/public-launch-preflight.sh` fails broad launch readiness when
+  Dependabot reports open alerts on the default branch.
 - SBOM generation for releases.
 
 ## cargo-vet

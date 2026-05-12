@@ -10,6 +10,7 @@ Status as of 2026-05-12:
 
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
+  Open Dependabot alerts are launch-gated by `scripts/public-launch-preflight.sh`.
 - Full-history local secret scans passed on 2026-05-12 for the
   `codex/public-launch-hardening` branch history:
   `gitleaks detect --source . --no-git=false --redact --no-banner` reported no
@@ -40,10 +41,12 @@ Status as of 2026-05-12:
   dependencies cannot resolve until the first real publish sequence begins.
 - Maintainer preflight on 2026-05-12 passed repository identity, visibility,
   topics, security settings, branch protection, signed commits, Homebrew tap
-  presence, and social preview asset checks. It still blocks launch on
-  unreserved crates.io identities for the `claw-vcs` package set and warns
-  that WinGet, GitHub social preview upload, optional GitHub Pages publication,
-  trademark, domain, and social-handle review require maintainer action.
+  presence, and social preview asset checks. It still blocks launch on open
+  Dependabot alerts reported against `main` until this PR's patched lockfile
+  lands, and on unreserved crates.io identities for the `claw-vcs` package set.
+  It warns that WinGet, GitHub social preview upload, optional GitHub Pages
+  publication, trademark, domain, and social-handle review require maintainer
+  action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
 - PR #4 review conversations have been replied to and resolved. The PR remains
   blocked by the required independent approval.
@@ -57,9 +60,11 @@ scripts/public-launch-preflight.sh
 CLAW_PREFLIGHT_STRICT=1 scripts/public-launch-preflight.sh
 ```
 
-The normal preflight reports owner-only items that are still pending. Strict
-mode is the broad-announcement gate: it fails until the GitHub social preview is
-uploaded and completed name/domain/social/package evidence is recorded.
+The normal preflight reports launch blockers that are still pending. Strict
+mode is the broad-announcement gate: it fails until there are no open
+Dependabot alerts, the `claw-vcs` crates.io package set is reserved or
+published, the GitHub social preview is uploaded, and completed
+name/domain/social/package evidence is recorded.
 
 ## Owner-Only Launch Handoff
 
@@ -67,6 +72,8 @@ These steps require repository owner, package registry, release, or account
 access; they cannot be completed by editing this repository alone.
 
 1. Review and merge PR #4 after the required approval is recorded.
+   Confirm the low `rand` Dependabot alerts close after the patched lockfile is
+   on `main`.
 2. Reserve or publish the `claw-vcs` crates.io package set before documenting a
    crates.io install path. Publish internal packages in the order documented in
    `docs/operations/package-registry-strategy.md`, using

@@ -11,7 +11,7 @@ Status key:
 
 ## Completion Summary
 
-The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-launch-hardening` branch / PR #4. The goal is not complete until the external pending items below are finished: package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, optional GitHub Pages publication if the landing page should be served publicly, PR review/merge, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
+The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-launch-hardening` branch / PR #4. The goal is not complete until the external pending items below are finished: PR review/merge, default-branch Dependabot alert closure after the patched lockfile lands, package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, optional GitHub Pages publication if the landing page should be served publicly, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
 
 ## P0
 
@@ -49,7 +49,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 25 | Implemented | Property tests live in `crates/*/tests/*props.rs`, `crates/claw-core/tests/serialization_props.rs`, and policy/crypto tamper tests. |
 | 26 | Implemented | Git interop tests live in `crates/claw-git/tests/git_bridge_real_git.rs`, `tests/integration/spec_tests.rs`, and CLI Git workflow tests. |
 | 27 | Implemented | Durability/crash coverage appears in `tests/integration/chaos_tests.rs`, `tests/integration/backlog_gap_tests.rs`, store corruption tests, and admin backup/rollback tests; CI and contract workflows run the deterministic chaos suite. |
-| 28 | Implemented + external setting | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; GitHub Dependabot security updates are a repository setting and must be verified with `gh api repos/Shree-git/claw-vcs/vulnerability-alerts` or the Security settings page before launch. |
+| 28 | Implemented + external setting | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; `scripts/public-launch-preflight.sh` verifies Dependabot security updates are enabled and fails launch readiness on open default-branch Dependabot alerts. |
 | 29 | Implemented | `deny.toml`; CI runs `cargo deny check` across configured release targets including macOS, Linux x86_64/aarch64, and Windows. |
 | 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`, and `tests/integration/ops_artifacts_tests.rs` validates the cargo-vet metadata and dependency-policy shape. |
 | 31 | Implemented | `.github/workflows/sbom.yml` and release/CI SBOM attestation jobs; public release SBOM verification remains part of release-channel verification. |
@@ -168,7 +168,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 - PR #4 requires review approval before merge.
 - Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, strict launch evidence, and optional GitHub Pages publication require maintainer/account access.
 - The next hardened public release must be cut before public artifact attestations, SBOMs, signatures, installers, Homebrew, MSI, and clean-environment channel checks can be verified.
-- GitHub reports low Dependabot findings on the default branch until this branch's dependency updates land on `main`.
+- GitHub reports low `rand` Dependabot findings on the default branch until this branch's patched lockfile lands on `main`; preflight now gates on open Dependabot alerts.
 
 Owner-only launch blockers are tracked in
 <https://github.com/Shree-git/claw-vcs/issues/5>.

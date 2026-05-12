@@ -8,6 +8,7 @@ Usage: scripts/public-launch-preflight.sh
 Checks public-launch state that depends on GitHub or package-registry access:
   - GitHub repository identity, visibility, topics, and security settings
   - main branch protection and signed-commit enforcement
+  - open Dependabot alert state
   - package-name availability/reservation signals
   - local social preview asset readiness and GitHub upload state
 
@@ -147,6 +148,25 @@ if [[ "$dependabot_enabled" == "true" ]]; then
 else
   fail "Dependabot security updates expected true, got ${dependabot_enabled:-<empty>}"
 fi
+
+dependabot_alerts_file="$(mktemp)"
+if gh api --paginate "repos/$repo/dependabot/alerts?state=open" \
+  --jq '.[] | [.number, .security_vulnerability.package.name, .security_vulnerability.severity, .security_advisory.ghsa_id, .dependency.manifest_path] | @tsv' \
+  >"$dependabot_alerts_file" 2>/dev/null; then
+  if [[ -s "$dependabot_alerts_file" ]]; then
+    dependabot_alert_count="$(wc -l < "$dependabot_alerts_file" | tr -d ' ')"
+    dependabot_alert_summary="$(
+      awk -F '\t' '{ printf "#%s %s %s %s (%s); ", $1, $2, $3, $4, $5 }' "$dependabot_alerts_file" |
+        sed 's/; $//'
+    )"
+    fail "Dependabot has $dependabot_alert_count open alert(s): $dependabot_alert_summary"
+  else
+    pass "Dependabot has no open alerts"
+  fi
+else
+  fail "could not inspect open Dependabot alerts for $repo"
+fi
+rm -f "$dependabot_alerts_file"
 
 protection="repos/$repo/branches/$branch/protection"
 required_reviews="$(gh_value "$protection" '.required_pull_request_reviews.required_approving_review_count // 0')"
