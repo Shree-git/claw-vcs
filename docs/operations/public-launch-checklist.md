@@ -56,7 +56,8 @@ access; they cannot be completed by editing this repository alone.
    `docs/operations/package-registry-strategy.md`, using
    `scripts/publish-cratesio.sh --publish` once credentials are configured.
 3. Complete trademark, domain, and social-handle checks before treating the name
-   and permanent visual identity as launch-ready.
+   and permanent visual identity as launch-ready. Use
+   [name-clearance.md](name-clearance.md) to record evidence.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
 5. If the launch includes a public website, enable GitHub Pages or another docs
    host for `docs/index.html` and verify the rendered page.
@@ -77,6 +78,7 @@ scripts/verify-release-channel.sh <launch-tag>
 - [x] Keep the binary and command name as `claw`.
 - [ ] Reserve or verify `claw-vcs` where package registries need an unambiguous project name.
 - [ ] Complete trademark/name clearance before investing in a permanent logo.
+      Record evidence in [name-clearance.md](name-clearance.md).
 
 ## GitHub Repository Rules
 

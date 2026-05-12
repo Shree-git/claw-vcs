@@ -288,6 +288,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/operations/public-launch-checklist.md",
         "docs/operations/backlog-coverage.md",
         "docs/operations/package-registry-strategy.md",
+        "docs/operations/name-clearance.md",
         ".github/workflows/release-channel-smoke.yml",
     ] {
         let path = workspace_path(artifact);

@@ -11,6 +11,8 @@
 - Follow `RELEASING.md`.
 - Verify changelog, release checklist, signatures, attestations, SBOM, and install smoke tests.
 - Keep rollback instructions linked from release notes.
+- For public launch naming work, record trademark, domain, social-handle, and
+  package-name evidence in `docs/operations/name-clearance.md`.
 
 ## Security Triage
 
