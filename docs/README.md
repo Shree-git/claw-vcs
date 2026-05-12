@@ -14,6 +14,7 @@ This tree is for teams evaluating or running self-hosted Claw deployments. Treat
 - [Persona index](persona/index.md)
 - [Production install](operations/production-install.md)
 - [Public launch checklist](operations/public-launch-checklist.md)
+- [Public launch backlog coverage](operations/backlog-coverage.md)
 - [Release verification](security/verifying-releases.md)
 - [Threat model](security/threat-model.md)
 - [Upgrade and rollback](operations/upgrade-and-rollback.md)

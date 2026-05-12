@@ -283,6 +283,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/assets/social-preview.png",
         "docs/assets/social-preview.svg",
         "docs/operations/public-launch-checklist.md",
+        "docs/operations/backlog-coverage.md",
         "docs/operations/package-registry-strategy.md",
     ] {
         let path = workspace_path(artifact);
@@ -318,5 +319,17 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     assert!(
         launch_checklist.contains("Package-name checks"),
         "launch checklist must record package-name verification evidence"
+    );
+
+    let backlog_coverage = read_workspace_file("docs/operations/backlog-coverage.md");
+    for item in ["| 1 |", "| 50 |", "| 100 |", "| 110 |"] {
+        assert!(
+            backlog_coverage.contains(item),
+            "backlog coverage must include item marker {item}"
+        );
+    }
+    assert!(
+        backlog_coverage.contains("External pending"),
+        "backlog coverage must preserve external-blocker status"
     );
 }

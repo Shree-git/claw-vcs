@@ -2,6 +2,8 @@
 
 Some items require repository owner access or external account access and cannot be completed by editing files in this repository alone.
 
+Backlog item-by-item coverage is tracked in [backlog-coverage.md](backlog-coverage.md).
+
 Status as of 2026-05-11:
 
 - GitHub repository: `Shree-git/claw-vcs`.
