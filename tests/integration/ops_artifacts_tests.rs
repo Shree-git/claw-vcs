@@ -353,6 +353,37 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         );
     }
 
+    let codeowners = read_workspace_file(".github/CODEOWNERS");
+    for owner_path in [
+        "/deny.toml",
+        "/rust-toolchain.toml",
+        "/RELEASING.md",
+        "/supply-chain/",
+        "/fuzz/",
+        "/tests/vectors/",
+    ] {
+        assert!(
+            codeowners.contains(owner_path),
+            "CODEOWNERS must route review for sensitive launch artifact: {owner_path}"
+        );
+    }
+
+    let pr_template = read_workspace_file(".github/PULL_REQUEST_TEMPLATE.md");
+    for phrase in [
+        "Release, migration, and rollback",
+        "Release note / changelog needed",
+        "Install, packaging, or artifact verification changed",
+        "Rollback plan or operator recovery note",
+        "Security and supply chain",
+        "Dependency, license, SBOM, or cargo-vet impact",
+        "Public interface, policy, object format, or protocol changed",
+    ] {
+        assert!(
+            pr_template.contains(phrase),
+            "PR template must prompt for release/security evidence: {phrase}"
+        );
+    }
+
     let launch_preflight = read_workspace_file("scripts/public-launch-preflight.sh");
     for phrase in [
         "secret_scanning",
@@ -501,6 +532,12 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     let launch_checklist = read_workspace_file("docs/operations/public-launch-checklist.md");
     let landing_page = read_workspace_file("docs/index.html");
     let readme = read_workspace_file("README.md");
+    assert!(
+        readme.contains(
+            "Manage auth profiles and tokens for explicit remote URLs; hosted remotes are planned"
+        ),
+        "README command summary must not imply hosted remotes are currently live"
+    );
     assert!(
         !readme.contains("releases/latest/download"),
         "README installer examples must not resolve to the historical latest release"

@@ -6,7 +6,13 @@
 /scripts/ @Shree-git
 /Cargo.toml @Shree-git
 /Cargo.lock @Shree-git
+/rust-toolchain.toml @Shree-git
+/deny.toml @Shree-git
 /dist-workspace.toml @Shree-git
+/RELEASING.md @Shree-git
+/supply-chain/ @Shree-git
+/fuzz/ @Shree-git
+/tests/vectors/ @Shree-git
 /crates/claw-crypto/ @Shree-git
 /crates/claw-policy/ @Shree-git
 /crates/claw-sync/ @Shree-git

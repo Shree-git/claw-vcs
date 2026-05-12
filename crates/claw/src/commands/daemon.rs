@@ -789,7 +789,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
                     let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
                     match method {
                         "hello" => serde_json::json!({
-                            "server_version": "0.1.0",
+                            "server_version": env!("CARGO_PKG_VERSION"),
                             "protocol_version": SYNC_PROTOCOL_VERSION,
                             "capabilities": server_capabilities()
                         }),

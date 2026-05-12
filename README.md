@@ -234,7 +234,7 @@ claw show <object-id>        Inspect any object
 claw resolve <subcommand>    Manage merge conflicts
 claw agent <subcommand>      Register and manage agent identities
 claw remote <subcommand>     Manage remote repositories
-claw auth <subcommand>       Manage auth profiles and tokens for hosted remotes
+claw auth <subcommand>       Manage auth profiles and tokens for explicit remote URLs; hosted remotes are planned
 claw sync <remote>           Pull from a remote (shorthand)
 claw sync <subcommand>       Push, pull, or clone
 claw daemon                  Run the gRPC sync server

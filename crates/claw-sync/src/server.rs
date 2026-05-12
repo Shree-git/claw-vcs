@@ -452,7 +452,7 @@ impl SyncService for SyncServer {
         self.run_bounded("hello", async move {
             let req = request.into_inner();
             Ok(Response::new(HelloResponse {
-                server_version: "0.1.0".to_string(),
+                server_version: env!("CARGO_PKG_VERSION").to_string(),
                 capabilities: negotiate_capabilities(&req.capabilities),
             }))
         })

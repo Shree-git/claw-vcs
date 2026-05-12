@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::proto;
 use crate::proto::sync::{HelloResponse, PushObjectsResponse, UpdateRefsResponse};
+use crate::protocol::{CAP_PARTIAL_CLONE, CAP_PROTOCOL_V1};
 use crate::security::{redacted_secret_marker, REPLAY_NONCE_METADATA_KEY};
 use crate::transport::SyncTransport;
 use crate::SyncError;
@@ -57,6 +58,16 @@ const CAP_PACK_UPLOAD: &str = "pack-upload";
 const CAP_BATCH_COMPLETE: &str = "batch-complete";
 const MAX_CONCURRENT_UPLOADS: usize = 8;
 const MAX_BATCH_SIZE: usize = 500;
+
+fn legacy_http_fallback_capabilities() -> HashSet<String> {
+    [
+        CAP_PROTOCOL_V1.to_string(),
+        CAP_PARTIAL_CLONE.to_string(),
+        "polling-events".to_string(),
+    ]
+    .into_iter()
+    .collect()
+}
 
 // ---------------------------------------------------------------------------
 // Prepared object: raw COF bytes read directly from disk (no decode/re-encode)
@@ -202,9 +213,7 @@ impl HttpSyncClient {
 
         // Older servers may not advertise capabilities; assume a minimal baseline.
         if self.server_capabilities.is_empty() && !self.capabilities_advertised {
-            self.server_capabilities.insert("partial-clone".to_string());
-            self.server_capabilities
-                .insert("polling-events".to_string());
+            self.server_capabilities = legacy_http_fallback_capabilities();
         }
 
         self.health_checked = true;
@@ -1469,5 +1478,14 @@ mod tests {
         let rendered = format!("{client:?}");
         assert!(!rendered.contains("super-secret-token"));
         assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn legacy_health_fallback_capabilities_include_protocol_marker() {
+        let fallback = legacy_http_fallback_capabilities();
+        let caps: std::collections::HashSet<_> = fallback.iter().map(String::as_str).collect();
+        assert!(caps.contains(CAP_PROTOCOL_V1));
+        assert!(caps.contains(CAP_PARTIAL_CLONE));
+        assert!(caps.contains("polling-events"));
     }
 }
