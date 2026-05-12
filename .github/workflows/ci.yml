@@ -81,8 +81,22 @@ jobs:
       - name: Compile fuzz targets
         run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
 
-      - name: Smoke fuzz target
-        run: cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
+      - name: Smoke fuzz targets
+        run: |
+          for target in \
+            core_cof_decode \
+            cof_decode \
+            patch_codecs \
+            patch_apply \
+            json_tree_merge \
+            policy_checks \
+            crypto_capsule \
+            store_objects \
+            object_id_parse \
+            git_import_parse \
+            sync_chunk_decode; do
+            cargo run --manifest-path fuzz/Cargo.toml --bin "$target" --locked -- -runs=1
+          done
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.19.6 --locked

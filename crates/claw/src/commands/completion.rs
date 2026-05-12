@@ -1,4 +1,5 @@
 use clap::{Args, ValueEnum};
+use std::io::{ErrorKind, Write};
 
 #[derive(Args)]
 pub struct CompletionArgs {
@@ -80,8 +81,15 @@ pub fn run(args: CompletionArgs) -> anyhow::Result<()> {
         CompletionShell::Elvish => elvish_completion(),
     };
 
-    print!("{script}");
-    Ok(())
+    write_script(std::io::stdout().lock(), &script)
+}
+
+fn write_script(mut out: impl Write, script: &str) -> anyhow::Result<()> {
+    match out.write_all(script.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == ErrorKind::BrokenPipe => Ok(()),
+        Err(err) => Err(err.into()),
+    }
 }
 
 fn command_words() -> String {
@@ -274,7 +282,8 @@ set edit:completion:arg-completer[claw] = {{|@words|
 
 #[cfg(test)]
 mod tests {
-    use super::{bash_completion, fish_completion};
+    use super::{bash_completion, fish_completion, write_script};
+    use std::io::ErrorKind;
 
     #[test]
     fn completions_include_launch_commands() {
@@ -288,5 +297,22 @@ mod tests {
         assert!(bash.contains("--ref-name"));
         assert!(bash.contains("--id"));
         assert!(fish.contains("claw -l 'json'"));
+    }
+
+    #[test]
+    fn completion_output_ignores_broken_pipe() {
+        struct BrokenPipeWriter;
+
+        impl std::io::Write for BrokenPipeWriter {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(ErrorKind::BrokenPipe, "closed pipe"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        write_script(BrokenPipeWriter, "complete me").expect("broken pipe should not be fatal");
     }
 }

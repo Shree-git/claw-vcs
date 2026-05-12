@@ -82,7 +82,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 
 | # | Status | Evidence |
 |---:|---|---|
-| 51 | Implemented | `claw completions bash|zsh|fish`; smoke checked generated output. |
+| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; smoke checked generated output. |
 | 52 | Implemented | `claw doctor` and `claw doctor --json`; docs in `docs/cli/doctor.md`. |
 | 53 | Implemented | `claw version --json`; docs in `docs/cli/version.md`. |
 | 54 | Implemented | `status`, `log`, `show`, `policy eval`, `diff`, and `doctor` support JSON output; docs under `docs/cli/`. |

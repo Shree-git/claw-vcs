@@ -43,7 +43,20 @@ cargo vet
 
 ```bash
 cargo check --manifest-path fuzz/Cargo.toml --bins --locked
-cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
+for target in \
+  core_cof_decode \
+  cof_decode \
+  patch_codecs \
+  patch_apply \
+  json_tree_merge \
+  policy_checks \
+  crypto_capsule \
+  store_objects \
+  object_id_parse \
+  git_import_parse \
+  sync_chunk_decode; do
+  cargo run --manifest-path fuzz/Cargo.toml --bin "$target" --locked -- -runs=1
+done
 ```
 
 5. Run a release dry-run if supported by the local `cargo-dist` version:
