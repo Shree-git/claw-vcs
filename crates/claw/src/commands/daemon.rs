@@ -99,6 +99,7 @@ pub struct DaemonArgs {
 }
 
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+const MAX_HEALTH_REQUEST_BODY_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
 struct BearerAuthInterceptor {
@@ -654,6 +655,11 @@ async fn drain_request_body(
                 .flatten()
         })
         .unwrap_or(0);
+    if content_length > MAX_HEALTH_REQUEST_BODY_BYTES {
+        anyhow::bail!(
+            "health request body too large: {content_length} bytes exceeds {MAX_HEALTH_REQUEST_BODY_BYTES}"
+        );
+    }
     let already_read = received.len().saturating_sub(header_end + 4);
     let mut remaining = content_length.saturating_sub(already_read);
     let mut scratch = [0u8; 1024];
@@ -1095,6 +1101,31 @@ mod tests {
         assert!(body.contains("# HELP claw_daemon_policy_eval_duration_seconds"));
         assert!(body.contains("# HELP claw_daemon_queue_depth"));
         assert!(body.contains("# HELP claw_daemon_worker_pool_size"));
+    }
+
+    #[tokio::test]
+    async fn drain_request_body_rejects_large_content_length() {
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind local body-drain test listener");
+        let addr = listener.local_addr().expect("read local listener address");
+        let client = tokio::spawn(async move {
+            tokio::net::TcpStream::connect(addr)
+                .await
+                .expect("connect to local body-drain listener")
+        });
+        let (mut stream, _) = listener.accept().await.expect("accept test connection");
+        let _client = client.await.expect("join client task");
+        let request = format!(
+            "POST /v1/health/live HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+            MAX_HEALTH_REQUEST_BODY_BYTES + 1
+        );
+
+        let err = drain_request_body(&mut stream, request.as_bytes())
+            .await
+            .expect_err("oversized health body should be rejected");
+
+        assert!(err.to_string().contains("health request body too large"));
     }
 
     #[test]

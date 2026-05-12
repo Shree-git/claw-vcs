@@ -31,16 +31,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.12"
-
-      - name: Install Semgrep
-        run: python -m pip install --disable-pip-version-check semgrep==1.162.0
-
       - name: Run Semgrep
-        run: semgrep scan --config p/ci --sarif --output semgrep.sarif --error
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -w /src \
+            semgrep/semgrep@sha256:f682953ce85e3725f4a4dd94bd7ad13e570bb6b2c7a8cf7c6e38a9eac89239b2 \
+            semgrep scan --config p/ci --sarif --output semgrep.sarif --error
 
       - name: Upload Semgrep SARIF
         if: always() && hashFiles('semgrep.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)

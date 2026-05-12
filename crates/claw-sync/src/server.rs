@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -690,6 +691,16 @@ impl SyncService for SyncServer {
         let event_bus = self.event_bus.clone();
         self.run_bounded("update_refs", async move {
             let req = request.into_inner();
+            let mut seen_refs = HashSet::with_capacity(req.updates.len());
+            for update in &req.updates {
+                if !seen_refs.insert(update.name.as_str()) {
+                    return Err(Status::invalid_argument(format!(
+                        "duplicate ref name in batch: {}",
+                        update.name
+                    )));
+                }
+            }
+
             let store = self.store.write().await;
             let mut planned_updates = Vec::with_capacity(req.updates.len());
 
@@ -748,28 +759,37 @@ impl SyncService for SyncServer {
 
             // Pass 2: apply all updates
             for (name, _old_target, new_target) in &planned_updates {
-                if let Some(id) = new_target {
-                    store
+                match new_target {
+                    Some(id) => store
                         .set_ref(name, id)
-                        .map_err(|e| Status::internal(e.to_string()))?;
+                        .map_err(|e| Status::internal(e.to_string()))?,
+                    None => store
+                        .delete_ref(name)
+                        .map_err(|e| Status::internal(e.to_string()))?,
                 }
             }
 
             if let Some(bus) = &event_bus {
                 for (name, old_target, new_target) in &planned_updates {
-                    if let Some(id) = new_target {
-                        let event_type = if old_target.is_some() {
-                            "ref_updated"
-                        } else {
-                            "ref_created"
-                        };
-                        bus.publish_ref_event(
-                            event_type,
-                            name,
-                            Some(crate::proto::common::ObjectId {
-                                hash: id.as_bytes().to_vec(),
-                            }),
-                        );
+                    match (old_target, new_target) {
+                        (_, Some(id)) => {
+                            let event_type = if old_target.is_some() {
+                                "ref_updated"
+                            } else {
+                                "ref_created"
+                            };
+                            bus.publish_ref_event(
+                                event_type,
+                                name,
+                                Some(crate::proto::common::ObjectId {
+                                    hash: id.as_bytes().to_vec(),
+                                }),
+                            );
+                        }
+                        (Some(_), None) => {
+                            bus.publish_ref_event("ref_deleted", name, None);
+                        }
+                        (None, None) => {}
                     }
                 }
             }
@@ -1403,7 +1423,7 @@ mod tests {
         let target = content_hash(TypeTag::Blob, b"target");
 
         let server = SyncServer::from_shared_with_options_and_events(
-            shared,
+            shared.clone(),
             SyncServerOptions::default(),
             Some(event_bus),
         );
@@ -1431,6 +1451,67 @@ mod tests {
         assert_eq!(event.event_type, "ref_created");
         assert_eq!(event.ref_name, "heads/main");
         assert_eq!(event.object_id.unwrap().hash, target.as_bytes().to_vec());
+
+        let response = server
+            .update_refs(Request::new(UpdateRefsRequest {
+                updates: vec![RefUpdate {
+                    name: "heads/main".to_string(),
+                    old_target: Some(crate::proto::common::ObjectId {
+                        hash: target.as_bytes().to_vec(),
+                    }),
+                    new_target: None,
+                    force: false,
+                }],
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(response.success);
+        assert!(shared.read().await.get_ref("heads/main").unwrap().is_none());
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.event_type, "ref_deleted");
+        assert_eq!(event.ref_name, "heads/main");
+        assert!(event.object_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_refs_rejects_duplicate_names_in_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = ClawStore::init(tmp.path()).unwrap();
+        let server = SyncServer::new(store);
+        let first = content_hash(TypeTag::Blob, b"first");
+        let second = content_hash(TypeTag::Blob, b"second");
+
+        let err = server
+            .update_refs(Request::new(UpdateRefsRequest {
+                updates: vec![
+                    RefUpdate {
+                        name: "heads/main".to_string(),
+                        old_target: None,
+                        new_target: Some(crate::proto::common::ObjectId {
+                            hash: first.as_bytes().to_vec(),
+                        }),
+                        force: false,
+                    },
+                    RefUpdate {
+                        name: "heads/main".to_string(),
+                        old_target: None,
+                        new_target: Some(crate::proto::common::ObjectId {
+                            hash: second.as_bytes().to_vec(),
+                        }),
+                        force: false,
+                    },
+                ],
+            }))
+            .await
+            .expect_err("duplicate ref names should be rejected");
+
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
+        assert!(err.message().contains("duplicate ref name in batch"));
     }
 
     #[tokio::test]
