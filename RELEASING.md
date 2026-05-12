@@ -51,10 +51,25 @@ no internal registry dependencies:
 scripts/publish-cratesio.sh --package claw-vcs-core
 ```
 
-For the remaining packages, run `cargo publish --dry-run` immediately before
+The default dry-run verifies packages whose earlier internal dependencies are
+already visible on crates.io and skips the rest with an explicit dependency
+list:
+
+```bash
+scripts/publish-cratesio.sh
+```
+
+For the remaining packages, run an explicit package dry-run immediately before
 each real publish after its earlier `claw-vcs-*` dependencies exist on
-crates.io. Cargo intentionally resolves those version dependencies from the
-registry during packaging.
+crates.io:
+
+```bash
+scripts/publish-cratesio.sh --package claw-vcs-store
+```
+
+Cargo intentionally resolves those version dependencies from the registry during
+packaging, so dependent package dry-runs cannot pass until the earlier packages
+are live.
 
 After credentials are configured and the release commit is final, publish the
 full package set with the guarded helper:

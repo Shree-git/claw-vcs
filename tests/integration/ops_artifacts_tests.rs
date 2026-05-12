@@ -343,6 +343,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "claw-vcs-store",
         "claw-vcs",
         "cargo publish -p \"$package\" --dry-run --locked --allow-dirty",
+        "skipping dry-run for $package until registry dependencies are live",
+        "cannot dry-run $package until registry dependencies are live",
         "refusing to publish without CLAW_CRATESIO_PUBLISH=1",
     ] {
         assert!(

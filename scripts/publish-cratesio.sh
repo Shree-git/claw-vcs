@@ -25,9 +25,11 @@ Environment:
   CLAW_CRATESIO_POLL_ATTEMPTS   Max checks after each real publish (default: 40)
 
 Notes:
-  A full dry-run cannot pass until earlier internal packages are already live on
-  crates.io, because Cargo resolves publish dependencies from the registry. Run
-  this script in --publish mode only from the intended release commit.
+  Cargo resolves publish dependencies from the registry during packaging. In
+  default --dry-run mode, packages blocked by unpublished internal dependencies
+  are skipped with an explanation. Explicit --package and --start-at dry-runs
+  fail fast if the selected package cannot resolve its registry dependencies.
+  Run this script in --publish mode only from the intended release commit.
 USAGE
 }
 
@@ -161,12 +163,73 @@ wait_for_crate() {
   return 1
 }
 
+crate_exists() {
+  local package="$1"
+  local status
+
+  status="$(curl -L -sS -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/$package" || true)"
+  [[ "$status" == "200" ]]
+}
+
+internal_deps() {
+  case "$1" in
+    claw-vcs-core)
+      ;;
+    claw-vcs-store | claw-vcs-patch | claw-vcs-crypto | claw-vcs-policy)
+      echo "claw-vcs-core"
+      ;;
+    claw-vcs-merge)
+      echo "claw-vcs-core claw-vcs-patch claw-vcs-store"
+      ;;
+    claw-vcs-sync)
+      echo "claw-vcs-core claw-vcs-store claw-vcs-crypto"
+      ;;
+    claw-vcs-git)
+      echo "claw-vcs-core claw-vcs-store"
+      ;;
+    claw-vcs)
+      echo "claw-vcs-core claw-vcs-store claw-vcs-patch claw-vcs-merge claw-vcs-crypto claw-vcs-policy claw-vcs-sync claw-vcs-git"
+      ;;
+  esac
+}
+
+missing_registry_deps() {
+  local package="$1"
+  local dep
+  local missing=()
+
+  for dep in $(internal_deps "$package"); do
+    if ! crate_exists "$dep"; then
+      missing+=("$dep")
+    fi
+  done
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    printf '%s\n' "${missing[*]}"
+  fi
+}
+
+skipped=0
 for package in "${selected_packages[@]}"; do
   echo "== $package ($mode)"
   if [[ "$mode" == "dry-run" ]]; then
+    missing_deps="$(missing_registry_deps "$package")"
+    if [[ -n "$missing_deps" ]]; then
+      if [[ -n "$single_package" || -n "$start_at" ]]; then
+        echo "cannot dry-run $package until registry dependencies are live: $missing_deps" >&2
+        exit 1
+      fi
+      echo "skipping dry-run for $package until registry dependencies are live: $missing_deps"
+      skipped=$((skipped + 1))
+      continue
+    fi
     cargo publish -p "$package" --dry-run --locked --allow-dirty
   else
     cargo publish -p "$package" --locked
     wait_for_crate "$package"
   fi
 done
+
+if [[ "$mode" == "dry-run" && "$skipped" -gt 0 ]]; then
+  echo "dry-run skipped $skipped package(s) blocked by unpublished internal crates"
+fi

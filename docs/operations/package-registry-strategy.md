@@ -52,5 +52,9 @@ crate imports such as `claw_core` and dependency aliases such as `claw-core`.
 `scripts/publish-cratesio.sh --package claw-vcs-core` is expected to pass before
 reservation. Later packages resolve earlier `claw-vcs-*` crates from the
 registry during dry-run, so verify each one after its dependencies are live.
+The default dry-run checks packages whose internal registry dependencies are
+already live and skips the rest with an explicit dependency list; explicit
+`--package` and `--start-at` dry-runs fail fast when their prerequisites are not
+published yet.
 The helper defaults to dry-run and refuses real publishing unless both
 `--publish` and `CLAW_CRATESIO_PUBLISH=1` are present.
