@@ -414,6 +414,149 @@ fn public_launch_assets_exist_and_are_upload_ready() {
 }
 
 #[test]
+fn supply_chain_policy_metadata_is_parseable_and_intentional() {
+    let audits_path = workspace_path("supply-chain/audits.toml");
+    let config_path = workspace_path("supply-chain/config.toml");
+    let imports_lock_path = workspace_path("supply-chain/imports.lock");
+    let dependency_policy_path = workspace_path("docs/maintainers/dependency-policy.md");
+
+    for path in [
+        &audits_path,
+        &config_path,
+        &imports_lock_path,
+        &dependency_policy_path,
+    ] {
+        assert!(
+            path.exists(),
+            "missing required supply-chain artifact: {}",
+            path.display()
+        );
+    }
+
+    let audits_raw = fs::read_to_string(&audits_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", audits_path.display()));
+    let audits: toml::Value = toml::from_str(&audits_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", audits_path.display()));
+    assert!(
+        audits
+            .get("audits")
+            .and_then(toml::Value::as_table)
+            .is_some(),
+        "supply-chain/audits.toml must define an [audits] table"
+    );
+
+    let config_raw = fs::read_to_string(&config_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", config_path.display()));
+    let config: toml::Value = toml::from_str(&config_raw)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", config_path.display()));
+
+    assert_eq!(
+        config
+            .get("cargo-vet")
+            .and_then(|value| value.get("version"))
+            .and_then(toml::Value::as_str),
+        Some("0.10"),
+        "cargo-vet config must declare the expected metadata version"
+    );
+    assert_eq!(
+        config
+            .get("imports")
+            .and_then(|value| value.get("mozilla"))
+            .and_then(|value| value.get("url"))
+            .and_then(toml::Value::as_str),
+        Some("https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"),
+        "cargo-vet config must import Mozilla's audit set"
+    );
+
+    let exemptions = config
+        .get("exemptions")
+        .and_then(toml::Value::as_table)
+        .expect("cargo-vet config must include dependency exemptions");
+    assert!(
+        !exemptions.is_empty(),
+        "cargo-vet exemptions must be explicit rather than implicit"
+    );
+
+    let allowed_criteria: HashSet<&str> = ["safe-to-deploy", "safe-to-run"].into_iter().collect();
+    let mut exemption_count = 0usize;
+    for (crate_name, entries) in exemptions {
+        let entries = entries
+            .as_array()
+            .unwrap_or_else(|| panic!("exemption for {crate_name} must be an array"));
+        assert!(
+            !entries.is_empty(),
+            "exemption list for {crate_name} must not be empty"
+        );
+        for (idx, entry) in entries.iter().enumerate() {
+            exemption_count += 1;
+            let entry = entry
+                .as_table()
+                .unwrap_or_else(|| panic!("exemption entry {crate_name}[{idx}] must be a table"));
+            assert!(
+                entry.get("version").and_then(toml::Value::as_str).is_some(),
+                "exemption entry {crate_name}[{idx}] must include version"
+            );
+            let criteria = entry
+                .get("criteria")
+                .and_then(toml::Value::as_str)
+                .unwrap_or_else(|| {
+                    panic!("exemption entry {crate_name}[{idx}] must include criteria")
+                });
+            assert!(
+                allowed_criteria.contains(criteria),
+                "exemption entry {crate_name}[{idx}] has unexpected criteria: {criteria}"
+            );
+        }
+    }
+    assert!(
+        exemption_count >= 10,
+        "cargo-vet config should enumerate concrete exemptions, found {exemption_count}"
+    );
+
+    for sensitive_crate in ["x25519-dalek", "zeroize_derive"] {
+        let entries = exemptions
+            .get(sensitive_crate)
+            .and_then(toml::Value::as_array)
+            .unwrap_or_else(|| panic!("missing sensitive exemption: {sensitive_crate}"));
+        assert!(
+            entries.iter().any(|entry| entry
+                .get("notes")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|notes| notes.contains("Initial cargo-vet backlog exemption"))),
+            "sensitive exemption {sensitive_crate} must explain why it remains an exemption"
+        );
+    }
+
+    let imports_lock = fs::read_to_string(&imports_lock_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", imports_lock_path.display()));
+    assert!(
+        imports_lock.contains("mozilla"),
+        "cargo-vet imports lock must include the Mozilla import"
+    );
+
+    let dependency_policy_raw = fs::read_to_string(&dependency_policy_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", dependency_policy_path.display()));
+    let dependency_policy = dependency_policy_raw
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for phrase in [
+        "cargo audit",
+        "cargo deny check",
+        "Dependency Review",
+        "Dependabot",
+        "SBOM",
+        "cargo-vet",
+        "replacing those exemptions with real audits",
+    ] {
+        assert!(
+            dependency_policy.contains(phrase),
+            "dependency policy must mention: {phrase}"
+        );
+    }
+}
+
+#[test]
 fn packaged_proto_copies_match_workspace_proto_sources() {
     let canonical_root = workspace_path("proto/claw");
     for packaged_root in ["crates/claw-core/proto/claw", "crates/claw-sync/proto/claw"] {

@@ -51,7 +51,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 27 | Implemented | Durability/crash coverage appears in `tests/integration/chaos_tests.rs`, `tests/integration/backlog_gap_tests.rs`, store corruption tests, and admin backup/rollback tests; CI and contract workflows run the deterministic chaos suite. |
 | 28 | Implemented | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; Dependabot security updates verified enabled. |
 | 29 | Implemented | `deny.toml`; CI runs `cargo deny check`. |
-| 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`. |
+| 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`, and `tests/integration/ops_artifacts_tests.rs` validates the cargo-vet metadata and dependency-policy shape. |
 | 31 | Implemented | `.github/workflows/sbom.yml` and release/CI SBOM attestation jobs; public release SBOM verification remains part of release-channel verification. |
 | 32 | Implemented | `.github/workflows/scorecard.yml`; Scorecard checks pass on PR. |
 | 33 | Implemented | `.github/workflows/codeql.yml` and `.github/workflows/semgrep.yml`; code scanning uploads verified. |
