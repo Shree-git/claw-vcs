@@ -79,7 +79,8 @@ access; they cannot be completed by editing this repository alone.
    `CLAW_PREFLIGHT_NAME_EVIDENCE` to the evidence file used by strict preflight.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
 5. If the launch includes a public website, enable GitHub Pages or another docs
-   host for `docs/index.html` and verify the rendered page.
+   host for `docs/index.html`. After this PR lands on `main`, the manual
+   `Pages` workflow can publish the committed `docs/` site.
 6. Cut the launch-hardening release tag, then verify the published release
    artifacts:
 
@@ -172,8 +173,10 @@ Suggested labels are tracked in [`.github/labels.yml`](../../.github/labels.yml)
 ## Landing Page
 
 - [x] Add a static landing page artifact in `docs/index.html`.
-- [ ] If the launch should include a public website, enable and verify GitHub
-  Pages or another docs host for the committed landing page.
+- [x] Add a manual, SHA-pinned GitHub Pages deployment workflow for the
+  committed `docs/` site.
+- [ ] If the launch should include a public website, enable GitHub Pages or
+  another docs host, run the manual deployment, and verify the rendered page.
 
 ## Social Preview
 

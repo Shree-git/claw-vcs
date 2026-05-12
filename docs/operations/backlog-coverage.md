@@ -142,7 +142,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 
 | # | Status | Evidence |
 |---:|---|---|
-| 91 | Implemented | `docs/index.html` and `docs/landing-page.md`; publishing the static page with GitHub Pages is an external repository setting/workflow decision if desired. |
+| 91 | Implemented | `docs/index.html`, `docs/landing-page.md`, and the manual, SHA-pinned `.github/workflows/pages.yml`; enabling Pages and verifying the rendered site remains an external repository setting if desired. |
 | 92 | Implemented | README includes restrained CI/license/security badges. |
 | 93 | Implemented | `docs/assets/social-preview.png` is an upload-ready 1280x640 asset with source SVG; preflight and artifact tests verify size and dimensions. |
 | 94 | External pending | Logo overinvestment intentionally deferred until name/trademark clearance. |
