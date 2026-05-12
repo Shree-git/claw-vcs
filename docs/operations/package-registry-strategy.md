@@ -4,19 +4,19 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 
 | Channel | Status | Notes |
 |---|---|---|
-| GitHub Releases | live | `v0.1.0` exists with archives, checksums, signatures, installers, and MSI. A new launch-hardening release still needs clean-environment verification. |
-| Homebrew | live | Formula exists as `Formula/claw.rb` in `shree-git/homebrew-tap`; Homebrew exposes that repository as tap `shree-git/tap`, so install with `brew install shree-git/tap/claw`. Verify formula after it points at the launch-hardening release. Homebrew core did not have a `claw` formula in the local `brew info claw` check on 2026-05-11. |
+| GitHub Releases | historical artifact live; launch verification pending | `v0.1.0` exists with archives, checksums, signatures, installers, and MSI, but it predates the current launch-hardening checks. A new launch-hardening release still needs clean-environment verification before release archives are documented as launch-ready. |
+| Homebrew | tap live; launch verification pending | Formula exists as `Formula/claw.rb` in `shree-git/homebrew-tap`; Homebrew exposes that repository as tap `shree-git/tap`, so install with `brew install shree-git/tap/claw` only after the formula points at the launch-hardening release and passes clean-host verification. Homebrew core did not have a `claw` formula in the local `brew info claw` check on 2026-05-11. |
 | crates.io | planned | Checked on 2026-05-12: `claw-vcs` and the `claw-vcs-*` internal package names returned 404 from the crates.io crate API, while `claw`, `claw-core`, `claw-crypto`, and `claw-sync` are occupied by unrelated crates. The workspace package identities are configured for `claw-vcs`; reserve or publish the full package set before documenting a crates.io install path. |
 | WinGet | planned | Planned package id: `ShreeGit.ClawVCS`; checked on 2026-05-11 and no manifest path exists in `microsoft/winget-pkgs`. First publish requires manual PR to `microsoft/winget-pkgs`. |
-| Windows MSI | live | `v0.1.0` MSI exists; verify on Windows for the launch-hardening release. |
-| Shell installer | live | `v0.1.0` shell installer exists; keep non-pipe manual download path documented and verify the launch-hardening release. |
-| PowerShell installer | live | `v0.1.0` PowerShell installer exists; keep non-pipe manual download path documented and verify on Windows. |
+| Windows MSI | historical artifact live; launch verification pending | `v0.1.0` MSI exists; verify the launch-hardening release on Windows before treating MSI install as launch-ready. |
+| Shell installer | historical artifact live; launch verification pending | `v0.1.0` shell installer exists; keep non-pipe manual download path documented and verify the launch-hardening release before treating installer output as launch-ready. |
+| PowerShell installer | historical artifact live; launch verification pending | `v0.1.0` PowerShell installer exists; keep non-pipe manual download path documented and verify the launch-hardening release on Windows before treating it as launch-ready. |
 | Scoop | unsupported | Revisit after first stable Windows release. |
 | Nix | unsupported | Prefer source build or manual archive install for now. |
 | AUR | unsupported | Revisit after Linux adoption demand. |
 | Docker image | planned | Docker, Helm, Terraform, and systemd deployment assets exist and are validated by CI, but no public OCI image is a launch channel until it is built, signed, attested, pushed, and clean-environment verified. |
 
-Before broad announcement, verify every live channel from a clean machine or container and record expected command output in release notes.
+Before broad announcement, verify every launch channel from a clean machine or container and record expected command output in release notes.
 
 Latest preflight result on 2026-05-12: repository, branch-protection,
 security-setting, Homebrew tap, and social-preview asset checks passed;

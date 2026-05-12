@@ -1,8 +1,10 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/shree-git/claw-vcs
-  tag: latest
+  # Local/evaluation default. Use an official registry only after release notes
+  # publish a signed, attested OCI image and tag.
+  repository: claw-vcs
+  tag: dev
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

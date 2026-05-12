@@ -299,10 +299,12 @@ claw doctor
 ### Release channels
 
 The release-channel commands below are for the next verified launch-hardening
-release. Do not treat `/latest`, Homebrew, MSI, or installer output as
+release. Until that tag is recorded in the install verification log, use the
+current source install above. Do not treat `/latest`, Homebrew, MSI, or installer output as
 launch-ready until the release notes and
 [install verification log](docs/operations/install-verification-log.md) record a
-passing current-tag verification.
+passing current-tag verification. In the examples below, replace `<launch-tag>`
+with that verified tag.
 
 ### macOS
 
@@ -332,25 +334,25 @@ claw status
 **Installer script**
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
 ```
 
 Non-pipe alternative:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh
+curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh
 sh ./claw-installer.sh
 ```
 
 **Manual download**
 
-Grab the latest macOS archive from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
+Grab the verified macOS archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
 extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
 
 Install to a custom location:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh \
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh \
   | CLAW_HOME="$HOME/.claw" sh
 ```
 
@@ -369,25 +371,25 @@ claw status
 **Installer script**
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh | sh
 ```
 
 Non-pipe alternative:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh
+curl --proto '=https' --tlsv1.2 -LsSfO https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh
 sh ./claw-installer.sh
 ```
 
 **Manual download**
 
-Grab the latest Linux archive from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
+Grab the verified Linux archive for `<launch-tag>` from [GitHub Releases](https://github.com/shree-git/claw-vcs/releases),
 extract it, and place `claw` somewhere on your `PATH` (for example `~/.local/bin`).
 
 Install to a custom location:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.sh \
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.sh \
   | CLAW_HOME="$HOME/.claw" sh
 ```
 
@@ -409,22 +411,22 @@ Notes:
 
 **WinGet (planned)**
 
-WinGet support is planned, but no WinGet install command is launch-ready until a manifest is accepted in the upstream Microsoft repository. Use the MSI or PowerShell installer below until release notes explicitly mark WinGet live.
+WinGet support is planned, but no WinGet install command is launch-ready until a manifest is accepted in the upstream Microsoft repository. Until release notes and the install verification log mark a Windows channel verified for the current tag, use the current source install or a manually verified GitHub release artifact.
 
 **MSI**
 
-Download the latest `.msi` from GitHub Releases and run it. The installer adds `claw` to `PATH`.
+Download the verified `.msi` for `<launch-tag>` from GitHub Releases and run it. The installer adds `claw` to `PATH`.
 
 **PowerShell installer (no MSI)**
 
 ```powershell
-iwr -useb https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.ps1 | iex
+iwr -useb https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.ps1 | iex
 ```
 
 Non-pipe alternative:
 
 ```powershell
-iwr -useb https://github.com/shree-git/claw-vcs/releases/latest/download/claw-installer.ps1 -OutFile claw-installer.ps1
+iwr -useb https://github.com/shree-git/claw-vcs/releases/download/<launch-tag>/claw-installer.ps1 -OutFile claw-installer.ps1
 powershell -ExecutionPolicy Bypass -File .\claw-installer.ps1
 ```
 

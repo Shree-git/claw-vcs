@@ -41,7 +41,7 @@ jobs:
       - name: Helm template render
         run: |
           helm template claw-smoke crates/claw/deploy/helm/claw \
-            --set image.repository=ghcr.io/shree-git/claw-vcs \
+            --set image.repository=claw-deploy-smoke \
             --set image.tag=test \
             > rendered-helm.yaml
           grep -q '^kind: Deployment' rendered-helm.yaml

@@ -14,7 +14,10 @@ This guide installs Claw for the supported self-hosted `v0.1.x` production basel
 ## Host prerequisites
 
 - Claw binary installed and on `PATH`.
-- Install from a tagged GitHub release, Homebrew, or the Windows MSI before using this guide.
+- Install from a channel whose current tag has a passing record in
+  [install-verification-log.md](install-verification-log.md). Until a
+  launch-hardening release is verified, use the source install path only for
+  controlled evaluation.
 - Stable storage for repository checkout plus `.claw/`.
 - Service account with read/write access to the repository directory.
 - Network controls allowing only approved clients to daemon port.

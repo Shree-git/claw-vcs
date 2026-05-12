@@ -471,6 +471,55 @@ fn public_launch_assets_exist_and_are_upload_ready() {
 
     let launch_checklist = read_workspace_file("docs/operations/public-launch-checklist.md");
     let landing_page = read_workspace_file("docs/index.html");
+    let readme = read_workspace_file("README.md");
+    assert!(
+        !readme.contains("releases/latest/download"),
+        "README installer examples must not resolve to the historical latest release"
+    );
+    assert!(
+        readme.contains("releases/download/<launch-tag>/"),
+        "README release-channel examples must require an explicitly verified launch tag"
+    );
+    assert!(
+        readme.contains("Until that tag is recorded in the install verification log"),
+        "README must tell users to stay on source install until a launch-hardening tag is verified"
+    );
+
+    let package_strategy = read_workspace_file("docs/operations/package-registry-strategy.md");
+    for legacy_status in [
+        "| GitHub Releases | live |",
+        "| Homebrew | live |",
+        "| Windows MSI | live |",
+        "| Shell installer | live |",
+        "| PowerShell installer | live |",
+    ] {
+        assert!(
+            !package_strategy.contains(legacy_status),
+            "package registry strategy must not mark historical/unverified channels as launch-ready: {legacy_status}"
+        );
+    }
+    assert!(
+        package_strategy.contains("historical artifact live; launch verification pending"),
+        "package registry strategy must distinguish existing artifacts from launch-ready verification"
+    );
+
+    let helm_values = read_workspace_file("crates/claw/deploy/helm/claw/values.yaml");
+    assert!(
+        !helm_values.contains("ghcr.io/shree-git/claw-vcs") && !helm_values.contains("tag: latest"),
+        "Helm defaults must not point at an unpublished official OCI image or latest tag"
+    );
+    let terraform_variables = read_workspace_file("crates/claw/deploy/terraform/variables.tf");
+    assert!(
+        !terraform_variables.contains("default     = \"ghcr.io/shree-git/claw-vcs\"")
+            && !terraform_variables.contains("default     = \"latest\""),
+        "Terraform defaults must not point at an unpublished official OCI image or latest tag"
+    );
+    let deploy_validation = read_workspace_file(".github/workflows/deploy-validation.yml");
+    assert!(
+        !deploy_validation.contains("--set image.repository=ghcr.io/shree-git/claw-vcs"),
+        "deploy validation must render against the local smoke image, not an unpublished official OCI image"
+    );
+
     assert!(
         !landing_page.contains("href=\"getting-started/quickstart.md\"")
             && !landing_page.contains("href=\"security/threat-model.md\"")
