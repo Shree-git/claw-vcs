@@ -100,3 +100,11 @@ Claw VCS
 Intent. Evidence. Provenance.
 Version control for human + AI code.
 ```
+
+Upload-ready asset:
+
+- `docs/assets/social-preview.png` (1280x640 PNG, under 1 MB)
+
+Source asset:
+
+- `docs/assets/social-preview.svg`

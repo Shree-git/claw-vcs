@@ -58,7 +58,7 @@ claw integrate --right heads/dark-mode
 - Platform operator: `docs/persona/platform-operator.md`
 - Demo script: `examples/basic-demo/scripts/demo.sh`
 - Demo media: `examples/demo-media/`
-- Social preview: `docs/assets/social-preview.svg`
+- Social preview: `docs/assets/social-preview.png` (source SVG: `docs/assets/social-preview.svg`)
 - Release verification: `docs/security/verifying-releases.md`
 - Roadmap: `ROADMAP.md`
 
