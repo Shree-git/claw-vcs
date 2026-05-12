@@ -12,12 +12,12 @@ Criterion benchmark scaffolds live in:
 Run:
 
 ```bash
-cargo bench -p claw-core
-cargo bench -p claw-store
-cargo bench -p claw-patch
-cargo bench -p claw-merge
-cargo bench -p claw-sync
-cargo bench -p claw-git
+cargo bench -p claw-vcs-core
+cargo bench -p claw-vcs-store
+cargo bench -p claw-vcs-patch
+cargo bench -p claw-vcs-merge
+cargo bench -p claw-vcs-sync
+cargo bench -p claw-vcs-git
 ```
 
 Current coverage:

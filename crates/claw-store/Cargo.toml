@@ -1,8 +1,15 @@
 [package]
-name = "claw-store"
+name = "claw-vcs-store"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Content-addressed object storage, refs, and snapshot support for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_store"
 
 [dependencies]
 claw-core = { workspace = true }

@@ -72,7 +72,7 @@ jobs:
         run: cargo test --workspace --locked
       - name: Example workflow smoke scripts
         run: |
-          cargo build -p claw --locked
+          cargo build -p claw-vcs --locked
           CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
           CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
           CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh
@@ -305,7 +305,7 @@ jobs:
           merge-multiple: true
       - name: Run contract tests
         run: |
-          cargo test -p claw --locked -- --nocapture
+          cargo test -p claw-vcs --locked -- --nocapture
           cargo test -p claw-integration-tests --test spec_tests --locked
           cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
 

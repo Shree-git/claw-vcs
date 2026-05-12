@@ -1,8 +1,15 @@
 [package]
-name = "claw-patch"
+name = "claw-vcs-patch"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Patch codecs, diff, apply, and merge helpers for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_patch"
 
 [dependencies]
 claw-core = { workspace = true }

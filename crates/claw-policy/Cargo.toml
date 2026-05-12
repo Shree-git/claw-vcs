@@ -1,8 +1,15 @@
 [package]
-name = "claw-policy"
+name = "claw-vcs-policy"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Policy evaluation and visibility checks for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_policy"
 
 [dependencies]
 claw-core = { workspace = true }

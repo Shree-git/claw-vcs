@@ -25,16 +25,17 @@ Status as of 2026-05-12:
   `version-control`, `git`, `sigstore`, `slsa`, `supply-chain-security`, and
   `vcs`.
 - Package-name checks on 2026-05-12:
-  `claw-vcs` was not published on crates.io, `claw` was occupied by an
-  unrelated crates.io crate, the planned WinGet manifest path
+  `claw-vcs` and the `claw-vcs-*` internal package names were not published on
+  crates.io, `claw`, `claw-core`, `claw-crypto`, and `claw-sync` were occupied
+  by unrelated crates, the planned WinGet manifest path
   `ShreeGit.ClawVCS` was absent from `microsoft/winget-pkgs`, and
   `Formula/claw.rb` exists in `Shree-git/homebrew-tap`.
 - Maintainer preflight on 2026-05-12 passed repository identity, visibility,
   topics, security settings, branch protection, signed commits, Homebrew tap
   presence, and social preview asset checks. It still blocks launch on
-  unreserved `claw-vcs` crates.io identity and warns that WinGet, trademark,
-  domain/social-handle review, and GitHub social preview upload require
-  maintainer action.
+  unreserved crates.io identities for the `claw-vcs` package set and warns
+  that WinGet, trademark, domain/social-handle review, and GitHub social
+  preview upload require maintainer action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
 - Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
 
@@ -50,8 +51,9 @@ These steps require repository owner, package registry, release, or account
 access; they cannot be completed by editing this repository alone.
 
 1. Review and merge PR #4 after the required approval is recorded.
-2. Reserve or publish the `claw-vcs` identity on crates.io before documenting a
-   crates.io install path.
+2. Reserve or publish the `claw-vcs` crates.io package set before documenting a
+   crates.io install path. Publish internal packages in the order documented in
+   `docs/operations/package-registry-strategy.md`.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.

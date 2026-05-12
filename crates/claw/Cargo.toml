@@ -1,5 +1,5 @@
 [package]
-name = "claw"
+name = "claw-vcs"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

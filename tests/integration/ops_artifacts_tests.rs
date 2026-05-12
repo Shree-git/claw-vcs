@@ -307,7 +307,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     for phrase in [
         "secret_scanning",
         "required_signatures",
-        "crates.io/api/v1/crates/claw-vcs",
+        "https://crates.io/api/v1/crates/$crate_name",
+        "claw-vcs-core",
         "ShreeGit/ClawVCS",
         "docs/assets/social-preview.png",
     ] {
@@ -394,4 +395,31 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         install_log.contains("scripts/verify-release-channel.sh <launch-tag>"),
         "install verification log must point maintainers to the clean-host helper"
     );
+}
+
+#[test]
+fn packaged_proto_copies_match_workspace_proto_sources() {
+    let canonical_root = workspace_path("proto/claw");
+    for packaged_root in ["crates/claw-core/proto/claw", "crates/claw-sync/proto/claw"] {
+        for entry in fs::read_dir(&canonical_root).expect("canonical proto directory exists") {
+            let entry = entry.expect("proto directory entry is readable");
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            let source = fs::read(entry.path())
+                .unwrap_or_else(|err| panic!("failed to read proto source {file_name}: {err}"));
+            let packaged_path = workspace_path(packaged_root).join(file_name.as_ref());
+            let packaged = fs::read(&packaged_path).unwrap_or_else(|err| {
+                panic!(
+                    "failed to read packaged proto {}: {err}",
+                    packaged_path.display()
+                )
+            });
+            assert_eq!(
+                packaged,
+                source,
+                "packaged proto {} must match proto/claw/{file_name}",
+                packaged_path.display()
+            );
+        }
+    }
 }

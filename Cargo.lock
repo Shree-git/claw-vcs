@@ -384,20 +384,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
-name = "claw"
+name = "claw-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "claw-vcs-core",
+ "claw-vcs-crypto",
+ "claw-vcs-git",
+ "claw-vcs-merge",
+ "claw-vcs-patch",
+ "claw-vcs-policy",
+ "claw-vcs-store",
+ "claw-vcs-sync",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
+name = "claw-vcs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
  "clap",
- "claw-core",
- "claw-crypto",
- "claw-git",
- "claw-merge",
- "claw-patch",
- "claw-policy",
- "claw-store",
- "claw-sync",
+ "claw-vcs-core",
+ "claw-vcs-crypto",
+ "claw-vcs-git",
+ "claw-vcs-merge",
+ "claw-vcs-patch",
+ "claw-vcs-policy",
+ "claw-vcs-store",
+ "claw-vcs-sync",
  "dirs",
  "globset",
  "hex",
@@ -419,7 +438,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-core"
+name = "claw-vcs-core"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -441,12 +460,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-crypto"
+name = "claw-vcs-crypto"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "claw-core",
+ "claw-vcs-core",
  "ed25519-dalek",
  "hex",
  "proptest",
@@ -458,11 +477,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-git"
+name = "claw-vcs-git"
 version = "0.1.0"
 dependencies = [
- "claw-core",
- "claw-store",
+ "claw-vcs-core",
+ "claw-vcs-store",
  "criterion",
  "flate2",
  "hex",
@@ -471,31 +490,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-integration-tests"
+name = "claw-vcs-merge"
 version = "0.1.0"
 dependencies = [
- "claw-core",
- "claw-crypto",
- "claw-git",
- "claw-merge",
- "claw-patch",
- "claw-policy",
- "claw-store",
- "claw-sync",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tonic",
-]
-
-[[package]]
-name = "claw-merge"
-version = "0.1.0"
-dependencies = [
- "claw-core",
- "claw-patch",
- "claw-store",
+ "claw-vcs-core",
+ "claw-vcs-patch",
+ "claw-vcs-store",
  "criterion",
  "tempfile",
  "thiserror 2.0.18",
@@ -503,10 +503,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-patch"
+name = "claw-vcs-patch"
 version = "0.1.0"
 dependencies = [
- "claw-core",
+ "claw-vcs-core",
  "criterion",
  "proptest",
  "serde",
@@ -516,10 +516,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-policy"
+name = "claw-vcs-policy"
 version = "0.1.0"
 dependencies = [
- "claw-core",
+ "claw-vcs-core",
  "proptest",
  "serde",
  "serde_json",
@@ -527,11 +527,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-store"
+name = "claw-vcs-store"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "claw-core",
+ "claw-vcs-core",
  "criterion",
  "hex",
  "proptest",
@@ -545,14 +545,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-sync"
+name = "claw-vcs-sync"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
- "claw-core",
- "claw-crypto",
- "claw-store",
+ "claw-vcs-core",
+ "claw-vcs-crypto",
+ "claw-vcs-store",
  "criterion",
  "hex",
  "prost",

@@ -9,7 +9,7 @@ Run:
 Or point at a local development binary:
 
 ```bash
-cargo build -p claw
+cargo build -p claw-vcs
 CLAW_BIN="$(pwd)/target/debug/claw" ./examples/basic-demo/scripts/demo.sh
 ```
 

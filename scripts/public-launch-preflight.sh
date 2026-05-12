@@ -180,18 +180,29 @@ expect_value "signed commits requirement" "$signed_commits" "true"
 expect_value "force pushes allowed" "$allow_force_pushes" "false"
 expect_value "branch deletions allowed" "$allow_deletions" "false"
 
-crates_status="$(curl -L -sS -o /dev/null -w '%{http_code}' https://crates.io/api/v1/crates/claw-vcs || true)"
-case "$crates_status" in
-  200)
-    pass "crates.io name claw-vcs exists; verify maintainer ownership before documenting crates.io install"
-    ;;
-  404)
-    fail "crates.io name claw-vcs is still unreserved; reserve or publish before broad announcement"
-    ;;
-  *)
-    warn "could not determine crates.io claw-vcs status, HTTP $crates_status"
-    ;;
-esac
+for crate_name in \
+  claw-vcs \
+  claw-vcs-core \
+  claw-vcs-store \
+  claw-vcs-patch \
+  claw-vcs-merge \
+  claw-vcs-crypto \
+  claw-vcs-policy \
+  claw-vcs-sync \
+  claw-vcs-git; do
+  crates_status="$(curl -L -sS -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/$crate_name" || true)"
+  case "$crates_status" in
+    200)
+      pass "crates.io name $crate_name exists; verify maintainer ownership before documenting crates.io install"
+      ;;
+    404)
+      fail "crates.io name $crate_name is still unreserved; reserve or publish before broad announcement"
+      ;;
+    *)
+      warn "could not determine crates.io $crate_name status, HTTP $crates_status"
+      ;;
+  esac
+done
 
 winget_status="$(
   gh api repos/microsoft/winget-pkgs/contents/manifests/s/ShreeGit/ClawVCS \

@@ -327,7 +327,7 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/claw-cargo-install"
-          cargo install --git https://github.com/shree-git/claw-vcs.git --tag "$RELEASE_TAG" --package claw --locked --root "$root"
+          cargo install --git https://github.com/shree-git/claw-vcs.git --tag "$RELEASE_TAG" --package claw-vcs --locked --root "$root"
           expected="${RELEASE_TAG#v}"
           actual="$("$root/bin/claw" --version | awk '{ print $2 }')"
           test "$actual" = "$expected"

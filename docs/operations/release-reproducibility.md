@@ -25,7 +25,7 @@ Publish with every release:
 git clone https://github.com/Shree-git/claw-vcs.git
 cd claw-vcs
 git checkout <release-tag>
-cargo build --release -p claw --locked
+cargo build --release -p claw-vcs --locked
 ```
 
 Compare version output:

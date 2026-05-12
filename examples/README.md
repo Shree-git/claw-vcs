@@ -19,6 +19,6 @@ screenshots. Most scripts accept `CLAW_BIN=/path/to/claw`; otherwise they use
 Run the main demo after building the CLI:
 
 ```bash
-cargo build -p claw --locked
+cargo build -p claw-vcs --locked
 CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
 ```

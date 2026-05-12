@@ -27,7 +27,7 @@ bash -n examples/basic-demo/scripts/demo.sh
 CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
 ```
 
-Build `target/debug/claw` first with `cargo build -p claw` if it does not exist.
+Build `target/debug/claw` first with `cargo build -p claw-vcs` if it does not exist.
 The demo writes to a temporary workspace and sets `HOME` to a separate temporary
 directory so agent keys do not touch the contributor's real `~/.claw/` or the
 demo worktree.

@@ -1,8 +1,15 @@
 [package]
-name = "claw-core"
+name = "claw-vcs-core"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Core object types and Claw Object Format encoding for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_core"
 
 [dependencies]
 blake3 = { workspace = true }

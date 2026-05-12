@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Prefer the user's protoc if they set PROTOC, otherwise fall back to a
     // vendored protoc binary so contributors don't need a system install.
@@ -7,19 +9,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("cargo:rerun-if-env-changed=PROTOC");
 
-    let proto_root = "../../proto";
+    let proto_root = proto_root();
+    let protos = [
+        proto_root.join("claw/common.proto"),
+        proto_root.join("claw/objects.proto"),
+    ];
 
     prost_build::Config::new()
         .out_dir("src/generated")
-        .compile_protos(
-            &[
-                &format!("{proto_root}/claw/common.proto"),
-                &format!("{proto_root}/claw/objects.proto"),
-            ],
-            &[proto_root],
-        )?;
+        .compile_protos(&protos, &[proto_root.as_path()])?;
 
-    println!("cargo:rerun-if-changed={proto_root}/claw/common.proto");
-    println!("cargo:rerun-if-changed={proto_root}/claw/objects.proto");
+    rerun_if_changed(&proto_root, "claw/common.proto");
+    rerun_if_changed(&proto_root, "claw/objects.proto");
     Ok(())
+}
+
+fn proto_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"),
+    );
+    let packaged = manifest_dir.join("proto");
+    if packaged.exists() {
+        packaged
+    } else {
+        manifest_dir.join("../../proto")
+    }
+}
+
+fn rerun_if_changed(proto_root: &Path, relative: &str) {
+    println!(
+        "cargo:rerun-if-changed={}",
+        proto_root.join(relative).display()
+    );
 }

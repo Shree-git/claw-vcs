@@ -145,7 +145,7 @@ smoke_repo "$installer_binary" "$workdir/installer-repo"
 
 if [[ "${CLAW_SKIP_CARGO_INSTALL:-0}" != "1" ]]; then
   require cargo
-  cargo install --git "https://github.com/${repo}.git" --tag "$tag" --package claw --locked --root "$cargo_root"
+  cargo install --git "https://github.com/${repo}.git" --tag "$tag" --package claw-vcs --locked --root "$cargo_root"
   smoke_repo "$cargo_root/bin/claw" "$workdir/cargo-repo"
 else
   echo "Skipping cargo install --git check because CLAW_SKIP_CARGO_INSTALL=1"

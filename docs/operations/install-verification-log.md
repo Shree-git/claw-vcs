@@ -28,7 +28,7 @@ cd "$tmp/demo"
 Observed result:
 
 ```text
-Installed package `claw v0.1.0`
+Installed package `claw-vcs v0.1.0` with binary `claw`
 claw 0.1.0
 Claw doctor ... Summary: 4 ok, 1 warning(s), 0 error(s), 7 skipped
 Initialized claw repository
@@ -83,4 +83,4 @@ scripts/verify-release-channel.sh <launch-tag>
 - PowerShell installer on Windows.
 - Windows MSI on Windows.
 - Homebrew formula after the tap points at the launch-hardening release.
-- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag <launch-tag> --package claw --locked` for the next launch-hardening release tag.
+- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag <launch-tag> --package claw-vcs --locked` for the next launch-hardening release tag.

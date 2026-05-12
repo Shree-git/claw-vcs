@@ -102,15 +102,15 @@ Claw is written in Rust and organized as a workspace of focused crates:
 
 ```
 crates/
-├── claw-core       Core types and COF (Claw Object Format) codec
-├── claw-store      Content-addressed object store with refs, HEAD, reflog
-├── claw-patch      Pluggable codec-based diff/apply/merge engine
-├── claw-merge      Three-way merge with conflict resolution
-├── claw-crypto     Ed25519 signing, verification, capsule construction
-├── claw-policy     Policy evaluation and visibility enforcement
-├── claw-sync       gRPC sync protocol with partial clone
-├── claw-git        Bidirectional Git export/import
-└── claw            The `claw` binary
+├── claw-core       Core types and COF codec (package `claw-vcs-core`)
+├── claw-store      Object store, refs, HEAD, reflog (package `claw-vcs-store`)
+├── claw-patch      Codec-based diff/apply/merge engine (package `claw-vcs-patch`)
+├── claw-merge      Three-way merge with conflicts (package `claw-vcs-merge`)
+├── claw-crypto     Signing, verification, capsules (package `claw-vcs-crypto`)
+├── claw-policy     Policy and visibility checks (package `claw-vcs-policy`)
+├── claw-sync       gRPC sync and partial clone (package `claw-vcs-sync`)
+├── claw-git        Git import/export (package `claw-vcs-git`)
+└── claw            The `claw-vcs` Cargo package, publishing the `claw` binary
 
 proto/              Protocol Buffer definitions for all gRPC services
 ```
@@ -424,7 +424,7 @@ generally **don't** need to install Protocol Buffers tooling. If you want to for
 ```bash
 git clone https://github.com/shree-git/claw-vcs.git
 cd claw-vcs
-cargo build --release -p claw
+cargo build --release -p claw-vcs
 CLAW_BIN="$(pwd)/target/release/claw"
 "$CLAW_BIN" --version
 "$CLAW_BIN" doctor
@@ -445,7 +445,7 @@ cargo test --workspace
 If you already have Rust installed, you can install directly with cargo:
 
 ```bash
-cargo install --git https://github.com/shree-git/claw-vcs.git --package claw --locked
+cargo install --git https://github.com/shree-git/claw-vcs.git --package claw-vcs --locked
 claw --version
 claw doctor
 mkdir /tmp/claw-demo
@@ -457,7 +457,7 @@ claw status
 For a release-specific source install, add the tag:
 
 ```bash
-cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw --locked
+cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw-vcs --locked
 ```
 
 ## Verify releases

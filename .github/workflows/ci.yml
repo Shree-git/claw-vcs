@@ -69,7 +69,7 @@ jobs:
 
       - name: Run example workflow smoke scripts
         run: |
-          cargo build -p claw --locked
+          cargo build -p claw-vcs --locked
           CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
           CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
           CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh

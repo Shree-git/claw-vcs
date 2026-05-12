@@ -1,8 +1,15 @@
 [package]
-name = "claw-git"
+name = "claw-vcs-git"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Git import, export, and roundtrip plumbing for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_git"
 
 [dependencies]
 claw-core = { workspace = true }

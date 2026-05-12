@@ -24,6 +24,38 @@ In the `shree-git/claw-vcs` repo, add a secret:
 
 - `HOMEBREW_TAP_TOKEN`: a token with the minimum write access required for `shree-git/homebrew-tap`
 
+### 3) Reserve crates.io package names
+
+The CLI package is `claw-vcs` and publishes the `claw` binary. Internal crates
+publish under `claw-vcs-*` package names to avoid unrelated crates that already
+own names such as `claw-core`, `claw-crypto`, and `claw-sync`.
+
+Publish order:
+
+```text
+claw-vcs-core
+claw-vcs-store
+claw-vcs-patch
+claw-vcs-crypto
+claw-vcs-policy
+claw-vcs-merge
+claw-vcs-sync
+claw-vcs-git
+claw-vcs
+```
+
+Before the first publish, `claw-vcs-core` can be verified locally because it has
+no internal registry dependencies:
+
+```bash
+cargo publish -p claw-vcs-core --dry-run --locked --allow-dirty
+```
+
+For the remaining packages, run `cargo publish --dry-run` immediately before
+each real publish after its earlier `claw-vcs-*` dependencies exist on
+crates.io. Cargo intentionally resolves those version dependencies from the
+registry during packaging.
+
 ## Cutting a release
 
 1. Bump the version in `Cargo.toml` (`[workspace.package].version`).
@@ -91,7 +123,7 @@ Verify release assets:
 - SBOM is present and readable
 - Homebrew formula installs the tagged version
 - Windows MSI installs and adds `claw` to `PATH`
-- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw --locked` installs the tagged version
+- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw-vcs --locked` installs the tagged version
 
 For a clean Unix host smoke test, run:
 

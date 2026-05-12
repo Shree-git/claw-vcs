@@ -1,8 +1,15 @@
 [package]
-name = "claw-merge"
+name = "claw-vcs-merge"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Three-way merge support and conflict handling for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_merge"
 
 [dependencies]
 claw-core = { workspace = true }

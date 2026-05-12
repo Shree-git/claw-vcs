@@ -1,8 +1,15 @@
 [package]
-name = "claw-sync"
+name = "claw-vcs-sync"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "gRPC sync protocol, event streaming, and remote services for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_sync"
 
 [dependencies]
 claw-core = { workspace = true }

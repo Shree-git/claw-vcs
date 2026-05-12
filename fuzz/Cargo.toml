@@ -10,13 +10,13 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
-claw-core = { path = "../crates/claw-core" }
-claw-crypto = { path = "../crates/claw-crypto" }
-claw-git = { path = "../crates/claw-git" }
-claw-patch = { path = "../crates/claw-patch" }
-claw-policy = { path = "../crates/claw-policy" }
-claw-store = { path = "../crates/claw-store" }
-claw-sync = { path = "../crates/claw-sync" }
+claw-core = { package = "claw-vcs-core", path = "../crates/claw-core" }
+claw-crypto = { package = "claw-vcs-crypto", path = "../crates/claw-crypto" }
+claw-git = { package = "claw-vcs-git", path = "../crates/claw-git" }
+claw-patch = { package = "claw-vcs-patch", path = "../crates/claw-patch" }
+claw-policy = { package = "claw-vcs-policy", path = "../crates/claw-policy" }
+claw-store = { package = "claw-vcs-store", path = "../crates/claw-store" }
+claw-sync = { package = "claw-vcs-sync", path = "../crates/claw-sync" }
 libfuzzer-sys = "0.4"
 prost = "0.14"
 serde_json = "1.0"

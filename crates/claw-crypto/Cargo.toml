@@ -1,8 +1,15 @@
 [package]
-name = "claw-crypto"
+name = "claw-vcs-crypto"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Capsule signing, verification, and encryption primitives for Claw VCS."
+homepage.workspace = true
+repository.workspace = true
+
+[lib]
+name = "claw_crypto"
 
 [dependencies]
 claw-core = { workspace = true }

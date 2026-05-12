@@ -135,7 +135,7 @@ fn object_for(selector: u8, data: &[u8], name: &str) -> Object {
             title: name.to_string(),
             goal: "prove serialization roundtrips".to_string(),
             constraints: vec!["deterministic".to_string()],
-            acceptance_tests: vec!["cargo test -p claw-core".to_string()],
+            acceptance_tests: vec!["cargo test -p claw-vcs-core".to_string()],
             links: vec!["claw://test-vector".to_string()],
             policy_refs: vec!["public-launch".to_string()],
             agents: vec!["codex".to_string()],

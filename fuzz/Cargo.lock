@@ -224,7 +224,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-core"
+name = "claw-vcs-core"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -244,12 +244,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-crypto"
+name = "claw-vcs-crypto"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "claw-core",
+ "claw-vcs-core",
  "ed25519-dalek",
  "hex",
  "rand 0.8.6",
@@ -263,13 +263,13 @@ dependencies = [
 name = "claw-fuzz"
 version = "0.0.0"
 dependencies = [
- "claw-core",
- "claw-crypto",
- "claw-git",
- "claw-patch",
- "claw-policy",
- "claw-store",
- "claw-sync",
+ "claw-vcs-core",
+ "claw-vcs-crypto",
+ "claw-vcs-git",
+ "claw-vcs-patch",
+ "claw-vcs-policy",
+ "claw-vcs-store",
+ "claw-vcs-sync",
  "libfuzzer-sys",
  "prost",
  "serde_json",
@@ -277,21 +277,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-git"
+name = "claw-vcs-git"
 version = "0.1.0"
 dependencies = [
- "claw-core",
- "claw-store",
+ "claw-vcs-core",
+ "claw-vcs-store",
  "flate2",
  "hex",
  "thiserror",
 ]
 
 [[package]]
-name = "claw-patch"
+name = "claw-vcs-patch"
 version = "0.1.0"
 dependencies = [
- "claw-core",
+ "claw-vcs-core",
  "serde",
  "serde_json",
  "similar",
@@ -299,21 +299,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-policy"
+name = "claw-vcs-policy"
 version = "0.1.0"
 dependencies = [
- "claw-core",
+ "claw-vcs-core",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "claw-store"
+name = "claw-vcs-store"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "claw-core",
+ "claw-vcs-core",
  "hex",
  "redb",
  "serde",
@@ -325,14 +325,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-sync"
+name = "claw-vcs-sync"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64",
- "claw-core",
- "claw-crypto",
- "claw-store",
+ "claw-vcs-core",
+ "claw-vcs-crypto",
+ "claw-vcs-store",
  "hex",
  "prost",
  "prost-types",

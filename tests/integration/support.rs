@@ -279,10 +279,13 @@ fn claw_binary() -> &'static Path {
         let workspace = workspace_root();
         let status = Command::new("cargo")
             .current_dir(&workspace)
-            .args(["build", "-q", "-p", "claw", "--bin", "claw"])
+            .args(["build", "-q", "-p", "claw-vcs", "--bin", "claw"])
             .status()
             .expect("build claw binary for integration tests");
-        assert!(status.success(), "cargo build -p claw failed with {status}");
+        assert!(
+            status.success(),
+            "cargo build -p claw-vcs failed with {status}"
+        );
 
         let target_dir = std::env::var_os("CARGO_TARGET_DIR")
             .map(PathBuf::from)

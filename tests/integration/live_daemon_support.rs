@@ -40,10 +40,13 @@ fn ensure_claw_binary() -> &'static PathBuf {
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let status = Command::new(cargo)
             .current_dir(workspace_root())
-            .args(["build", "-p", "claw", "--bin", "claw"])
+            .args(["build", "-p", "claw-vcs", "--bin", "claw"])
             .status()
             .expect("build claw binary for live integration tests");
-        assert!(status.success(), "cargo build -p claw --bin claw failed");
+        assert!(
+            status.success(),
+            "cargo build -p claw-vcs --bin claw failed"
+        );
         assert!(
             path.exists(),
             "expected built claw binary at {}",
