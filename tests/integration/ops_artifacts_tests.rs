@@ -312,6 +312,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "claw-vcs-core",
         "ShreeGit/ClawVCS",
         "docs/assets/social-preview.png",
+        "usesCustomOpenGraphImage",
+        "CLAW_PREFLIGHT_REQUIRE_PAGES",
     ] {
         assert!(
             launch_preflight.contains(phrase),

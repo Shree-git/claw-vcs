@@ -9,14 +9,15 @@ Checks public-launch state that depends on GitHub or package-registry access:
   - GitHub repository identity, visibility, topics, and security settings
   - main branch protection and signed-commit enforcement
   - package-name availability/reservation signals
-  - local social preview asset readiness
+  - local social preview asset readiness and GitHub upload state
 
 This script is intentionally launch-gating. It may fail until maintainer-owned
 external actions are complete.
 
 Environment:
-  CLAW_PREFLIGHT_REPO      GitHub repository (default: Shree-git/claw-vcs)
-  CLAW_PREFLIGHT_BRANCH    Protected branch to inspect (default: main)
+  CLAW_PREFLIGHT_REPO            GitHub repository (default: Shree-git/claw-vcs)
+  CLAW_PREFLIGHT_BRANCH          Protected branch to inspect (default: main)
+  CLAW_PREFLIGHT_REQUIRE_PAGES   Set to 1 when GitHub Pages is part of launch
 USAGE
 }
 
@@ -27,6 +28,7 @@ fi
 
 repo="${CLAW_PREFLIGHT_REPO:-Shree-git/claw-vcs}"
 branch="${CLAW_PREFLIGHT_BRANCH:-main}"
+require_pages="${CLAW_PREFLIGHT_REQUIRE_PAGES:-0}"
 
 failures=0
 warnings=0
@@ -231,7 +233,24 @@ if [[ -f "$social_preview" ]]; then
 else
   fail "missing social preview asset: $social_preview"
 fi
-warn "GitHub social preview upload, trademark clearance, domain checks, and social-handle checks require manual maintainer verification"
+
+custom_open_graph="$(gh repo view "$repo" --json usesCustomOpenGraphImage --jq '.usesCustomOpenGraphImage' 2>/dev/null || true)"
+if [[ "$custom_open_graph" == "true" ]]; then
+  pass "GitHub social preview image is uploaded"
+else
+  warn "GitHub social preview image is not uploaded; upload $social_preview in repository settings"
+fi
+
+if gh api "repos/$repo/pages" --silent >/dev/null 2>&1; then
+  pages_status="$(gh api "repos/$repo/pages" --jq '.status // "configured"' 2>/dev/null || true)"
+  pass "GitHub Pages is configured with status: $pages_status"
+elif [[ "$require_pages" == "1" ]]; then
+  fail "GitHub Pages is required but not configured for $repo"
+else
+  warn "GitHub Pages is not configured; leave optional unless the launch includes a public website"
+fi
+
+warn "trademark clearance, domain checks, and social-handle checks require manual maintainer verification"
 
 echo
 echo "Public-launch preflight finished with $failures failure(s), $warnings warning(s)."

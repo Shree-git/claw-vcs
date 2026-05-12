@@ -34,10 +34,10 @@ Status as of 2026-05-12:
   topics, security settings, branch protection, signed commits, Homebrew tap
   presence, and social preview asset checks. It still blocks launch on
   unreserved crates.io identities for the `claw-vcs` package set and warns
-  that WinGet, trademark, domain/social-handle review, and GitHub social
-  preview upload require maintainer action.
+  that WinGet, GitHub social preview upload, optional GitHub Pages publication,
+  trademark, domain, and social-handle review require maintainer action.
 - Suggested repository labels are tracked in `.github/labels.yml`.
-- Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, launch-hardening release publication, and clean-environment verification for each release channel after the hardened changes are published.
+- Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, optional GitHub Pages publication, launch-hardening release publication, and clean-environment verification for each release channel after the hardened changes are published.
 
 Before announcement, run the maintainer preflight from an authenticated local checkout:
 

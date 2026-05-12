@@ -20,7 +20,9 @@ Before broad announcement, verify every live channel from a clean machine or con
 
 Latest preflight result on 2026-05-12: repository, branch-protection,
 security-setting, Homebrew tap, and social-preview asset checks passed;
-`claw-vcs` and the `claw-vcs-*` internal package names were still unreserved on crates.io, and WinGet remained planned.
+`claw-vcs` and the `claw-vcs-*` internal package names were still unreserved on
+crates.io, WinGet remained planned, GitHub social preview upload was not
+complete, and GitHub Pages was not configured.
 
 Maintainer preflight:
 
@@ -28,10 +30,12 @@ Maintainer preflight:
 scripts/public-launch-preflight.sh
 ```
 
-The preflight checks package-name signals, repository settings, branch protection,
-and the local social preview asset. It is expected to fail until launch-gating
-external actions, such as reserving or publishing the `claw-vcs` crates.io package set, are
-complete.
+The preflight checks package-name signals, repository settings, branch
+protection, the local social preview asset, GitHub social preview upload state,
+and optional GitHub Pages state. It is expected to fail until launch-gating
+external actions, such as reserving or publishing the `claw-vcs` crates.io
+package set, are complete. Set `CLAW_PREFLIGHT_REQUIRE_PAGES=1` when the launch
+includes a hosted landing page.
 
 Crates.io publish order:
 
