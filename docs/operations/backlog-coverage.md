@@ -129,7 +129,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 80 | Implemented | `#![deny(missing_docs)]` is enabled on public library crates including core, crypto, policy, and patch. |
 | 81 | Implemented | MVP/TODO audit recorded in `docs/reference/panic-audit.md`; stale production markers were removed or documented. |
 | 82 | Implemented | Criterion benchmark scaffolds and docs in `crates/*/benches/` and `docs/reference/benchmarks.md`. |
-| 83 | Implemented | Large-repo scenarios are covered in `tests/integration/backlog_gap_tests.rs` and benchmark fixtures. |
+| 83 | Implemented | Large-repo scenarios are covered in `tests/integration/backlog_gap_tests.rs`, including an always-on synthetic workflow and an ignored 10k-file operator drill, plus benchmark fixtures. |
 | 84 | Implemented | Windows path/release-channel coverage is in compatibility matrix CI and path safety tests; broader real-world validation remains called out before rollout. |
 | 85 | Implemented | `docs/reference/unsafe-audit.md` documents unsafe audit status. |
 | 86 | Implemented | Panic audit guidance and CI clippy panic/todo/unimplemented checks. |

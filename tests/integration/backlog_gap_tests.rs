@@ -125,6 +125,61 @@ fn large_repo_synthetic_snapshot_status_and_checkout_scale() {
 }
 
 #[test]
+#[ignore = "10k-file large-repo drill is intentionally operator-triggered"]
+fn large_repo_10k_file_snapshot_status_and_path_filter_drill() {
+    const FILES: usize = 10_000;
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("large-10k-synthetic");
+
+    for index in 0..FILES {
+        env.write_file(
+            &large_repo_file(&repo, index),
+            &format!("component {index}\nline two\n"),
+        );
+    }
+    env.write_file(
+        &repo.join("fixtures").join("large.json"),
+        &format!(
+            "{{\"items\":[{}]}}\n",
+            (0..2048)
+                .map(|idx| format!("{{\"id\":{idx},\"value\":\"v{idx}\"}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+    );
+    fs::create_dir_all(repo.join("fixtures")).expect("create fixtures directory");
+    fs::write(
+        repo.join("fixtures").join("large.bin"),
+        vec![0x5au8; 1024 * 1024],
+    )
+    .expect("write large binary fixture");
+
+    let status = env.run_ok(&repo, ["status", "--json"]);
+    let status_json = status.stdout_json();
+    let changes = status_json["changes"]
+        .as_array()
+        .expect("large repo status changes");
+    assert_eq!(changes.len(), FILES + 2);
+
+    env.run_ok(&repo, ["snapshot", "-m", "10k synthetic baseline"]);
+    env.write_file(
+        &large_repo_file(&repo, 9_999),
+        "component 9999\npath-filter drill\n",
+    );
+
+    let dirty = env.run_ok(&repo, ["status", "--json"]);
+    let dirty_json = dirty.stdout_json();
+    let dirty_changes = dirty_json["changes"]
+        .as_array()
+        .expect("large repo dirty changes");
+    assert_eq!(dirty_changes.len(), 1);
+    assert_eq!(
+        dirty_changes[0]["path"],
+        "modules/03/component_9999/file_9999.txt"
+    );
+}
+
+#[test]
 fn admin_backup_verify_and_rollback_restore_corrupted_metadata() {
     let env = CliTestEnv::new();
     let repo = env.init_repo("disaster-recovery");
