@@ -38,7 +38,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | # | Status | Evidence |
 |---:|---|---|
 | 16 | Implemented | `.github/ISSUE_TEMPLATE/*` and `.github/PULL_REQUEST_TEMPLATE.md`. |
-| 17 | Implemented | `.github/CODEOWNERS`. |
+| 17 | Implemented | `.github/CODEOWNERS` covers workflows, security-sensitive crates/docs, release scripts, workspace manifests, dist config, installer templates, and deployment assets. |
 | 18 | Implemented | `CHANGELOG.md`. |
 | 19 | Implemented | `SUPPORT.md`. |
 | 20 | Implemented | `ROADMAP.md`. |
@@ -50,12 +50,12 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 26 | Implemented | Git interop tests live in `crates/claw-git/tests/git_bridge_real_git.rs`, `tests/integration/spec_tests.rs`, and CLI Git workflow tests. |
 | 27 | Implemented | Durability/crash coverage appears in `tests/integration/chaos_tests.rs`, `tests/integration/backlog_gap_tests.rs`, store corruption tests, and admin backup/rollback tests; CI and contract workflows run the deterministic chaos suite. |
 | 28 | Implemented | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; Dependabot security updates verified enabled. |
-| 29 | Implemented | `deny.toml`; CI runs `cargo deny check`. |
+| 29 | Implemented | `deny.toml`; CI runs `cargo deny check` across configured release targets including macOS, Linux x86_64/aarch64, and Windows. |
 | 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`, and `tests/integration/ops_artifacts_tests.rs` validates the cargo-vet metadata and dependency-policy shape. |
 | 31 | Implemented | `.github/workflows/sbom.yml` and release/CI SBOM attestation jobs; public release SBOM verification remains part of release-channel verification. |
 | 32 | Implemented | `.github/workflows/scorecard.yml`; Scorecard checks pass on PR. |
 | 33 | Implemented | `.github/workflows/codeql.yml` and `.github/workflows/semgrep.yml`; code scanning uploads verified. |
-| 34 | Implemented | `docs/security/verifying-releases.md`. |
+| 34 | Implemented | `docs/security/verifying-releases.md` documents single-asset checksum checks plus Cosign OIDC issuer/certificate identity constraints that match the verifier script. |
 | 35 | Implemented | `docs/operations/upgrade-and-rollback.md`, `docs/runbooks/emergency-rollback.md`, and `docs/runbooks/backup-and-restore.md`. |
 
 ## P1: Product And Concept Clarity
@@ -82,7 +82,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 
 | # | Status | Evidence |
 |---:|---|---|
-| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; smoke checked generated output. |
+| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; smoke checked generated output and daemon/security option coverage. |
 | 52 | Implemented | `claw doctor` and `claw doctor --json`; docs in `docs/cli/doctor.md`. |
 | 53 | Implemented | `claw version --json`; docs in `docs/cli/version.md`. |
 | 54 | Implemented | `status`, `log`, `show`, `policy eval`, `diff`, and `doctor` support JSON output; docs under `docs/cli/`. |
@@ -101,11 +101,11 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 62 | Implemented | Auth/token redaction is covered by daemon/security tests and telemetry/support-bundle guidance. |
 | 63 | Implemented | Sync request-size, stream, concurrency, retry, and rate-limit behavior is implemented in daemon/sync code and documented in security/production docs. |
 | 64 | Implemented | `crates/claw-sync/src/security.rs` models roles/scopes; daemon docs describe authorization. |
-| 65 | Implemented | Audit logging for sync/security/admin paths is implemented with tracing plus `claw daemon --audit-log <path>` JSONL records, and documented in observability/security docs. |
+| 65 | Implemented | Audit logging for daemon sync/security paths is implemented with tracing plus `claw daemon --audit-log <path>` JSONL records, and documented in observability/security docs. Admin backup/restore keeps separate migration and verification records. |
 | 66 | Implemented | mTLS flags/docs/tests exist for daemon/sync; `tests/integration/cli_sync_e2e_tests.rs` exercises a live TLS daemon that requires a client certificate. |
 | 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, with tests in sync security paths. Capsule evidence freshness separately binds evidence to exact revisions. |
 | 68 | Implemented | `docs/reference/compatibility.md`, `compatibility-matrix.json`, and sync negotiation code. |
-| 69 | Implemented | Remote compatibility/integration tests cover push/pull, partial clone, interruption, auth, stale token rejection, protocol mismatch, and live TLS/mTLS clone behavior. |
+| 69 | Implemented | Remote compatibility/integration tests cover push/pull, full CLI clone, interruption, auth, stale token rejection, protocol mismatch, and live TLS/mTLS clone behavior. Partial-clone filters are implemented and tested at the daemon fetch protocol layer; CLI `sync clone` filter flags remain a documented limitation. |
 | 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs. |
 
 ## P1: Release And Packaging
@@ -113,9 +113,9 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | # | Status | Evidence |
 |---:|---|---|
 | 71 | Implemented | `docs/operations/release-reproducibility.md` and release workflow metadata/signing/attestation/SBOM gates. |
-| 72 | Implemented | `RELEASING.md` includes fmt, clippy, test, audit, deny, vet, fuzz smoke, dry-run, install verification, signatures, attestations, SBOM, Homebrew, Windows, and rollback. |
+| 72 | Implemented | `RELEASING.md` and `release.yml` include fmt, clippy, `cargo test --workspace --all-targets --locked`, audit, deny, vet, all fuzz-target smoke, dry-run, install verification, signatures, attestations, SBOM, Homebrew, Windows, and rollback. |
 | 73 | Implemented | `docs/operations/package-registry-strategy.md` documents live/planned/unsupported channels and the `claw-vcs` crates.io package set. |
-| 74 | External pending | Registry availability checks are recorded; `scripts/public-launch-preflight.sh` automates repeatable package-name/repository checks for `claw-vcs` and `claw-vcs-*`; `docs/operations/name-clearance.md` gives the evidence template for trademark, domain, and social-handle checks. Actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
+| 74 | External pending | Registry availability checks are recorded; `scripts/public-launch-preflight.sh` automates repeatable package-name/repository checks for `claw-vcs` and `claw-vcs-*`; strict preflight also requires completed name/domain/social/package evidence. `docs/operations/name-clearance.md` gives the evidence template for trademark, domain, and social-handle checks. Actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
 | 75 | Implemented | Install docs end with `claw --version`, `claw doctor`, and smoke test commands. |
 | 76 | Implemented | README and release verification docs provide manual download and verification alternatives to pipe installers. |
 | 77 | Implemented | `docs/operations/uninstall.md`. |
@@ -124,9 +124,9 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 
 | # | Status | Evidence |
 |---:|---|---|
-| 78 | Implemented | Crate-level `//!` docs exist across workspace crates. |
+| 78 | Implemented | Crate-level `//!` docs exist across workspace crates, including the CLI binary crate. |
 | 79 | Implemented | Rustdoc examples exist for core, store, crypto, policy, and patch crates. |
-| 80 | Implemented | `#![deny(missing_docs)]` is enabled on public library crates including core, crypto, policy, and patch. |
+| 80 | Implemented | `#![deny(missing_docs)]` is selectively enabled on the first public library targets: core, crypto, policy, and patch. |
 | 81 | Implemented | MVP/TODO audit recorded in `docs/reference/panic-audit.md`; stale production markers were removed or documented. |
 | 82 | Implemented | Criterion benchmark scaffolds and docs in `crates/*/benches/` and `docs/reference/benchmarks.md`. |
 | 83 | Implemented | Large-repo scenarios are covered in `tests/integration/backlog_gap_tests.rs`, including CI-enforced synthetic workflow coverage, varied large JSON/binary/path-filter fixtures, and an ignored 10k-file operator drill, plus benchmark fixtures. |
@@ -144,16 +144,16 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 |---:|---|---|
 | 91 | Implemented | `docs/index.html` and `docs/landing-page.md`; publishing the static page with GitHub Pages is an external repository setting/workflow decision if desired. |
 | 92 | Implemented | README includes restrained CI/license/security badges. |
-| 93 | Implemented | `docs/assets/social-preview.png` upload-ready asset and source SVG. |
+| 93 | Implemented | `docs/assets/social-preview.png` is an upload-ready 1280x640 asset with source SVG; preflight and artifact tests verify size and dimensions. |
 | 94 | External pending | Logo overinvestment intentionally deferred until name/trademark clearance. |
-| 95 | Verified | Repository topics verified with `gh repo view` and recorded in `public-launch-checklist.md`. |
+| 95 | Verified | Repository topics, including `cli`, are verified with `gh repo view` and recorded in `public-launch-checklist.md`; preflight fails on missing required topics. |
 | 96 | Implemented | `examples/README.md` indexes `basic-human-workflow`, `agent-capsule`, `policy-gated-integration`, `git-roundtrip`, `sensitive-path`, `backup-restore`, demo media, and integration sketches. |
 | 97 | Implemented | Persona docs under `docs/persona/`. |
 | 98 | Implemented | `docs/maintainers/guide.md` and related maintainer docs. |
 | 99 | Implemented | `docs/maintainers/governance.md`. |
 | 100 | Not applicable | Funding file is optional; no funding channel is configured unless maintainers choose one. |
 | 101 | Implemented | `.github/labels.yml`; live GitHub labels verified with `gh label list`. |
-| 102 | Implemented | `docs/reference/stability.md`. |
+| 102 | Implemented | `docs/reference/stability.md` and `docs/reference/public-interface-manifest.md` state the pre-1.0 experimental guarantee hierarchy. |
 | 103 | Implemented | `docs/reference/deprecation-policy.md` and `docs/maintainers/deprecations.md`. |
 | 104 | Implemented | `docs/reference/telemetry.md` and `docs/maintainers/telemetry.md`. |
 | 105 | Implemented | ClawLab/hosted remote references are marked planned in README, CLI docs, compatibility docs, known limitations, and telemetry policy; auth commands no longer default to a concrete hosted endpoint. |
@@ -166,6 +166,6 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 ## Current External Blockers
 
 - PR #4 requires review approval before merge.
-- Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, and optional GitHub Pages publication require maintainer/account access.
+- Package/name reservation, trademark review, domain/social-handle checks, GitHub social preview upload, strict launch evidence, and optional GitHub Pages publication require maintainer/account access.
 - The next hardened public release must be cut before public artifact attestations, SBOMs, signatures, installers, Homebrew, MSI, and clean-environment channel checks can be verified.
 - GitHub reports low Dependabot findings on the default branch until this branch's dependency updates land on `main`.

@@ -68,6 +68,23 @@ const COMMON_COMMAND_OPTIONS: &[&str] = &[
     "--token-profile",
     "--client-cert",
     "--client-key",
+    "--allow-public-health",
+    "--audit-log",
+    "--auth-principal",
+    "--auth-profile",
+    "--auth-role",
+    "--auth-scope",
+    "--auth-token",
+    "--client-ca-cert",
+    "--health-listen",
+    "--listen",
+    "--max-push-chunk-bytes",
+    "--max-push-request-bytes",
+    "--rate-limit-per-minute",
+    "--require-replay-nonce",
+    "--stdio",
+    "--tls-cert",
+    "--tls-key",
     "--tls-ca-cert",
     "--tls-domain",
 ];
@@ -291,6 +308,24 @@ mod tests {
         assert!(bash.contains("doctor"));
         assert!(bash.contains("version"));
         assert!(bash.contains("completions"));
+        for option in [
+            "--listen",
+            "--health-listen",
+            "--auth-token",
+            "--auth-role",
+            "--auth-scope",
+            "--require-replay-nonce",
+            "--rate-limit-per-minute",
+            "--tls-cert",
+            "--tls-key",
+            "--client-ca-cert",
+            "--audit-log",
+        ] {
+            assert!(
+                bash.contains(option),
+                "bash completion should include daemon option {option}"
+            );
+        }
 
         let fish = fish_completion();
         assert!(fish.contains("claw -l profile"));

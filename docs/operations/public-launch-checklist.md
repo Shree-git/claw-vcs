@@ -8,10 +8,12 @@ Status as of 2026-05-12:
 
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
-- Full-history local secret scans passed on 2026-05-12:
-  `gitleaks 8.30.0` scanned 93 commits and 2.19 MB with no leaks found, and
-  `trufflehog 3.95.2` scanned 2,424 chunks and 2.27 MB with 0 verified and 0
-  unverified secrets.
+- Full-history local secret scans passed on 2026-05-12 for the
+  launch-hardening branch history:
+  `gitleaks detect --source . --no-git=false --redact --no-banner` reported no
+  leaks, and `trufflehog git file://$PWD --json --no-update` reported 0
+  verified and 0 unverified secrets. Re-run both commands after the final
+  launch commit before announcement.
 - Code scanning uploads are accepted for PR #4 on 2026-05-12:
   CodeQL, Semgrep OSS, and Scorecard analyses exist for `refs/pull/4/merge`.
 - PR #4 has passing CI, release planning, security, SAST,
@@ -43,7 +45,12 @@ Before announcement, run the maintainer preflight from an authenticated local ch
 
 ```bash
 scripts/public-launch-preflight.sh
+CLAW_PREFLIGHT_STRICT=1 scripts/public-launch-preflight.sh
 ```
+
+The normal preflight reports owner-only items that are still pending. Strict
+mode is the broad-announcement gate: it fails until the GitHub social preview is
+uploaded and completed name/domain/social/package evidence is recorded.
 
 ## Owner-Only Launch Handoff
 
@@ -57,7 +64,9 @@ access; they cannot be completed by editing this repository alone.
    `scripts/publish-cratesio.sh --publish` once credentials are configured.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready. Use
-   [name-clearance.md](name-clearance.md) to record evidence.
+   [name-clearance.md](name-clearance.md) to record evidence in
+   `docs/operations/name-clearance-evidence.md`, or set
+   `CLAW_PREFLIGHT_NAME_EVIDENCE` to the evidence file used by strict preflight.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.
 5. If the launch includes a public website, enable GitHub Pages or another docs
    host for `docs/index.html` and verify the rendered page.
@@ -138,6 +147,7 @@ vcs
 provenance
 ai-agents
 supply-chain-security
+cli
 rust
 git
 sigstore

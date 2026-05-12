@@ -12,9 +12,9 @@ This document defines which interfaces are public and what stability guarantees 
 
 | Surface | Scope | Stability | Contract for Operators |
 |---|---|---|---|
-| CLI command surface | User-facing commands, flags, positional arguments, exit codes, and non-debug stdout/stderr formats | Stable | Existing command paths and flag meanings are preserved across patch/minor updates in the same major line. Stable exit codes are documented in `docs/cli/exit-codes.md`. |
+| CLI command surface | User-facing commands, flags, positional arguments, exit codes, and non-debug stdout/stderr formats | Experimental | The documented command surface is tested and intended to move deliberately, but v0.1.x has no compatibility guarantee. Pin exact versions for automation and review release notes before upgrading. Exit codes are documented in `docs/cli/exit-codes.md`. |
 | Daemon HTTP API | Versioned HTTP endpoints, request/response JSON/text shape, status code semantics, auth headers | Beta | Canonical schema artifact is `docs/reference/daemon-http-openapi-v1.json`; current v1 surface includes `/v1/health/live`, `/v1/health/ready`, `/v1/health/deps`, and `/v1/metrics` (Prometheus text). Endpoint behavior may change between minor releases, with release-note callouts and migration instructions. |
-| Policy schema | Policy document keys, value types, validation rules, and schema version negotiation | Stable | Existing valid policies remain valid for N and N+1. Validation changes are additive unless a deprecation cycle completes. |
+| Policy schema | Policy document keys, value types, validation rules, and schema version negotiation | Experimental | Policy semantics may change before v1.0. Keep policy files under version control, pin Claw versions in gated workflows, and review release migration notes before upgrading. |
 | Git interop contract | Mapping between Claw and Git refs/objects, clone/fetch/push interoperability rules, conflict behavior for bridge operations | Experimental | Behavior can change as interoperability matures; pin CLI + daemon versions for automation using this surface. |
 
 ## Explicitly Non-Public
@@ -29,7 +29,8 @@ The following are implementation details and may change without notice:
 
 The CLI diagnostic contract covers both process exit codes and the global JSON error envelope.
 
-- Exit codes are stable and documented in `docs/cli/exit-codes.md`.
+- Exit codes are documented in `docs/cli/exit-codes.md`; they are expected to
+  stay deliberate but are not a stable pre-1.0 contract.
 - Machine-readable errors are emitted with `claw --error-format json <command>`.
 - The JSON error envelope has stable top-level keys: `code`, `message`, `request_id`, `remediation`, `exit_code`, and `details`.
 - Successful `--json` output is command-specific and documented in each command reference page.
@@ -38,4 +39,4 @@ The CLI diagnostic contract covers both process exit codes and the global JSON e
 
 - Every public-interface change must include release-note text.
 - Any change that can break existing automation must include an upgrade path.
-- Stable-surface removals require deprecation policy completion (`N` -> `N+1` -> `N+2`).
+- Stable-surface removals require deprecation policy completion (`N` -> `N+1` -> `N+2`) after a surface is promoted to stable.

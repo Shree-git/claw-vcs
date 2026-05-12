@@ -18,6 +18,8 @@ Environment:
   CLAW_PREFLIGHT_REPO            GitHub repository (default: Shree-git/claw-vcs)
   CLAW_PREFLIGHT_BRANCH          Protected branch to inspect (default: main)
   CLAW_PREFLIGHT_REQUIRE_PAGES   Set to 1 when GitHub Pages is part of launch
+  CLAW_PREFLIGHT_STRICT          Set to 1 for broad-announcement readiness
+  CLAW_PREFLIGHT_NAME_EVIDENCE   Completed name-clearance evidence markdown
 USAGE
 }
 
@@ -29,6 +31,8 @@ fi
 repo="${CLAW_PREFLIGHT_REPO:-Shree-git/claw-vcs}"
 branch="${CLAW_PREFLIGHT_BRANCH:-main}"
 require_pages="${CLAW_PREFLIGHT_REQUIRE_PAGES:-0}"
+strict="${CLAW_PREFLIGHT_STRICT:-0}"
+name_evidence="${CLAW_PREFLIGHT_NAME_EVIDENCE:-docs/operations/name-clearance-evidence.md}"
 
 failures=0
 warnings=0
@@ -40,6 +44,14 @@ pass() {
 warn() {
   warnings=$((warnings + 1))
   printf 'WARN: %s\n' "$*" >&2
+}
+
+strict_warn() {
+  if [[ "$strict" == "1" ]]; then
+    fail "$*"
+  else
+    warn "$*"
+  fi
 }
 
 fail() {
@@ -80,6 +92,7 @@ expect_value() {
 require gh || true
 require curl || true
 require git || true
+require python3 || true
 
 if [[ "$failures" -gt 0 ]]; then
   exit 1
@@ -110,6 +123,7 @@ for topic in \
   provenance \
   ai-agents \
   supply-chain-security \
+  cli \
   rust \
   git \
   sigstore \
@@ -230,6 +244,28 @@ if [[ -f "$social_preview" ]]; then
   else
     fail "social preview asset exceeds GitHub's 1 MB upload limit"
   fi
+  dimensions="$(
+    python3 - "$social_preview" <<'PY'
+import struct
+import sys
+
+path = sys.argv[1]
+with open(path, "rb") as handle:
+    data = handle.read(24)
+if len(data) < 24 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+    print("invalid invalid")
+else:
+    width, height = struct.unpack(">II", data[16:24])
+    print(f"{width} {height}")
+PY
+  )"
+  social_width="${dimensions%% *}"
+  social_height="${dimensions#* }"
+  if [[ "$social_width" == "1280" && "$social_height" == "640" ]]; then
+    pass "social preview dimensions are 1280x640"
+  else
+    fail "social preview dimensions must be 1280x640, got ${social_width:-<empty>}x${social_height:-<empty>}"
+  fi
 else
   fail "missing social preview asset: $social_preview"
 fi
@@ -238,7 +274,7 @@ custom_open_graph="$(gh repo view "$repo" --json usesCustomOpenGraphImage --jq '
 if [[ "$custom_open_graph" == "true" ]]; then
   pass "GitHub social preview image is uploaded"
 else
-  warn "GitHub social preview image is not uploaded; upload $social_preview in repository settings"
+  strict_warn "GitHub social preview image is not uploaded; upload $social_preview in repository settings"
 fi
 
 if gh api "repos/$repo/pages" --silent >/dev/null 2>&1; then
@@ -250,7 +286,20 @@ else
   warn "GitHub Pages is not configured; leave optional unless the launch includes a public website"
 fi
 
-warn "trademark clearance, domain checks, and social-handle checks require manual maintainer verification"
+if [[ "$strict" == "1" ]]; then
+  if [[ -f "$name_evidence" ]] &&
+    grep -Eq '^- Final decision: .+' "$name_evidence" &&
+    grep -Eq '^- Domains checked/reserved: .+' "$name_evidence" &&
+    grep -Eq '^- Social handles checked/reserved: .+' "$name_evidence" &&
+    grep -Eq '^- crates.io packages reserved/published: .+' "$name_evidence" &&
+    grep -Eq '^- GitHub social preview uploaded: yes' "$name_evidence"; then
+    pass "name-clearance evidence is recorded in $name_evidence"
+  else
+    fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence"
+  fi
+else
+  warn "trademark clearance, domain checks, and social-handle checks require manual maintainer verification"
+fi
 
 echo
 echo "Public-launch preflight finished with $failures failure(s), $warnings warning(s)."

@@ -2,8 +2,10 @@
 
 Small checked-in launch media:
 
-- [basic-demo.cast](basic-demo.cast): short asciinema v2 recording that mirrors
-  the basic demo path.
+- [basic-demo.cast](basic-demo.cast): short asciinema v2 recording of the core
+  intent, change, snapshot, ship, integrate, and status path. The maintained
+  script in `examples/basic-demo/scripts/demo.sh` is the source of truth for the
+  complete current demo.
 - [status-screenshot.svg](status-screenshot.svg): terminal-style `claw status`
   screenshot.
 - [ship-capsule-screenshot.svg](ship-capsule-screenshot.svg): terminal-style

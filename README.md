@@ -280,6 +280,26 @@ Tagged releases publish prebuilt binaries for macOS, Linux, and Windows in GitHu
 
 For the current working tree, the source install path has been smoke-tested with `cargo install --path crates/claw --locked`. For release channels, check [install verification](docs/operations/install-verification-log.md) and only mark a channel launch-ready after its current public artifact passes the matching clean-environment smoke test.
 
+### Current source install
+
+Use this path until a launch-hardening release is published and verified:
+
+```bash
+git clone https://github.com/shree-git/claw-vcs.git
+cd claw-vcs
+cargo install --path crates/claw --locked
+claw --version
+claw doctor
+```
+
+### Release channels
+
+The release-channel commands below are for the next verified launch-hardening
+release. Do not treat `/latest`, Homebrew, MSI, or installer output as
+launch-ready until the release notes and
+[install verification log](docs/operations/install-verification-log.md) record a
+passing current-tag verification.
+
 ### macOS
 
 **Homebrew**

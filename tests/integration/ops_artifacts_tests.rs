@@ -2,6 +2,8 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
+use std::process::Command;
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -315,6 +317,10 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/assets/social-preview.png",
         "usesCustomOpenGraphImage",
         "CLAW_PREFLIGHT_REQUIRE_PAGES",
+        "CLAW_PREFLIGHT_STRICT",
+        "CLAW_PREFLIGHT_NAME_EVIDENCE",
+        "social preview dimensions are 1280x640",
+        "name-clearance-evidence.md",
     ] {
         assert!(
             launch_preflight.contains(phrase),
@@ -364,6 +370,25 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     assert!(
         social_preview.starts_with(b"\x89PNG\r\n\x1a\n"),
         "social preview asset must be a PNG file"
+    );
+    assert!(
+        social_preview.len() >= 24,
+        "social preview PNG must include an IHDR header"
+    );
+    let width = u32::from_be_bytes(
+        social_preview[16..20]
+            .try_into()
+            .expect("PNG width bytes must be present"),
+    );
+    let height = u32::from_be_bytes(
+        social_preview[20..24]
+            .try_into()
+            .expect("PNG height bytes must be present"),
+    );
+    assert_eq!(
+        (width, height),
+        (1280, 640),
+        "social preview must match the documented 1280x640 GitHub card dimensions"
     );
     assert!(
         social_preview.len() < 1_000_000,
@@ -430,6 +455,55 @@ fn public_launch_assets_exist_and_are_upload_ready() {
             "install verification log must preserve provenance evidence coverage: {phrase}"
         );
     }
+}
+
+#[test]
+#[cfg(not(windows))]
+fn release_helper_scripts_have_safe_cli_guards() {
+    let root = workspace_root();
+
+    let preflight_help = Command::new("bash")
+        .arg("scripts/public-launch-preflight.sh")
+        .arg("--help")
+        .current_dir(&root)
+        .output()
+        .expect("run public-launch preflight help");
+    assert!(
+        preflight_help.status.success(),
+        "public-launch preflight --help should exit successfully"
+    );
+    let preflight_help = String::from_utf8(preflight_help.stdout).expect("help is utf-8");
+    assert!(preflight_help.contains("CLAW_PREFLIGHT_STRICT"));
+
+    let verify_without_tag = Command::new("bash")
+        .arg("scripts/verify-release-channel.sh")
+        .current_dir(&root)
+        .output()
+        .expect("run release verifier without tag");
+    assert_eq!(
+        verify_without_tag.status.code(),
+        Some(2),
+        "release verifier must fail safely without a tag"
+    );
+
+    let publish_without_opt_in = Command::new("bash")
+        .args([
+            "scripts/publish-cratesio.sh",
+            "--publish",
+            "--package",
+            "claw-vcs-core",
+        ])
+        .env_remove("CLAW_CRATESIO_PUBLISH")
+        .current_dir(&root)
+        .output()
+        .expect("run crates.io publisher without opt-in");
+    assert_eq!(
+        publish_without_opt_in.status.code(),
+        Some(2),
+        "crates.io publisher must refuse real publishing without env opt-in"
+    );
+    let stderr = String::from_utf8(publish_without_opt_in.stderr).expect("stderr is utf-8");
+    assert!(stderr.contains("refusing to publish without CLAW_CRATESIO_PUBLISH=1"));
 }
 
 #[test]

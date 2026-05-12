@@ -3,9 +3,15 @@
 /.github/ISSUE_TEMPLATE/ @Shree-git
 /.github/CODEOWNERS @Shree-git
 /.github/labels.yml @Shree-git
+/scripts/ @Shree-git
+/Cargo.toml @Shree-git
+/Cargo.lock @Shree-git
+/dist-workspace.toml @Shree-git
 /crates/claw-crypto/ @Shree-git
 /crates/claw-policy/ @Shree-git
 /crates/claw-sync/ @Shree-git
+/crates/claw/wix/ @Shree-git
+/crates/claw/deploy/ @Shree-git
 /proto/ @Shree-git
 /docs/security/ @Shree-git
 /docs/concepts/ @Shree-git

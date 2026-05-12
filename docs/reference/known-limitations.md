@@ -70,6 +70,9 @@ Claw VCS is v0.1 experimental software. It is appropriate for local exploration,
 
 - Self-hosted daemon deployments are the primary supported remote model.
 - Hosted ClawLab-style remotes are planned and should not be assumed live unless release notes say so.
+- The sync protocol implements partial-clone filters for daemon object fetches,
+  but `claw sync clone` currently performs a full ref/object clone and does not
+  expose filter flags.
 - Sync clients should handle interrupted streams, missing objects, stale refs, auth failures, and protocol mismatches as normal error cases.
 
 ## Evidence Freshness

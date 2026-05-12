@@ -4,14 +4,14 @@ Use this checklist for every tag release and hotfix.
 
 ## CI-Enforced Gates
 
-- [ ] `release.yml` `quality` job passed (`cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace`).
+- [ ] `release.yml` `quality` job passed (`cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace --all-targets --locked`).
 - [ ] `release.yml` `security-audit-gate` passed (`cargo audit --deny warnings`).
 - [ ] Dependency policy passed (`cargo deny check`).
 - [ ] `release.yml` `contract-tests-gate` passed (`claw`, `spec_tests`, `ops_artifacts_tests`).
 - [ ] `release.yml` `compatibility-matrix-gate` passed on Linux, macOS, and Windows.
 - [ ] `cross-version-runtime.yml` `cross-version-runtime-integration` job passed (`cross_version_runtime_tests`).
 - [ ] `contract-diff.yml` passed and uploaded `contract-diff-summary.json` as `contract-diff-summary` artifact.
-- [ ] Fuzz target compile and `object_id_parse -runs=1` smoke passed.
+- [ ] All fuzz targets compile and pass a `-runs=1` smoke.
 
 ## Signed Artifact Flow
 

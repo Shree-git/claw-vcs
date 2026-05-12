@@ -12,17 +12,22 @@ Use these checks before installing a downloaded Claw VCS release artifact.
 
 ## Checksums
 
-Download the archive and checksum file from the same GitHub Release:
+Download the archive and checksum file from the same GitHub Release. To verify
+one downloaded asset without downloading every file named in `sha256.sum`, check
+only that asset's line:
 
 ```bash
-sha256sum -c sha256.sum
+grep '  claw-x86_64-unknown-linux-gnu.tar.xz$' sha256.sum | sha256sum -c -
 ```
 
 On macOS:
 
 ```bash
-shasum -a 256 -c sha256.sum
+grep '  claw-x86_64-unknown-linux-gnu.tar.xz$' sha256.sum | shasum -a 256 -c -
 ```
+
+If you downloaded the full release asset set, `sha256sum -c sha256.sum` or
+`shasum -a 256 -c sha256.sum` should also pass.
 
 ## Cosign Blob Signatures
 
@@ -30,12 +35,15 @@ When a release provides `.sig` and certificate material:
 
 ```bash
 cosign verify-blob \
-  --certificate ./claw-x86_64-unknown-linux-gnu.tar.xz.pem \
   --signature ./claw-x86_64-unknown-linux-gnu.tar.xz.sig \
+  --certificate ./claw-x86_64-unknown-linux-gnu.tar.xz.pem \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/Shree-git/(claw|claw-vcs)/.github/workflows/.*@refs/tags/vX.Y.Z$' \
   ./claw-x86_64-unknown-linux-gnu.tar.xz
 ```
 
-Check the certificate identity and issuer match the release workflow documented for this repository.
+The certificate issuer must be GitHub Actions OIDC, and the certificate
+identity must point at this repository's workflow on the exact release tag.
 
 ## GitHub Artifact Attestations
 

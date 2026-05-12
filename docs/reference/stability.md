@@ -15,17 +15,24 @@ for public surfaces is [Public Interface Manifest](public-interface-manifest.md)
 
 | Surface | Level |
 |---|---|
-| CLI command surface | Stable |
-| Policy schema | Stable |
+| CLI command surface | Experimental |
+| Policy schema | Experimental |
 | Daemon HTTP health and metrics v1 | Beta |
-| gRPC sync protocol | Beta |
+| gRPC sync protocol | Experimental |
 | Git interop contract | Experimental |
 | Internal Rust crate APIs | Not public |
 | Temporary files and caches | Not public |
 
+Claw VCS is still pre-1.0. The manifest documents the public surfaces we test
+and try to move deliberately, but v0.1.x does not provide a compatibility
+guarantee for CLI behavior, policy semantics, object formats, daemon APIs, or
+sync protocol behavior. Pin exact versions for automation and read release
+notes before upgrading.
+
 ## Release rules
 
-- Stable removals follow the deprecation policy.
+- Stable removals follow the deprecation policy once a surface is promoted to
+  stable.
 - Beta breaking changes must be named in release notes.
 - Experimental changes should still include migration notes when users are likely
   to depend on the behavior.

@@ -108,6 +108,18 @@ claw-vcs-git
 Record the crates.io owner account and recovery path. Do not document
 `cargo install claw-vcs` until the package set is live and verified.
 
+Save completed launch evidence in:
+
+```text
+docs/operations/name-clearance-evidence.md
+```
+
+If evidence is stored elsewhere, run strict preflight with:
+
+```bash
+CLAW_PREFLIGHT_STRICT=1 CLAW_PREFLIGHT_NAME_EVIDENCE=/path/to/evidence.md scripts/public-launch-preflight.sh
+```
+
 ## GitHub Social Preview
 
 Upload `docs/assets/social-preview.png` in repository settings. GitHub documents
@@ -141,3 +153,7 @@ Copy this block into the launch issue or release notes:
 - Counsel review required: yes/no
 - Final decision:
 ```
+
+Strict preflight treats the evidence as complete only when the final decision,
+domain, social-handle, crates.io, and social-preview upload fields are filled
+in, and `GitHub social preview uploaded` is `yes`.

@@ -1,3 +1,8 @@
+//! Command-line interface for Claw VCS.
+//!
+//! The binary wires Clap parsing, runtime safety profiles, diagnostics, and
+//! command dispatch for the `claw` executable.
+
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 

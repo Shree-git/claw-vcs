@@ -14,9 +14,12 @@ Run the checks that match your change:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 ```
+
+`CONTRIBUTING.md` is the source of truth for required PR checks; keep local
+commands aligned with that file when the CI gate changes.
 
 For docs-only changes, proofread links and command examples.
 

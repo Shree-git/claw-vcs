@@ -26,6 +26,10 @@ claw sync \
 
 `--client-cert` and `--client-key` must be provided together. Protocol negotiation failures should be treated as compatibility issues, not retried blindly.
 
+The daemon protocol supports partial-clone filters for object fetches, but the
+current `claw sync clone` CLI performs a full clone and does not expose filter
+flags yet.
+
 ## JSON Output
 
 `claw sync` does not currently emit command-specific success JSON. Use global

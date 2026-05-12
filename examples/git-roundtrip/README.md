@@ -4,10 +4,10 @@
 claw init
 printf 'hello\n' > hello.txt
 claw snapshot -m "initial"
-claw git-export /tmp/claw-export.git --all-heads
+claw git-export --git-dir /tmp/claw-export.git --all-heads
 git -C /tmp/claw-export.git fsck
 git -C /tmp/claw-export.git log --oneline
-claw git-import /tmp/claw-export.git
+claw git-import --git-dir /tmp/claw-export.git --all-branches
 claw git-roundtrip
 ```
 
