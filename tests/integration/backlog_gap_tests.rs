@@ -125,6 +125,92 @@ fn large_repo_synthetic_snapshot_status_and_checkout_scale() {
 }
 
 #[test]
+fn large_repo_varied_fixture_diff_and_path_filter_scale() {
+    const FILES: usize = 192;
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("large-varied-fixtures");
+
+    for index in 0..FILES {
+        env.write_file(
+            &large_repo_file(&repo, index),
+            &format!("component {index}\nline two\n"),
+        );
+    }
+
+    let large_json = format!(
+        "{{\"items\":[{}]}}\n",
+        (0..1024)
+            .map(|idx| format!("{{\"id\":{idx},\"value\":\"v{idx}\"}}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    env.write_file(&repo.join("fixtures").join("large.json"), &large_json);
+    fs::write(
+        repo.join("fixtures").join("large.bin"),
+        (0..(256 * 1024))
+            .map(|idx| (idx % 251) as u8)
+            .collect::<Vec<_>>(),
+    )
+    .expect("write large binary fixture");
+
+    let initial_status = env.run_ok(&repo, ["status", "--json"]);
+    assert_eq!(
+        initial_status.stdout_json()["changes"]
+            .as_array()
+            .expect("initial varied changes")
+            .len(),
+        FILES + 2
+    );
+
+    env.run_ok(&repo, ["snapshot", "-m", "Varied large repo baseline"]);
+
+    env.write_file(
+        &large_repo_file(&repo, 191),
+        "component 191\npath-filter regression\n",
+    );
+    env.write_file(
+        &repo.join("fixtures").join("large.json"),
+        &large_json.replace("\"v1023\"", "\"changed\""),
+    );
+    fs::write(
+        repo.join("fixtures").join("large.bin"),
+        vec![0xa5; 256 * 1024],
+    )
+    .expect("rewrite large binary fixture");
+
+    let all_diff = env.run_ok(&repo, ["diff", "--json"]);
+    let all_changes = all_diff.stdout_json()["changes"]
+        .as_array()
+        .expect("all varied diff changes")
+        .clone();
+    assert_eq!(all_changes.len(), 3);
+    assert!(all_changes
+        .iter()
+        .any(|change| change["path"] == "modules/11/component_191/file_191.txt"));
+
+    let fixture_diff = env.run_ok(&repo, ["diff", "--json", "--path", "fixtures"]);
+    let fixture_changes = fixture_diff.stdout_json()["changes"]
+        .as_array()
+        .expect("fixture path filtered changes")
+        .clone();
+    assert_eq!(fixture_changes.len(), 2);
+    assert!(fixture_changes.iter().all(|change| change["path"]
+        .as_str()
+        .is_some_and(|path| path.starts_with("fixtures/"))));
+    assert!(fixture_changes
+        .iter()
+        .any(|change| change["path"] == "fixtures/large.json"));
+    assert!(fixture_changes
+        .iter()
+        .any(|change| change["path"] == "fixtures/large.bin"));
+
+    let fixture_names = env.run_ok(&repo, ["diff", "--name-only", "--path", "fixtures"]);
+    assert!(fixture_names.stdout.contains("M fixtures/large.json"));
+    assert!(fixture_names.stdout.contains("M fixtures/large.bin"));
+    assert!(!fixture_names.stdout.contains("component_191"));
+}
+
+#[test]
 #[ignore = "10k-file large-repo drill is intentionally operator-triggered"]
 fn large_repo_10k_file_snapshot_status_and_path_filter_drill() {
     const FILES: usize = 10_000;
