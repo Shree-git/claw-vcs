@@ -42,7 +42,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 18 | Implemented | `CHANGELOG.md`. |
 | 19 | Implemented | `SUPPORT.md`. |
 | 20 | Implemented | `ROADMAP.md`. |
-| 21 | Implemented | ADRs in `docs/adr/` cover no staging area, BLAKE3 IDs, Protobuf+COF, gRPC sync, intent/change/revision, capsules, and policy objects. |
+| 21 | Implemented | ADRs in `docs/adr/` cover no staging area, BLAKE3 IDs, Protobuf+COF, gRPC sync, intent/change/revision, capsules, and policy objects; `docs/adr/README.md` indexes owner/date/status, alternatives, supersession state, and implementation links. |
 | 22 | Implemented | `docs/spec/object-format.md`. |
 | 23 | Implemented | `tests/vectors/` includes COF, IDs, capsules, policies, patch, fail-closed, all core object type, and invalid/future COF vectors; CI and contract workflows run `tests/integration/vector_manifest_tests.rs` to validate the standalone launch vectors. |
 | 24 | Implemented | `fuzz/fuzz_targets/` covers COF decode, object IDs, patch apply/codecs, JSON tree merge, Git import parsing, sync chunks, capsules, policy checks, and store objects. |

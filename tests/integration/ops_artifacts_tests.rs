@@ -298,6 +298,53 @@ fn policy_and_interface_docs_exist_and_include_required_phrases() {
 }
 
 #[test]
+fn adr_records_have_index_and_review_metadata() {
+    let adr_index = read_workspace_file("docs/adr/README.md");
+    for phrase in [
+        "Architecture Decision Records",
+        "ADR Template",
+        "Supersession Policy",
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+    ] {
+        assert!(adr_index.contains(phrase), "ADR index missing: {phrase}");
+    }
+
+    for adr in [
+        "docs/adr/0001-no-staging-area.md",
+        "docs/adr/0002-object-id-hashing.md",
+        "docs/adr/0003-protobuf-and-cof.md",
+        "docs/adr/0004-grpc-sync.md",
+        "docs/adr/0005-intent-change-revision.md",
+        "docs/adr/0006-capsules-as-repo-objects.md",
+        "docs/adr/0007-policy-objects-in-repo.md",
+    ] {
+        let content = read_workspace_file(adr);
+        for phrase in [
+            "## Status",
+            "## Metadata",
+            "Date: 2026-05-12",
+            "Owner: @Shree-git",
+            "Supersedes:",
+            "Superseded by:",
+            "Related artifacts:",
+            "## Alternatives Considered",
+            "## Verification Links",
+        ] {
+            assert!(
+                content.contains(phrase),
+                "{adr} missing ADR metadata: {phrase}"
+            );
+        }
+    }
+}
+
+#[test]
 fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
