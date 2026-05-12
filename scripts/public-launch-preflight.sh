@@ -349,13 +349,54 @@ else
   warn "GitHub Pages is not configured; leave optional unless the launch includes a public website"
 fi
 
+evidence_value() {
+  local label="$1"
+  awk -v prefix="- ${label}:" '
+    index($0, prefix) == 1 {
+      value = substr($0, length(prefix) + 1)
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "$name_evidence"
+}
+
+evidence_field_complete() {
+  local label="$1"
+  local value
+  local normalized
+
+  value="$(evidence_value "$label")"
+  normalized="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    "" | tbd | todo | pending | unknown | none | n/a | no | "not done" | "not complete" | incomplete)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 if [[ "$strict" == "1" ]]; then
-  if [[ -f "$name_evidence" ]] &&
-    grep -Eq '^- Final decision: .+' "$name_evidence" &&
-    grep -Eq '^- Domains checked/reserved: .+' "$name_evidence" &&
-    grep -Eq '^- Social handles checked/reserved: .+' "$name_evidence" &&
-    grep -Eq '^- crates.io packages reserved/published: .+' "$name_evidence" &&
-    grep -Eq '^- GitHub social preview uploaded: yes' "$name_evidence"; then
+  evidence_complete=1
+  if [[ ! -f "$name_evidence" ]]; then
+    evidence_complete=0
+  else
+    for evidence_label in \
+      "Final decision" \
+      "Domains checked/reserved" \
+      "Social handles checked/reserved" \
+      "crates.io packages reserved/published"; do
+      if ! evidence_field_complete "$evidence_label"; then
+        evidence_complete=0
+      fi
+    done
+    if [[ "$(evidence_value "GitHub social preview uploaded")" != "yes" ]]; then
+      evidence_complete=0
+    fi
+  fi
+
+  if [[ "$evidence_complete" == "1" ]]; then
     pass "name-clearance evidence is recorded in $name_evidence"
   else
     fail "strict launch mode requires completed name/domain/social/package evidence in $name_evidence; start from docs/operations/name-clearance-evidence.template.md"

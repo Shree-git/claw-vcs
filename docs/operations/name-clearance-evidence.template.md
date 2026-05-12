@@ -19,5 +19,6 @@ complete and the fields below contain real evidence.
 
 - Record links, screenshots, or account records in the launch issue if they do
   not belong in the repository.
-- Strict preflight requires filled domain, social-handle, crates.io, and final
-  decision fields, plus `GitHub social preview uploaded: yes`.
+- Strict preflight requires completed domain, social-handle, crates.io, and
+  final decision fields, plus `GitHub social preview uploaded: yes`. Placeholder
+  values such as `pending`, `TBD`, `unknown`, or `not complete` do not pass.

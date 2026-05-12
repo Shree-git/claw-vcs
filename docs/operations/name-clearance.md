@@ -152,4 +152,4 @@ into the launch issue when they do not belong in the repository.
 
 Strict preflight treats the evidence as complete only when the final decision,
 domain, social-handle, crates.io, and social-preview upload fields are filled
-in, and `GitHub social preview uploaded` is `yes`.
+in with non-placeholder values, and `GitHub social preview uploaded` is `yes`.

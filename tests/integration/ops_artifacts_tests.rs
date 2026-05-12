@@ -349,6 +349,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "crates.io owner verified for $crate_name",
         "social preview dimensions are 1280x640",
         "name-clearance-evidence.md",
+        "evidence_field_complete",
+        "pending | unknown",
     ] {
         assert!(
             launch_preflight.contains(phrase),
@@ -621,6 +623,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "Social handles checked/reserved:",
         "crates.io packages reserved/published:",
         "GitHub social preview uploaded: no",
+        "pending",
+        "not complete",
         "Final decision:",
     ] {
         assert!(
