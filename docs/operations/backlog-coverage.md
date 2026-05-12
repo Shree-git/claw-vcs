@@ -82,7 +82,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 
 | # | Status | Evidence |
 |---:|---|---|
-| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; smoke checked generated output and daemon/security option coverage. |
+| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; generated from the canonical Clap command model and smoke checked for every documented shell plus the compatibility alias. |
 | 52 | Implemented | `claw doctor` and `claw doctor --json`; docs in `docs/cli/doctor.md`. |
 | 53 | Implemented | `claw version --json`; docs in `docs/cli/version.md`. |
 | 54 | Implemented | `status`, `log`, `show`, `policy eval`, `diff`, and `doctor` support JSON output; docs under `docs/cli/`. |

@@ -33,6 +33,7 @@ claw-sync = { workspace = true }
 claw-git = { workspace = true }
 tonic = { workspace = true, features = ["tls-ring"] }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
