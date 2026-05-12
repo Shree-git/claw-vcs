@@ -285,6 +285,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "docs/operations/public-launch-checklist.md",
         "docs/operations/backlog-coverage.md",
         "docs/operations/package-registry-strategy.md",
+        ".github/workflows/release-channel-smoke.yml",
     ] {
         let path = workspace_path(artifact);
         assert!(
@@ -331,5 +332,25 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     assert!(
         backlog_coverage.contains("External pending"),
         "backlog coverage must preserve external-blocker status"
+    );
+
+    let release_channel_smoke = read_workspace_file(".github/workflows/release-channel-smoke.yml");
+    assert!(
+        release_channel_smoke.contains("cargo-install-git-smoke:"),
+        "release-channel smoke workflow must include a cargo install from Git job"
+    );
+    assert!(
+        release_channel_smoke.contains("needs: release-metadata"),
+        "cargo install from Git smoke must use the resolved release metadata"
+    );
+    assert!(
+        release_channel_smoke.contains("--tag \"$RELEASE_TAG\""),
+        "cargo install from Git smoke must install the exact release tag under validation"
+    );
+
+    let install_log = read_workspace_file("docs/operations/install-verification-log.md");
+    assert!(
+        install_log.contains("--tag <launch-tag>"),
+        "install verification log must require tag-specific cargo install verification"
     );
 }
