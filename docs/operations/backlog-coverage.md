@@ -49,12 +49,12 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 | 25 | Implemented | Property tests live in `crates/*/tests/*props.rs`, `crates/claw-core/tests/serialization_props.rs`, and policy/crypto tamper tests. |
 | 26 | Implemented | Git interop tests live in `crates/claw-git/tests/git_bridge_real_git.rs`, `tests/integration/spec_tests.rs`, and CLI Git workflow tests. |
 | 27 | Implemented | Durability/crash coverage appears in `tests/integration/chaos_tests.rs`, `tests/integration/backlog_gap_tests.rs`, store corruption tests, and admin backup/rollback tests; CI and contract workflows run the deterministic chaos suite. |
-| 28 | Implemented | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; Dependabot security updates verified enabled. |
+| 28 | Implemented + external setting | `.github/dependabot.yml` and `.github/workflows/dependency-review.yml`; GitHub Dependabot security updates are a repository setting and must be verified with `gh api repos/Shree-git/claw-vcs/vulnerability-alerts` or the Security settings page before launch. |
 | 29 | Implemented | `deny.toml`; CI runs `cargo deny check` across configured release targets including macOS, Linux x86_64/aarch64, and Windows. |
 | 30 | Implemented | `supply-chain/{audits.toml,config.toml,imports.lock}`; CI runs `cargo vet`, and `tests/integration/ops_artifacts_tests.rs` validates the cargo-vet metadata and dependency-policy shape. |
 | 31 | Implemented | `.github/workflows/sbom.yml` and release/CI SBOM attestation jobs; public release SBOM verification remains part of release-channel verification. |
-| 32 | Implemented | `.github/workflows/scorecard.yml`; Scorecard checks pass on PR. |
-| 33 | Implemented | `.github/workflows/codeql.yml` and `.github/workflows/semgrep.yml`; code scanning uploads verified. |
+| 32 | Implemented + external run state | `.github/workflows/scorecard.yml`; Scorecard pass status is verified from GitHub Actions/PR checks, not from repository files alone. |
+| 33 | Implemented + external ingestion | `.github/workflows/codeql.yml` and `.github/workflows/semgrep.yml`; code-scanning upload success and SARIF ingestion are verified in GitHub code scanning/PR checks, not from repository files alone. |
 | 34 | Implemented | `docs/security/verifying-releases.md` documents single-asset checksum checks plus Cosign OIDC issuer/certificate identity constraints that match the verifier script. |
 | 35 | Implemented | `docs/operations/upgrade-and-rollback.md`, `docs/runbooks/emergency-rollback.md`, and `docs/runbooks/backup-and-restore.md`. |
 

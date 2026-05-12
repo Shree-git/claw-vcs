@@ -3,6 +3,9 @@
 //! The binary wires Clap parsing, runtime safety profiles, diagnostics, and
 //! command dispatch for the `claw` executable.
 
+use std::ffi::OsStr;
+
+use clap::error::ErrorKind;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -64,7 +67,25 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let cli = Cli::parse();
+    let requested_error_format = requested_error_format_from_args(std::env::args_os().skip(1));
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            match (requested_error_format, err.kind()) {
+                (ErrorFormat::Json, ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+                    err.print()?;
+                }
+                (ErrorFormat::Json, kind) => {
+                    let diagnostic = CliDiagnostic::from_usage_error(err.to_string(), kind);
+                    print_json_diagnostic(&diagnostic)?;
+                }
+                (ErrorFormat::Human, _) => {
+                    err.print()?;
+                }
+            }
+            std::process::exit(err.exit_code());
+        }
+    };
     let runtime = RuntimeOptions {
         profile: match cli.profile {
             ProfileArg::Dev => "dev".to_string(),
@@ -85,21 +106,7 @@ async fn main() -> anyhow::Result<()> {
                 std::process::exit(diagnostic.exit_code);
             }
             ErrorFormat::Json => {
-                let request_id = format!(
-                    "req_{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)?
-                        .as_millis()
-                );
-                let envelope = serde_json::json!({
-                    "code": diagnostic.code,
-                    "message": diagnostic.message,
-                    "request_id": request_id,
-                    "remediation": diagnostic.remediation,
-                    "exit_code": diagnostic.exit_code,
-                    "details": diagnostic.details,
-                });
-                eprintln!("{}", serde_json::to_string(&envelope)?);
+                print_json_diagnostic(&diagnostic)?;
                 std::process::exit(diagnostic.exit_code);
             }
         }
@@ -108,11 +115,67 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn requested_error_format_from_args<I, S>(args: I) -> ErrorFormat
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut args = args.into_iter().peekable();
+    while let Some(arg) = args.next() {
+        let arg = arg.as_ref();
+        if arg == "--error-format" {
+            return match args.next().and_then(|value| {
+                value
+                    .as_ref()
+                    .to_str()
+                    .map(|value| value.eq_ignore_ascii_case("json"))
+            }) {
+                Some(true) => ErrorFormat::Json,
+                _ => ErrorFormat::Human,
+            };
+        }
+
+        if let Some(value) = arg
+            .to_str()
+            .and_then(|arg| arg.strip_prefix("--error-format="))
+        {
+            return if value.eq_ignore_ascii_case("json") {
+                ErrorFormat::Json
+            } else {
+                ErrorFormat::Human
+            };
+        }
+    }
+
+    ErrorFormat::Human
+}
+
+fn print_json_diagnostic(diagnostic: &CliDiagnostic) -> anyhow::Result<()> {
+    let request_id = format!(
+        "req_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis()
+    );
+    let envelope = serde_json::json!({
+        "code": diagnostic.code,
+        "message": diagnostic.message,
+        "request_id": request_id,
+        "remediation": diagnostic.remediation,
+        "exit_code": diagnostic.exit_code,
+        "details": diagnostic.details,
+    });
+    eprintln!("{}", serde_json::to_string(&envelope)?);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
 
-    use super::{Cli, ErrorFormatArg, ProfileArg};
+    use crate::commands::ErrorFormat;
+
+    use super::{requested_error_format_from_args, Cli, ErrorFormatArg, ProfileArg};
 
     #[test]
     fn parses_global_flags_defaults() {
@@ -147,5 +210,21 @@ mod tests {
 
         assert!(!cli.compat_check);
         assert!(cli.no_compat_check);
+    }
+
+    #[test]
+    fn detects_json_error_format_before_parse_success() {
+        assert!(matches!(
+            requested_error_format_from_args(["--error-format", "json", "wat"]),
+            ErrorFormat::Json
+        ));
+        assert!(matches!(
+            requested_error_format_from_args(["--error-format=json", "wat"]),
+            ErrorFormat::Json
+        ));
+        assert!(matches!(
+            requested_error_format_from_args(["--error-format", "human", "wat"]),
+            ErrorFormat::Human
+        ));
     }
 }

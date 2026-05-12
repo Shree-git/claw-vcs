@@ -28,6 +28,18 @@ pub struct CliDiagnostic {
 }
 
 impl CliDiagnostic {
+    pub fn from_usage_error(message: String, kind: clap::error::ErrorKind) -> Self {
+        Self {
+            code: "USAGE_ERROR",
+            message,
+            remediation: Some("Run `claw --help` or `claw <command> --help` for usage."),
+            exit_code: exit_codes::USAGE,
+            details: serde_json::json!({
+                "kind": format!("{kind:?}"),
+            }),
+        }
+    }
+
     pub fn from_error(err: &anyhow::Error) -> Self {
         let message = err.to_string();
         let chain = err
@@ -153,5 +165,17 @@ mod tests {
 
         assert_eq!(diagnostic.code, "COMPATIBILITY_ERROR");
         assert_eq!(diagnostic.exit_code, exit_codes::COMPATIBILITY);
+    }
+
+    #[test]
+    fn classifies_usage_failures() {
+        let diagnostic = CliDiagnostic::from_usage_error(
+            "unexpected argument '--wat'".to_string(),
+            clap::error::ErrorKind::UnknownArgument,
+        );
+
+        assert_eq!(diagnostic.code, "USAGE_ERROR");
+        assert_eq!(diagnostic.exit_code, exit_codes::USAGE);
+        assert_eq!(diagnostic.details["kind"], "UnknownArgument");
     }
 }
