@@ -80,6 +80,12 @@ Verify release assets:
 - Windows MSI installs and adds `claw` to `PATH`
 - `cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw --locked` installs the tagged version
 
+For a clean Unix host smoke test, run:
+
+```bash
+scripts/verify-release-channel.sh vX.Y.Z
+```
+
 See [docs/security/verifying-releases.md](docs/security/verifying-releases.md).
 
 ## Rollback

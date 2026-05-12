@@ -72,6 +72,12 @@ Status: checksum and binary launch pass, but this release predates the hardened 
 
 ### Channels Still Requiring Clean-Environment Verification
 
+Unix clean-host helper:
+
+```bash
+scripts/verify-release-channel.sh <launch-tag>
+```
+
 - GitHub release archive from the next launch-hardening release.
 - Shell installer from the next launch-hardening release.
 - PowerShell installer on Windows.

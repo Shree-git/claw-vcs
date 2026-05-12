@@ -279,6 +279,7 @@ fn policy_and_interface_docs_exist_and_include_required_phrases() {
 fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
+        "scripts/verify-release-channel.sh",
         "examples/basic-demo/scripts/demo.sh",
         "docs/assets/social-preview.png",
         "docs/assets/social-preview.svg",
@@ -300,6 +301,19 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         demo_wrapper.contains("examples/basic-demo/scripts/demo.sh"),
         "top-level demo wrapper must delegate to the maintained basic demo"
     );
+
+    let release_verifier = read_workspace_file("scripts/verify-release-channel.sh");
+    for phrase in [
+        "gh release download",
+        "claw-installer.sh",
+        "--tag \"$tag\"",
+        "CLAW_VERIFY_HOMEBREW",
+    ] {
+        assert!(
+            release_verifier.contains(phrase),
+            "release-channel verifier must include phrase: {phrase}"
+        );
+    }
 
     let social_preview = fs::read(workspace_path("docs/assets/social-preview.png"))
         .expect("social preview PNG must be readable");
@@ -352,5 +366,9 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     assert!(
         install_log.contains("--tag <launch-tag>"),
         "install verification log must require tag-specific cargo install verification"
+    );
+    assert!(
+        install_log.contains("scripts/verify-release-channel.sh <launch-tag>"),
+        "install verification log must point maintainers to the clean-host helper"
     );
 }

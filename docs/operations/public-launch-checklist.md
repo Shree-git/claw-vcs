@@ -62,6 +62,12 @@ Release/install verification evidence is tracked in [install-verification-log.md
 
 ## Release Channel Verification
 
+On a clean Unix host, use the helper script for the archive, shell installer, and tagged cargo install path:
+
+```bash
+scripts/verify-release-channel.sh <launch-tag>
+```
+
 Before announcement, test each live channel from a clean environment:
 
 - [ ] GitHub release archive
