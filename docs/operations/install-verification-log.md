@@ -79,8 +79,113 @@ scripts/verify-release-channel.sh <launch-tag>
 ```
 
 - GitHub release archive from the next launch-hardening release.
+- `sha256.sum`, Cosign signatures, GitHub attestations, and SBOM readability
+  from the next launch-hardening release.
 - Shell installer from the next launch-hardening release.
 - PowerShell installer on Windows.
 - Windows MSI on Windows.
 - Homebrew formula after the tap points at the launch-hardening release.
 - `cargo install --git https://github.com/shree-git/claw-vcs.git --tag <launch-tag> --package claw-vcs --locked` for the next launch-hardening release tag.
+
+## Launch-Hardening Release Evidence Template
+
+Copy this section for the next launch-hardening tag.
+
+````md
+## YYYY-MM-DD
+
+Release tag:
+
+```text
+vX.Y.Z
+```
+
+Verifier:
+
+```text
+name / machine / OS / architecture
+```
+
+### Unix Release Channel
+
+Command:
+
+```bash
+scripts/verify-release-channel.sh vX.Y.Z
+```
+
+Expected coverage:
+
+- host archive download
+- `sha256.sum`
+- Cosign signatures and certificates
+- GitHub artifact attestations
+- SPDX SBOM readability
+- shell installer in an isolated temporary `HOME`
+- tagged `cargo install --git`
+- `claw --version`
+- `claw doctor`
+- `claw init`
+- `claw status`
+
+Observed result:
+
+```text
+paste command output or summary
+```
+
+Status: pass/fail
+
+### Homebrew
+
+Command:
+
+```bash
+CLAW_VERIFY_HOMEBREW=1 scripts/verify-release-channel.sh vX.Y.Z
+```
+
+Observed result:
+
+```text
+paste command output or summary
+```
+
+Status: pass/fail/not applicable
+
+### Windows PowerShell Installer
+
+Source:
+
+```text
+.github/workflows/release-channel-smoke.yml or a clean Windows host
+```
+
+Observed result:
+
+```text
+paste workflow URL, command output, or summary
+```
+
+Status: pass/fail
+
+### Windows MSI
+
+Source:
+
+```text
+.github/workflows/release-channel-smoke.yml or a clean Windows host
+```
+
+Observed result:
+
+```text
+paste workflow URL, command output, or summary
+```
+
+Status: pass/fail
+
+### Notes
+
+- Channels intentionally marked planned or unsupported:
+- Follow-up fixes required before announcement:
+````

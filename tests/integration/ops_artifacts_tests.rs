@@ -419,6 +419,17 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         install_log.contains("scripts/verify-release-channel.sh <launch-tag>"),
         "install verification log must point maintainers to the clean-host helper"
     );
+    for phrase in [
+        "Launch-Hardening Release Evidence Template",
+        "Cosign signatures",
+        "GitHub artifact attestations",
+        "SPDX SBOM readability",
+    ] {
+        assert!(
+            install_log.contains(phrase),
+            "install verification log must preserve provenance evidence coverage: {phrase}"
+        );
+    }
 }
 
 #[test]
