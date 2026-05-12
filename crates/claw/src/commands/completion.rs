@@ -62,7 +62,7 @@ impl<W: Write> Write for BrokenPipeSafeWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
     use crate::Cli;
 
@@ -149,6 +149,47 @@ mod tests {
                 "generated bash completion should contain {needle}"
             );
         }
+    }
+
+    #[test]
+    fn generated_completion_scripts_cover_every_documented_shell() {
+        for shell in [
+            clap_complete::Shell::Bash,
+            clap_complete::Shell::Zsh,
+            clap_complete::Shell::Fish,
+            clap_complete::Shell::PowerShell,
+            clap_complete::Shell::Elvish,
+        ] {
+            let mut command = Cli::command();
+            let mut script = Vec::new();
+            clap_complete::generate(shell, &mut command, "claw", &mut script);
+            let script = String::from_utf8(script).expect("completion script is utf-8");
+
+            for needle in ["doctor", "version", "completions", "error-format"] {
+                assert!(
+                    script.contains(needle),
+                    "generated {shell:?} completion should contain {needle}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn documented_top_level_completion_aliases_parse() {
+        let completion_alias = Cli::parse_from(["claw", "completion", "bash"]);
+        assert!(
+            matches!(
+                completion_alias.command,
+                crate::commands::Commands::Completions(_)
+            ),
+            "`claw completion <shell>` should parse as the completions command"
+        );
+
+        let serve_alias = Cli::parse_from(["claw", "serve"]);
+        assert!(
+            matches!(serve_alias.command, crate::commands::Commands::Serve(_)),
+            "`claw serve` should parse as the daemon alias"
+        );
     }
 
     #[test]

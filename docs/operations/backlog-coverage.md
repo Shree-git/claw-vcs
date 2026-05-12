@@ -82,12 +82,12 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 
 | # | Status | Evidence |
 |---:|---|---|
-| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; generated from the canonical Clap command model and smoke checked for every documented shell plus the compatibility alias. |
+| 51 | Implemented | `claw completions bash|zsh|fish|powershell|elvish`; generated from the canonical Clap command model and unit-tested for every documented shell plus the `claw completion <shell>` compatibility alias. |
 | 52 | Implemented | `claw doctor` and `claw doctor --json`; docs in `docs/cli/doctor.md`. |
 | 53 | Implemented | `claw version --json`; docs in `docs/cli/version.md`. |
 | 54 | Implemented | `status`, `log`, `show`, `policy eval`, `diff`, and `doctor` support JSON output; docs under `docs/cli/`. |
 | 55 | Implemented | JSON/human diagnostics include remediation; `docs/cli/exit-codes.md` and `docs/reference/public-interface-manifest.md` define the contract. |
-| 56 | Implemented | Aliases are limited and documented (`serve`, create/new forms, compatibility aliases where needed). |
+| 56 | Implemented | Aliases are limited, documented, and parser-tested (`serve`, create/new forms, compatibility aliases where needed). |
 | 57 | Implemented | Dry-run support for integrate, sync push, policy apply, git-import, and git-export; help/docs verified. |
 | 58 | Implemented | `docs/cli/exit-codes.md` and `crates/claw/src/error.rs`. |
 | 59 | Implemented | `claw init` prints next steps. |
