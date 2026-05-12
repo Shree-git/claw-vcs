@@ -348,6 +348,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
         "scripts/public-launch-preflight.sh",
+        "scripts/verify-generated-protos.sh",
         "scripts/verify-github-labels.sh",
         "scripts/verify-name-clearance-evidence.sh",
         "scripts/publish-cratesio.sh",
@@ -444,6 +445,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "CLAW_PREFLIGHT_STRICT",
         "CLAW_PREFLIGHT_NAME_EVIDENCE",
         "CLAW_PREFLIGHT_CRATESIO_OWNER",
+        "local ignored-junk hygiene",
         "scripts/verify-github-labels.sh",
         "scripts/verify-name-clearance-evidence.sh",
         "GitHub labels do not match .github/labels.yml",
@@ -989,6 +991,19 @@ fn release_helper_scripts_have_safe_cli_guards() {
     );
     let evidence_help = String::from_utf8(evidence_help.stdout).expect("help is utf-8");
     assert!(evidence_help.contains("name-clearance-evidence.md"));
+
+    let generated_help = Command::new("bash")
+        .arg("scripts/verify-generated-protos.sh")
+        .arg("--help")
+        .current_dir(&root)
+        .output()
+        .expect("run generated protobuf verifier help");
+    assert!(
+        generated_help.status.success(),
+        "generated protobuf verifier --help should exit successfully"
+    );
+    let generated_help = String::from_utf8(generated_help.stdout).expect("help is utf-8");
+    assert!(generated_help.contains("crates/claw-core/src/generated"));
 
     let evidence_path = std::env::temp_dir().join(format!(
         "claw-name-clearance-evidence-{}.md",

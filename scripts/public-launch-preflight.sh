@@ -6,6 +6,7 @@ usage() {
 Usage: scripts/public-launch-preflight.sh
 
 Checks public-launch state that depends on GitHub or package-registry access:
+  - Local ignored-junk hygiene outside approved build caches
   - GitHub repository identity, visibility, topics, and security settings
   - main branch protection and signed-commit enforcement
   - repository labels declared in .github/labels.yml
@@ -113,6 +114,38 @@ if [[ "$failures" -gt 0 ]]; then
   exit 1
 fi
 
+check_local_ignored_hygiene() {
+  local ignored_line
+  local rel
+  local bad=()
+
+  while IFS= read -r ignored_line; do
+    case "$ignored_line" in
+      "!! "*)
+        rel="${ignored_line#!! }"
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    case "$rel" in
+      target/|fuzz/target/)
+        continue
+        ;;
+      *)
+        bad+=("$rel")
+        ;;
+    esac
+  done < <(git -C "$repo_root" status --ignored --short --untracked-files=normal)
+
+  if [[ "${#bad[@]}" -eq 0 ]]; then
+    pass "local ignored-junk hygiene is clean outside approved build caches"
+  else
+    strict_warn "local ignored junk outside approved build caches: ${bad[*]}"
+  fi
+}
+
 verify_cratesio_owner() {
   local crate_name="$1"
   local owners_json
@@ -155,6 +188,8 @@ if [[ "$failures" -gt 0 ]]; then
 fi
 
 echo "Checking public-launch state for $repo ($branch)"
+
+check_local_ignored_hygiene
 
 name_with_owner="$(gh repo view "$repo" --json nameWithOwner --jq '.nameWithOwner')"
 is_private="$(gh repo view "$repo" --json isPrivate --jq '.isPrivate')"

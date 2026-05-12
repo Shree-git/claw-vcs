@@ -19,7 +19,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-la
 |---:|---|---|
 | 1 | Verified | Repository remote is `Shree-git/claw-vcs`; README title is `Claw VCS`; CLI binary remains `claw`. |
 | 2 | Implemented | README contains the v0.1 experimental status banner. |
-| 3 | Implemented | `.gitignore` excludes OS/editor junk, local state, logs, databases, and secrets; `.DS_Store` is not tracked. |
+| 3 | Implemented | `.gitignore` excludes OS/editor junk, local state, logs, databases, and secrets; `.DS_Store` is not tracked; strict public-launch preflight fails on ignored local junk outside approved build caches. |
 | 4 | Verified | `docs/operations/public-launch-checklist.md` records full-history gitleaks and trufflehog passes plus GitHub secret scanning/push protection. |
 | 5 | Implemented | `.github/workflows/ci.yml` runs formatting, clippy, tests, examples, docs, fuzz compile, `cargo-deny`, and `cargo-vet`. |
 | 6 | Verified | `docs/operations/public-launch-checklist.md` records `main` branch protection settings verified by GitHub API. |

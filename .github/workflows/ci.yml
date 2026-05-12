@@ -43,6 +43,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Verify generated protobuf output
+        run: scripts/verify-generated-protos.sh
+
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
