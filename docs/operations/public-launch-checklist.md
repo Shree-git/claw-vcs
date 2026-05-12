@@ -27,6 +27,12 @@ Status as of 2026-05-11:
 - Suggested repository labels are tracked in `.github/labels.yml`.
 - Remaining external checks: package/name reservation where required, trademark/domain/social-handle review, social preview upload, public release attestations, and clean-environment verification for each release channel after the hardened changes are published.
 
+Before announcement, run the maintainer preflight from an authenticated local checkout:
+
+```bash
+scripts/public-launch-preflight.sh
+```
+
 ## Repository Identity
 
 - [x] Rename the GitHub repository to `claw-vcs`.

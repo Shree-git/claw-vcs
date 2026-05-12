@@ -115,7 +115,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 71 | Implemented | `docs/operations/release-reproducibility.md` and release workflow metadata/signing/attestation/SBOM gates. |
 | 72 | Implemented | `RELEASING.md` includes fmt, clippy, test, audit, deny, vet, fuzz smoke, dry-run, install verification, signatures, attestations, SBOM, Homebrew, Windows, and rollback. |
 | 73 | Implemented | `docs/operations/package-registry-strategy.md`. |
-| 74 | External pending | Registry availability checks are recorded; actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
+| 74 | External pending | Registry availability checks are recorded; `scripts/public-launch-preflight.sh` automates repeatable package-name/repository checks, but actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
 | 75 | Implemented | Install docs end with `claw --version`, `claw doctor`, and smoke test commands. |
 | 76 | Implemented | README and release verification docs provide manual download and verification alternatives to pipe installers. |
 | 77 | Implemented | `docs/operations/uninstall.md`. |

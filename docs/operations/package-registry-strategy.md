@@ -17,3 +17,14 @@ Claw VCS uses `claw` as the CLI name and `claw-vcs` as the public repository/pro
 | Docker image | planned | Docker, Helm, Terraform, and systemd deployment assets exist and are validated by CI, but no public OCI image is a launch channel until it is built, signed, attested, pushed, and clean-environment verified. |
 
 Before broad announcement, verify every live channel from a clean machine or container and record expected command output in release notes.
+
+Maintainer preflight:
+
+```bash
+scripts/public-launch-preflight.sh
+```
+
+The preflight checks package-name signals, repository settings, branch protection,
+and the local social preview asset. It is expected to fail until launch-gating
+external actions, such as reserving or publishing `claw-vcs` on crates.io, are
+complete.

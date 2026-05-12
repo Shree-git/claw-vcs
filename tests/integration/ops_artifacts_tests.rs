@@ -279,6 +279,7 @@ fn policy_and_interface_docs_exist_and_include_required_phrases() {
 fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
+        "scripts/public-launch-preflight.sh",
         "scripts/verify-release-channel.sh",
         "examples/basic-demo/scripts/demo.sh",
         "docs/assets/social-preview.png",
@@ -301,6 +302,20 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         demo_wrapper.contains("examples/basic-demo/scripts/demo.sh"),
         "top-level demo wrapper must delegate to the maintained basic demo"
     );
+
+    let launch_preflight = read_workspace_file("scripts/public-launch-preflight.sh");
+    for phrase in [
+        "secret_scanning",
+        "required_signatures",
+        "crates.io/api/v1/crates/claw-vcs",
+        "ShreeGit/ClawVCS",
+        "docs/assets/social-preview.png",
+    ] {
+        assert!(
+            launch_preflight.contains(phrase),
+            "public-launch preflight must include phrase: {phrase}"
+        );
+    }
 
     let release_verifier = read_workspace_file("scripts/verify-release-channel.sh");
     for phrase in [
@@ -334,6 +349,10 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     assert!(
         launch_checklist.contains("Package-name checks"),
         "launch checklist must record package-name verification evidence"
+    );
+    assert!(
+        launch_checklist.contains("scripts/public-launch-preflight.sh"),
+        "launch checklist must point maintainers to the public-launch preflight"
     );
 
     let backlog_coverage = read_workspace_file("docs/operations/backlog-coverage.md");
