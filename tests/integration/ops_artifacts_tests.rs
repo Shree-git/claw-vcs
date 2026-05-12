@@ -321,6 +321,8 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "CLAW_PREFLIGHT_REQUIRE_PAGES",
         "CLAW_PREFLIGHT_STRICT",
         "CLAW_PREFLIGHT_NAME_EVIDENCE",
+        "CLAW_PREFLIGHT_CRATESIO_OWNER",
+        "crates.io owner verified for $crate_name",
         "social preview dimensions are 1280x640",
         "name-clearance-evidence.md",
     ] {

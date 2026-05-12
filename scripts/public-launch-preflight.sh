@@ -21,6 +21,7 @@ Environment:
   CLAW_PREFLIGHT_REQUIRE_PAGES   Set to 1 when GitHub Pages is part of launch
   CLAW_PREFLIGHT_STRICT          Set to 1 for broad-announcement readiness
   CLAW_PREFLIGHT_NAME_EVIDENCE   Completed name-clearance evidence markdown
+  CLAW_PREFLIGHT_CRATESIO_OWNER  Expected crates.io owner login/team id for reserved packages
 USAGE
 }
 
@@ -34,6 +35,7 @@ branch="${CLAW_PREFLIGHT_BRANCH:-main}"
 require_pages="${CLAW_PREFLIGHT_REQUIRE_PAGES:-0}"
 strict="${CLAW_PREFLIGHT_STRICT:-0}"
 name_evidence="${CLAW_PREFLIGHT_NAME_EVIDENCE:-docs/operations/name-clearance-evidence.md}"
+cratesio_owner="${CLAW_PREFLIGHT_CRATESIO_OWNER:-${CLAW_CRATESIO_EXPECTED_OWNER:-}}"
 
 failures=0
 warnings=0
@@ -98,6 +100,39 @@ require python3 || true
 if [[ "$failures" -gt 0 ]]; then
   exit 1
 fi
+
+verify_cratesio_owner() {
+  local crate_name="$1"
+  local owners_json
+
+  if [[ -z "$cratesio_owner" ]]; then
+    strict_warn "crates.io name $crate_name exists, but CLAW_PREFLIGHT_CRATESIO_OWNER is not set; verify maintainer ownership before documenting crates.io install"
+    return 0
+  fi
+
+  owners_json="$(curl -L -fsS "https://crates.io/api/v1/crates/$crate_name/owners" 2>/dev/null || true)"
+  if [[ -z "$owners_json" ]]; then
+    fail "could not inspect crates.io owners for $crate_name"
+    return 0
+  fi
+
+  if printf '%s' "$owners_json" | python3 -c '
+import json
+import sys
+
+expected = sys.argv[1]
+payload = json.load(sys.stdin)
+for user in payload.get("users", []):
+    if user.get("login") == expected:
+        sys.exit(0)
+sys.exit(1)
+' "$cratesio_owner"
+  then
+    pass "crates.io owner verified for $crate_name: $cratesio_owner"
+  else
+    fail "crates.io owner check failed for $crate_name: expected $cratesio_owner"
+  fi
+}
 
 if ! gh auth status -h github.com >/dev/null 2>&1; then
   fail "gh must be authenticated to inspect repository settings"
@@ -229,7 +264,8 @@ for crate_name in \
   crates_status="$(curl -L -sS -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/$crate_name" || true)"
   case "$crates_status" in
     200)
-      pass "crates.io name $crate_name exists; verify maintainer ownership before documenting crates.io install"
+      pass "crates.io name $crate_name exists"
+      verify_cratesio_owner "$crate_name"
       ;;
     404)
       fail "crates.io name $crate_name is still unreserved; reserve or publish before broad announcement"

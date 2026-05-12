@@ -123,7 +123,10 @@ docs/operations/name-clearance-evidence.md
 If evidence is stored elsewhere, run strict preflight with:
 
 ```bash
-CLAW_PREFLIGHT_STRICT=1 CLAW_PREFLIGHT_NAME_EVIDENCE=/path/to/evidence.md scripts/public-launch-preflight.sh
+CLAW_PREFLIGHT_STRICT=1 \
+  CLAW_PREFLIGHT_NAME_EVIDENCE=/path/to/evidence.md \
+  CLAW_PREFLIGHT_CRATESIO_OWNER=<owner> \
+  scripts/public-launch-preflight.sh
 ```
 
 ## GitHub Social Preview

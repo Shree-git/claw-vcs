@@ -57,13 +57,13 @@ Before announcement, run the maintainer preflight from an authenticated local ch
 
 ```bash
 scripts/public-launch-preflight.sh
-CLAW_PREFLIGHT_STRICT=1 scripts/public-launch-preflight.sh
+CLAW_PREFLIGHT_STRICT=1 CLAW_PREFLIGHT_CRATESIO_OWNER=<owner> scripts/public-launch-preflight.sh
 ```
 
 The normal preflight reports launch blockers that are still pending. Strict
 mode is the broad-announcement gate: it fails until there are no open
 Dependabot alerts, the `claw-vcs` crates.io package set is reserved or
-published, the GitHub social preview is uploaded, and completed
+published under the expected owner, the GitHub social preview is uploaded, and completed
 name/domain/social/package evidence is recorded.
 
 ## Owner-Only Launch Handoff
@@ -78,7 +78,9 @@ access; they cannot be completed by editing this repository alone.
    crates.io install path. Publish internal packages in the order documented in
    `docs/operations/package-registry-strategy.md`, using
    `CLAW_CRATESIO_EXPECTED_OWNER=<owner> CLAW_CRATESIO_PUBLISH=1 scripts/publish-cratesio.sh --publish`
-   from the exact release tag once credentials are configured.
+   from the exact release tag once credentials are configured. Re-run strict
+   preflight with `CLAW_PREFLIGHT_CRATESIO_OWNER=<owner>` so crates.io owners
+   are checked through the registry API.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready. Use
    [name-clearance.md](name-clearance.md) and

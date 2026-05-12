@@ -29,6 +29,7 @@ Maintainer preflight:
 
 ```bash
 scripts/public-launch-preflight.sh
+CLAW_PREFLIGHT_STRICT=1 CLAW_PREFLIGHT_CRATESIO_OWNER=<owner> scripts/public-launch-preflight.sh
 ```
 
 The preflight checks package-name signals, repository settings, branch
@@ -37,6 +38,9 @@ social preview upload state, and optional GitHub Pages state. It is expected to
 fail until launch-gating external actions, such as merging dependency fixes and
 reserving or publishing the `claw-vcs` crates.io package set, are complete. Set
 `CLAW_PREFLIGHT_REQUIRE_PAGES=1` when the launch includes a hosted landing page.
+In strict mode, set `CLAW_PREFLIGHT_CRATESIO_OWNER` or
+`CLAW_CRATESIO_EXPECTED_OWNER` so any live crates.io package names are verified
+against the expected owner through the registry owners API.
 
 Crates.io publish order:
 
