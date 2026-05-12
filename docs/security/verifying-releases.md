@@ -15,13 +15,13 @@ Use these checks before installing a downloaded Claw VCS release artifact.
 Download the archive and checksum file from the same GitHub Release:
 
 ```bash
-sha256sum -c SHA256SUMS
+sha256sum -c sha256.sum
 ```
 
 On macOS:
 
 ```bash
-shasum -a 256 -c SHA256SUMS
+shasum -a 256 -c sha256.sum
 ```
 
 ## Cosign Blob Signatures
@@ -30,9 +30,9 @@ When a release provides `.sig` and certificate material:
 
 ```bash
 cosign verify-blob \
-  --certificate ./claw.tar.gz.pem \
-  --signature ./claw.tar.gz.sig \
-  ./claw.tar.gz
+  --certificate ./claw-x86_64-unknown-linux-gnu.tar.xz.pem \
+  --signature ./claw-x86_64-unknown-linux-gnu.tar.xz.sig \
+  ./claw-x86_64-unknown-linux-gnu.tar.xz
 ```
 
 Check the certificate identity and issuer match the release workflow documented for this repository.
@@ -42,7 +42,7 @@ Check the certificate identity and issuer match the release workflow documented 
 When a release provides GitHub artifact attestations:
 
 ```bash
-gh attestation verify ./claw.tar.gz --repo Shree-git/claw-vcs
+gh attestation verify ./claw-x86_64-unknown-linux-gnu.tar.xz --repo Shree-git/claw-vcs
 ```
 
 Verify the attestation references the expected repository, commit SHA, workflow, and tag.
@@ -52,10 +52,20 @@ Verify the attestation references the expected repository, commit SHA, workflow,
 When a release includes SPDX or CycloneDX SBOMs:
 
 ```bash
-jq '.name, .packages | length' claw-v0.1.0.sbom.spdx.json
+jq '.name, .packages | length' claw-vX.Y.Z.sbom.spdx.json
 ```
 
 Use the SBOM to review dependency inventory and compare it with the release commit.
+
+## Unix Release-Channel Helper
+
+On Linux or macOS, this helper verifies the host archive, `sha256.sum`, Cosign
+signatures, GitHub artifact attestations, SBOM readability, the shell installer,
+and the tagged `cargo install --git` path:
+
+```bash
+scripts/verify-release-channel.sh vX.Y.Z
+```
 
 ## Install Smoke Test
 

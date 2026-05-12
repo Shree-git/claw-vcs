@@ -327,6 +327,9 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     for phrase in [
         "gh release download",
         "claw-installer.sh",
+        "cosign verify-blob",
+        "gh attestation verify",
+        "claw-${tag}.sbom.spdx.json",
         "--tag \"$tag\"",
         "CLAW_VERIFY_HOMEBREW",
     ] {

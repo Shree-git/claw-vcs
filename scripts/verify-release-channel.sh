@@ -7,6 +7,7 @@ Usage: scripts/verify-release-channel.sh <release-tag>
 
 Verifies the release channels that can be checked from the current Unix host:
   - GitHub release archive for this OS/architecture
+  - checksums, Cosign signatures, GitHub attestations, and SBOM readability
   - shell installer inside an isolated temporary HOME
   - cargo install from Git for the exact release tag
 
@@ -18,6 +19,9 @@ Environment:
   CLAW_RELEASE_VERIFY_WORKDIR    Existing work directory to reuse
   CLAW_SKIP_CARGO_INSTALL=1      Skip the cargo install --git check
   CLAW_KEEP_RELEASE_VERIFY=1     Keep the temporary work directory
+
+Required tools: gh, jq, cosign, tar, shasum, and cargo unless
+CLAW_SKIP_CARGO_INSTALL=1 is set.
 USAGE
 }
 
@@ -46,10 +50,13 @@ require() {
 }
 
 require gh
+require jq
+require cosign
 require tar
 require shasum
 
 expected_version="${tag#v}"
+sbom="claw-${tag}.sbom.spdx.json"
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) archive="claw-aarch64-apple-darwin.tar.xz" ;;
@@ -73,9 +80,70 @@ echo "Verifying $repo release $tag in $workdir"
 
 gh release download "$tag" --repo "$repo" \
   --pattern "$archive" \
+  --pattern "$archive.sig" \
+  --pattern "$archive.pem" \
   --pattern "sha256.sum" \
+  --pattern "sha256.sum.sig" \
+  --pattern "sha256.sum.pem" \
   --pattern "claw-installer.sh" \
+  --pattern "claw-installer.sh.sig" \
+  --pattern "claw-installer.sh.pem" \
+  --pattern "$sbom" \
+  --pattern "$sbom.sig" \
+  --pattern "$sbom.pem" \
   --dir "$assets"
+
+require_asset() {
+  local file="$1"
+
+  if [[ ! -f "$assets/$file" ]]; then
+    echo "missing release asset: $file" >&2
+    exit 1
+  fi
+}
+
+require_signed_asset() {
+  local file="$1"
+
+  require_asset "$file"
+  require_asset "$file.sig"
+  require_asset "$file.pem"
+}
+
+verify_cosign_blob() {
+  local file="$1"
+  local repo_identity_pattern="$repo"
+
+  if [[ "$repo" == "Shree-git/claw" || "$repo" == "Shree-git/claw-vcs" ]]; then
+    repo_identity_pattern="Shree-git/(claw|claw-vcs)"
+  fi
+
+  cosign verify-blob \
+    --signature "$assets/$file.sig" \
+    --certificate "$assets/$file.pem" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    --certificate-identity-regexp "^https://github.com/${repo_identity_pattern}/.github/workflows/.*@refs/tags/${tag}$" \
+    "$assets/$file"
+}
+
+verify_attestation() {
+  local file="$1"
+
+  gh attestation verify "$assets/$file" --repo "$repo"
+}
+
+for signed_asset in "$archive" "sha256.sum" "claw-installer.sh" "$sbom"; do
+  require_signed_asset "$signed_asset"
+  verify_cosign_blob "$signed_asset"
+  verify_attestation "$signed_asset"
+done
+
+jq -e '
+  .spdxVersion
+  and (.SPDXID == "SPDXRef-DOCUMENT")
+  and (.packages | type == "array")
+  and (.packages | length > 0)
+' "$assets/$sbom" >/dev/null
 
 verify_sha256_entry() {
   local file="$1"
