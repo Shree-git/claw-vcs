@@ -11,7 +11,7 @@ use claw_store::ClawStore;
 
 use crate::proto::intent::intent_service_server::IntentService;
 use crate::proto::intent::*;
-use crate::security::{AuthorizationAction, Authorizer, ServiceSecurity};
+use crate::security::{AuditSink, AuthorizationAction, Authorizer, ServiceSecurity};
 
 pub struct IntentServer {
     store: Arc<RwLock<ClawStore>>,
@@ -28,6 +28,11 @@ impl IntentServer {
 
     pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
         self.security = self.security.with_authorizer(authorizer);
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = self.security.with_audit_sink(audit_sink);
         self
     }
 }

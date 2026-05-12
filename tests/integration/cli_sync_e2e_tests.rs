@@ -6,10 +6,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use support::CliTestEnv;
 
+use serde_json::Value;
+
 #[test]
 fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
     let env = CliTestEnv::new();
     let source = env.init_repo("source");
+    let audit_log = env.temp_root().join("daemon.audit.jsonl");
 
     env.run_ok(
         env.temp_root(),
@@ -28,7 +31,15 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
     env.write_file(&source.join("sync.txt"), "version one\n");
     env.run_ok(&source, ["snapshot", "-m", "Seed remote repository"]);
 
-    let daemon = env.spawn_daemon(&source, ["--auth-profile", "e2e"]);
+    let daemon = env.spawn_daemon(
+        &source,
+        vec![
+            OsString::from("--auth-profile"),
+            OsString::from("e2e"),
+            OsString::from("--audit-log"),
+            audit_log.as_os_str().to_os_string(),
+        ],
+    );
 
     let live = daemon.get("/v1/health/live");
     assert_eq!(live.status_code, 200);
@@ -139,6 +150,25 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
     assert_eq!(
         env.read_file(&clone_b.join("sync.txt")),
         "version two from clone a\n"
+    );
+
+    let audit_events = read_audit_events(&audit_log);
+    assert!(
+        audit_events.iter().any(|event| event["action"] == "hello"
+            && event["outcome"] == "allowed"
+            && event["subject"]["principal"] == "daemon-token"),
+        "expected allowed hello audit event, got {audit_events:#?}"
+    );
+    assert!(
+        audit_events
+            .iter()
+            .any(|event| event["action"] == "update_refs"
+                && event["outcome"] == "allowed"
+                && event["resource"]
+                    .as_str()
+                    .is_some_and(|resource| resource.contains("heads/main"))
+                && event["subject"]["principal"] == "daemon-token"),
+        "expected allowed update_refs audit event, got {audit_events:#?}"
     );
 }
 
@@ -445,4 +475,12 @@ where
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn read_audit_events(path: &Path) -> Vec<Value> {
+    fs::read_to_string(path)
+        .expect("read daemon audit log")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("audit log line to be valid json"))
+        .collect()
 }

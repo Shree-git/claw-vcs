@@ -15,6 +15,9 @@ Use this as the minimum operator baseline for production Claw deployments.
 - Authorized gRPC actions emit `sync_audit_event` tracing records with request
   ID, principal, token ID, action, resource, outcome, and denial reason when
   available.
+- Start the daemon with `--audit-log <path>` when you need durable
+  authorization records. The file is append-only JSON Lines and mirrors the
+  tracing audit fields.
 - End-to-end structured JSON logs and distributed traces across CLI, storage,
   and Git bridge are planned hardening work; do not assume those fields exist in
   every component yet.
@@ -39,7 +42,8 @@ use daemon-local names and low-cardinality labels.
 ### Tracing Boundaries
 
 Distributed tracing is not yet a stable public interface. Treat request IDs and
-`sync_audit_event` records as the current correlation surface.
+`sync_audit_event` records, or the `--audit-log` JSONL file when configured, as
+the current correlation surface.
 
 ## Starter Dashboard
 

@@ -92,6 +92,7 @@ Authorization failures return gRPC `PermissionDenied`. Local unauthenticated dae
 - Sync server options enforce per-minute request rate limits when configured with `--rate-limit-per-minute` or `queues.rate_limit_per_minute`.
 - Push object uploads enforce per-chunk and per-request byte limits, configurable with `--max-push-chunk-bytes`, `--max-push-request-bytes`, `queues.max_push_chunk_bytes`, and `queues.max_push_request_bytes`.
 - Authorized gRPC service actions emit structured `sync_audit_event` tracing records with request ID, principal, token ID, action, resource, outcome, and denial reason when available.
+- Use `claw daemon --audit-log <path>` to append the same authorization events to a durable JSON Lines file. Each line is one audit event with `timestamp_ms`, `request_id`, `subject.principal`, `subject.token_id`, optional `subject.peer_addr`, `action`, optional `resource`, `outcome`, and optional `reason`.
 - gRPC clients send `x-claw-replay-nonce` on `PushObjects` and `UpdateRefs`;
   HTTP clients send the same value as the `idempotency-key` for mutating
   requests. The daemon can require nonces with `--require-replay-nonce`;

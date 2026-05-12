@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -503,6 +506,58 @@ impl AuditSink for TracingAuditSink {
             reason = ?event.reason,
             "sync_audit_event"
         );
+    }
+}
+
+/// JSON Lines audit sink for durable daemon authorization records.
+pub struct JsonlAuditSink {
+    file: Mutex<File>,
+}
+
+impl JsonlAuditSink {
+    /// Open or create an append-only JSONL audit file.
+    pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        Ok(Self {
+            file: Mutex::new(file),
+        })
+    }
+}
+
+impl AuditSink for JsonlAuditSink {
+    fn record(&self, event: AuditEvent) {
+        let Ok(mut file) = self.file.lock() else {
+            tracing::error!("audit log lock poisoned");
+            return;
+        };
+
+        if let Err(err) = serde_json::to_writer(&mut *file, &event) {
+            tracing::error!(error = %err, "failed to write audit log event");
+            return;
+        }
+        if let Err(err) = file.write_all(b"\n").and_then(|_| file.flush()) {
+            tracing::error!(error = %err, "failed to flush audit log event");
+        }
+    }
+}
+
+/// Audit sink that forwards each event to two underlying sinks.
+pub struct TeeAuditSink {
+    left: Arc<dyn AuditSink>,
+    right: Arc<dyn AuditSink>,
+}
+
+impl TeeAuditSink {
+    /// Create a fan-out audit sink.
+    pub fn new(left: Arc<dyn AuditSink>, right: Arc<dyn AuditSink>) -> Self {
+        Self { left, right }
+    }
+}
+
+impl AuditSink for TeeAuditSink {
+    fn record(&self, event: AuditEvent) {
+        self.left.record(event.clone());
+        self.right.record(event);
     }
 }
 
@@ -1074,6 +1129,55 @@ mod tests {
         assert_eq!(value["outcome"], "denied");
         assert_eq!(value["subject"]["principal"], "agent-a");
         assert_eq!(value["reason"], "missing permission");
+    }
+
+    #[test]
+    fn jsonl_audit_sink_appends_parseable_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("audit.jsonl");
+        let sink = JsonlAuditSink::open(&path).unwrap();
+
+        sink.record(AuditEvent::allowed(
+            42,
+            "req-1",
+            AuthorizationSubject {
+                principal: Some("agent-a".to_string()),
+                token_id: Some("tok-1".to_string()),
+                peer_addr: Some("127.0.0.1:50051".to_string()),
+            },
+            AuthorizationAction::UpdateRefs,
+            Some("heads/main".to_string()),
+        ));
+        sink.record(AuditEvent::denied(
+            43,
+            "req-2",
+            AuthorizationSubject {
+                principal: Some("agent-b".to_string()),
+                token_id: None,
+                peer_addr: None,
+            },
+            AuthorizationAction::ReadPrivateCapsule,
+            Some("capsule-1".to_string()),
+            "missing required scope capsules:private-read",
+        ));
+
+        let contents = std::fs::read_to_string(path).unwrap();
+        let events: Vec<serde_json::Value> = contents
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["request_id"], "req-1");
+        assert_eq!(events[0]["action"], "update_refs");
+        assert_eq!(events[0]["outcome"], "allowed");
+        assert_eq!(events[0]["resource"], "heads/main");
+        assert_eq!(events[1]["action"], "read_private_capsule");
+        assert_eq!(events[1]["outcome"], "denied");
+        assert_eq!(
+            events[1]["reason"],
+            "missing required scope capsules:private-read"
+        );
     }
 
     #[test]

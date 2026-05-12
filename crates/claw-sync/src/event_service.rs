@@ -7,7 +7,7 @@ use claw_store::ClawStore;
 
 use crate::proto::event::event_stream_service_server::EventStreamService;
 use crate::proto::event::*;
-use crate::security::{AuthorizationAction, Authorizer, ServiceSecurity};
+use crate::security::{AuditSink, AuthorizationAction, Authorizer, ServiceSecurity};
 
 #[derive(Debug, Clone)]
 pub struct EventBus {
@@ -70,6 +70,11 @@ impl EventServer {
 
     pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
         self.security = self.security.with_authorizer(authorizer);
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = self.security.with_audit_sink(audit_sink);
         self
     }
 }

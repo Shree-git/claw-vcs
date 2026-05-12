@@ -49,7 +49,8 @@ claw daemon \
   --allow-public-health \
   --auth-profile default \
   --tls-cert /etc/claw/tls/server.pem \
-  --tls-key /etc/claw/tls/server-key.pem
+  --tls-key /etc/claw/tls/server-key.pem \
+  --audit-log /var/log/claw/daemon-audit.jsonl
 ```
 
 ## Service manager example (systemd)
@@ -64,7 +65,7 @@ Type=simple
 User=claw
 Group=claw
 WorkingDirectory=/srv/claw/repo
-ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --health-listen 0.0.0.0:50052 --allow-public-health --auth-profile default --tls-cert /etc/claw/tls/server.pem --tls-key /etc/claw/tls/server-key.pem
+ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --health-listen 0.0.0.0:50052 --allow-public-health --auth-profile default --tls-cert /etc/claw/tls/server.pem --tls-key /etc/claw/tls/server-key.pem --audit-log /var/log/claw/daemon-audit.jsonl
 Restart=always
 RestartSec=2
 

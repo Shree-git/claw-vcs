@@ -32,7 +32,8 @@ use claw_sync::proto::sync::sync_service_server::SyncServiceServer;
 use claw_sync::proto::workstream::workstream_service_server::WorkstreamServiceServer;
 use claw_sync::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
 use claw_sync::security::{
-    AuthorizationRole, AuthorizationScope, Authorizer, ReplayProtectionConfig, RoleBasedAuthorizer,
+    AuditSink, AuthorizationRole, AuthorizationScope, Authorizer, JsonlAuditSink,
+    ReplayProtectionConfig, RoleBasedAuthorizer, TeeAuditSink, TracingAuditSink,
     PRINCIPAL_METADATA_KEY, TOKEN_ID_METADATA_KEY,
 };
 use claw_sync::server::{SyncServer, SyncServerOptions};
@@ -92,6 +93,9 @@ pub struct DaemonArgs {
     /// Client CA certificate (PEM) path; enables required client certificate auth for gRPC TLS
     #[arg(long)]
     client_ca_cert: Option<PathBuf>,
+    /// Append authorization audit events to this JSON Lines file
+    #[arg(long)]
+    audit_log: Option<PathBuf>,
 }
 
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -712,6 +716,18 @@ fn resolve_client_ca_certificate(cert_path: Option<&Path>) -> anyhow::Result<Opt
     Ok(Some(Certificate::from_pem(cert)))
 }
 
+fn build_audit_sink(path: Option<&Path>) -> anyhow::Result<Arc<dyn AuditSink>> {
+    let tracing_sink: Arc<dyn AuditSink> = Arc::new(TracingAuditSink);
+    let Some(path) = path else {
+        return Ok(tracing_sink);
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file_sink: Arc<dyn AuditSink> = Arc::new(JsonlAuditSink::open(path)?);
+    Ok(Arc::new(TeeAuditSink::new(tracing_sink, file_sink)))
+}
+
 pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let cfg = config::load_or_default_config(&root)?;
@@ -849,6 +865,13 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     let mut capsule_server = CapsuleServer::new(shared_store.clone());
     let mut workstream_server = WorkstreamServer::new(shared_store.clone());
     let mut event_server = EventServer::with_bus(event_bus);
+    let audit_sink = build_audit_sink(args.audit_log.as_deref())?;
+    sync_server = sync_server.with_audit_sink(audit_sink.clone());
+    intent_server = intent_server.with_audit_sink(audit_sink.clone());
+    change_server = change_server.with_audit_sink(audit_sink.clone());
+    capsule_server = capsule_server.with_audit_sink(audit_sink.clone());
+    workstream_server = workstream_server.with_audit_sink(audit_sink.clone());
+    event_server = event_server.with_audit_sink(audit_sink);
     if let Some(authorizer) = sync_authorizer {
         intent_server = intent_server.with_authorizer(authorizer.clone());
         change_server = change_server.with_authorizer(authorizer.clone());
@@ -1187,6 +1210,7 @@ mod tests {
             tls_cert: None,
             tls_key: None,
             client_ca_cert: None,
+            audit_log: None,
             allow_public_health: false,
         };
 

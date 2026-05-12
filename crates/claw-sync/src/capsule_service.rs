@@ -12,7 +12,8 @@ use claw_store::ClawStore;
 use crate::proto::capsule::capsule_service_server::CapsuleService;
 use crate::proto::capsule::*;
 use crate::security::{
-    metadata_value, AuthorizationAction, Authorizer, ServiceSecurity, PRINCIPAL_METADATA_KEY,
+    metadata_value, AuditSink, AuthorizationAction, Authorizer, ServiceSecurity,
+    PRINCIPAL_METADATA_KEY,
 };
 
 pub struct CapsuleServer {
@@ -30,6 +31,11 @@ impl CapsuleServer {
 
     pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
         self.security = self.security.with_authorizer(authorizer);
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = self.security.with_audit_sink(audit_sink);
         self
     }
 }
