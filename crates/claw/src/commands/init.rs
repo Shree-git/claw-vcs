@@ -33,7 +33,7 @@ pub fn run(args: InitArgs) -> anyhow::Result<()> {
     let next_steps = [
         "claw status",
         "claw snapshot -m \"initial snapshot\"",
-        "claw intent new --title \"describe the next change\"",
+        "claw intent create --title \"describe the next change\"",
     ];
 
     if args.dry_run {

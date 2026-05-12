@@ -58,6 +58,17 @@ claw completions elvish
 
 `claw completion <shell>` is accepted as an alias.
 
+## Aliases
+
+Aliases are intentionally sparse:
+
+```console
+claw completion <shell>    # alias for claw completions <shell>
+claw serve                 # alias for claw daemon
+claw intent create ...     # alias for claw intent new ...
+claw change create ...     # alias for claw change new ...
+```
+
 ## Doctor
 
 Run `claw doctor` to inspect local CLI and repository health. It checks the binary version, Git availability, object format support, current directory, repository discovery, `.claw` layout, config loading, HEAD state, ref target validity, remote config parsing, daemon auth/TLS readiness, and basic write permissions.
@@ -104,6 +115,11 @@ claw checkout <target> --dry-run
 claw remote add <name> <url> --dry-run
 claw remote remove <name> --dry-run
 claw integrate --right <ref> --dry-run
+claw intent --json policy add <intent-id> <policy-id> --dry-run
+claw intent --json policy remove <intent-id> <policy-id> --dry-run
+claw agent rotate <agent-id> --public-key <hex> --dry-run
+claw agent revoke <agent-id> --reason "compromised key" --dry-run
+claw admin migrate apply --dry-run
 claw policy apply --id <policy-id> --dry-run
 claw sync push --remote origin --ref-name heads/main --dry-run
 claw git-export --git-dir /tmp/exported.git --dry-run
@@ -121,5 +137,5 @@ After `claw init`, the CLI prints the next local workflow commands:
 ```console
 claw status
 claw snapshot -m "initial snapshot"
-claw intent new --title "describe the next change"
+claw intent create --title "describe the next change"
 ```

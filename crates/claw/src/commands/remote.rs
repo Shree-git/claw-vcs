@@ -384,7 +384,7 @@ mod tests {
     fn normalize_clawlab_entry() {
         let entry = RemoteEntry {
             kind: Some("clawlab".to_string()),
-            base_url: Some("https://api.clawlab.com".to_string()),
+            base_url: Some("https://hosted.example.invalid".to_string()),
             repo: Some("acme/widgets".to_string()),
             token_profile: Some("default".to_string()),
             ..RemoteEntry::default()
@@ -396,7 +396,7 @@ mod tests {
                 repo,
                 token_profile,
             } => {
-                assert_eq!(base_url, "https://api.clawlab.com");
+                assert_eq!(base_url, "https://hosted.example.invalid");
                 assert_eq!(repo, "acme/widgets");
                 assert_eq!(token_profile.as_deref(), Some("default"));
             }

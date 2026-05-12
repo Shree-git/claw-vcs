@@ -57,6 +57,38 @@ fn daemon_auth_health_and_sync_round_trip_work_via_built_binary() {
             || denied.combined_output().contains("Unauthenticated")
     );
 
+    env.run_ok(
+        env.temp_root(),
+        [
+            "auth",
+            "token",
+            "set",
+            "stale-or-wrong-token",
+            "--profile",
+            "stale",
+            "--base-url",
+            "http://127.0.0.1",
+        ],
+    );
+    let stale_token_clone = env.repo_path("clone-with-stale-token");
+    let stale_denied = env.run_fail(
+        env.temp_root(),
+        [
+            "sync",
+            "clone",
+            "--token-profile",
+            "stale",
+            daemon.grpc_endpoint.as_str(),
+            stale_token_clone.to_str().expect("clone path utf-8"),
+        ],
+    );
+    assert!(
+        stale_denied
+            .combined_output()
+            .contains("invalid bearer token")
+            || stale_denied.combined_output().contains("Unauthenticated")
+    );
+
     let clone_a = env.repo_path("clone-a");
     let clone_b = env.repo_path("clone-b");
 

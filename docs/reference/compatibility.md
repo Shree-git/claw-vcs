@@ -25,6 +25,9 @@ This page defines the current compatibility baseline for operators running contr
 - Daemon sync `Hello` reports `server_version: 0.1.0`.
 - Current sync protocol identifier: `claw-sync/1`.
 - Current object format: COF v1.
+- `claw-core` exposes COF version classification and migration-plan helpers.
+  v0.1 decodes native v1 objects only, rejects future versions, and has the
+  code hook future old-version migrators must use.
 - Sync `Hello` negotiates capabilities. Clients send their supported capability list; the daemon returns the supported intersection in daemon preference order. Empty client capabilities receive the compatibility baseline.
 - Supported sync capabilities currently include `partial-clone`, `event-bus`, and `request-limits`.
 - Primary transport is gRPC (`claw daemon` + `claw sync`).

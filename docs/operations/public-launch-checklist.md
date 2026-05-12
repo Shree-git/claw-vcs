@@ -9,8 +9,9 @@ Status as of 2026-05-11:
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
 - Full-history local secret scans passed on 2026-05-11:
-  `gitleaks 8.30.0` scanned 51 commits with no leaks found, and
-  `trufflehog 3.95.2` reported 0 verified and 0 unverified secrets.
+  `gitleaks 8.30.0` scanned 77 commits with no leaks found, and
+  `trufflehog 3.95.2` scanned 2,130 chunks with 0 verified and 0
+  unverified secrets.
 - Code scanning uploads are accepted for PR #4 on 2026-05-11:
   CodeQL, Semgrep OSS, and Scorecard analyses exist for `refs/pull/4/merge`.
 - `main` branch protection is enabled with required reviews, code-owner review, stale approval dismissal, required checks, conversation resolution, signed commits, no force pushes, and no deletions.

@@ -87,3 +87,49 @@ fn pack_index_vectors_roundtrip_objects() {
         matches!(second_loaded, Object::Blob(Blob { data, .. }) if data.as_slice() == b"second")
     );
 }
+
+#[test]
+fn corrupt_pack_index_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let layout = RepoLayout::new(tmp.path());
+    layout.create_dirs().unwrap();
+    let mut writer = PackWriter::new();
+    writer
+        .add_object(&Object::Blob(Blob {
+            data: b"indexed".to_vec(),
+            media_type: None,
+        }))
+        .unwrap();
+    let (_pack_path, idx_path) = writer.write_pack(&layout).unwrap();
+
+    let mut idx = std::fs::read(&idx_path).unwrap();
+    idx.truncate(idx.len() - 1);
+    std::fs::write(&idx_path, idx).unwrap();
+
+    let err = read_pack_index(&idx_path).expect_err("truncated index must fail");
+    assert!(err.to_string().contains("truncated pack index"));
+}
+
+#[test]
+fn corrupt_pack_object_entry_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let layout = RepoLayout::new(tmp.path());
+    layout.create_dirs().unwrap();
+    let mut writer = PackWriter::new();
+    writer
+        .add_object(&Object::Blob(Blob {
+            data: b"packed".to_vec(),
+            media_type: None,
+        }))
+        .unwrap();
+    let (pack_path, idx_path) = writer.write_pack(&layout).unwrap();
+    let index = read_pack_index(&idx_path).unwrap();
+
+    let mut pack = std::fs::read(&pack_path).unwrap();
+    pack.truncate(pack.len() - 1);
+    std::fs::write(&pack_path, pack).unwrap();
+
+    let err =
+        read_object_from_pack(&pack_path, index[0].1).expect_err("truncated pack object must fail");
+    assert!(err.to_string().contains("truncated pack object entry"));
+}

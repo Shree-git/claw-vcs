@@ -12,7 +12,7 @@ claw init --dry-run
 ```
 
 After a successful non-JSON init, the CLI prints next-step onboarding hints for
-`claw status`, `claw snapshot`, and `claw intent new`.
+`claw status`, `claw snapshot`, and `claw intent create`.
 
 ## JSON Output
 
@@ -26,7 +26,7 @@ After a successful non-JSON init, the CLI prints next-step onboarding hints for
   "next_steps": [
     "claw status",
     "claw snapshot -m \"initial snapshot\"",
-    "claw intent new --title \"describe the next change\""
+    "claw intent create --title \"describe the next change\""
   ],
   "path": "/path/to/repo"
 }

@@ -138,12 +138,21 @@ pub fn read_pack_index(idx_path: &std::path::Path) -> Result<Vec<(ObjectId, u64)
     // Try new separate index format first
     if data.len() >= 8 && &data[..4] == IDX_MAGIC {
         let entry_count = u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;
+        let expected_len =
+            8usize
+                .checked_add(entry_count.checked_mul(40).ok_or_else(|| {
+                    StoreError::Config("pack index entry count overflow".to_string())
+                })?)
+                .ok_or_else(|| StoreError::Config("pack index length overflow".to_string()))?;
+        if data.len() != expected_len {
+            return Err(StoreError::Config(format!(
+                "truncated pack index: expected {expected_len} bytes, got {}",
+                data.len()
+            )));
+        }
         let mut entries = Vec::with_capacity(entry_count);
         let mut pos = 8;
         for _ in 0..entry_count {
-            if pos + 40 > data.len() {
-                break;
-            }
             let mut id_bytes = [0u8; 32];
             id_bytes.copy_from_slice(&data[pos..pos + 32]);
             pos += 32;
@@ -183,7 +192,13 @@ fn read_pack_index_inline(pack_path: &std::path::Path) -> Result<Vec<(ObjectId, 
         data[idx_count_offset + 3],
     ]) as usize;
 
-    let idx_start = idx_count_offset - (idx_count * 40); // 32 bytes id + 8 bytes offset
+    let index_len = idx_count
+        .checked_mul(40)
+        .ok_or_else(|| StoreError::Config("pack index entry count overflow".into()))?;
+    if index_len > idx_count_offset {
+        return Err(StoreError::Config("truncated inline pack index".into()));
+    }
+    let idx_start = idx_count_offset - index_len; // 32 bytes id + 8 bytes offset
     let mut entries = Vec::with_capacity(idx_count);
     let mut pos = idx_start;
     for _ in 0..idx_count {
@@ -213,12 +228,20 @@ pub fn read_object_from_pack(
 ) -> Result<Object, StoreError> {
     let data = std::fs::read(pack_path)?;
     let offset = offset as usize;
+    if offset + 4 > data.len() {
+        return Err(StoreError::Config(
+            "pack object offset is out of bounds".into(),
+        ));
+    }
     let len = u32::from_le_bytes([
         data[offset],
         data[offset + 1],
         data[offset + 2],
         data[offset + 3],
     ]) as usize;
+    if offset + 4 + len > data.len() {
+        return Err(StoreError::Config("truncated pack object entry".into()));
+    }
     let cof_data = &data[offset + 4..offset + 4 + len];
     let (type_tag, payload) = cof_decode(cof_data)?;
     let obj = Object::deserialize_payload(type_tag, &payload)?;

@@ -21,6 +21,49 @@ pub enum CofVersionSupport {
     UnsupportedPast,
 }
 
+/// Planned handling for an observed COF version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CofMigrationPlan {
+    source_version: u8,
+    target_version: u8,
+    support: CofVersionSupport,
+}
+
+impl CofMigrationPlan {
+    /// Version byte found in the encoded object.
+    pub fn source_version(self) -> u8 {
+        self.source_version
+    }
+
+    /// Version byte this crate writes by default.
+    pub fn target_version(self) -> u8 {
+        self.target_version
+    }
+
+    /// Compatibility class for the source version.
+    pub fn support(self) -> CofVersionSupport {
+        self.support
+    }
+
+    /// Return true when the object can be read by this crate.
+    pub fn can_read(self) -> bool {
+        matches!(
+            self.support,
+            CofVersionSupport::Native | CofVersionSupport::ReadViaMigration
+        )
+    }
+
+    /// Return true when writing this source version is supported.
+    pub fn can_write_source_version(self) -> bool {
+        matches!(self.support, CofVersionSupport::Native)
+    }
+
+    /// Return true when decoding requires an explicit migration step.
+    pub fn requires_migration(self) -> bool {
+        matches!(self.support, CofVersionSupport::ReadViaMigration)
+    }
+}
+
 /// Classify a COF version byte for migration and compatibility checks.
 pub fn classify_cof_version(version: u8) -> CofVersionSupport {
     if version == COF_VERSION {
@@ -31,6 +74,19 @@ pub fn classify_cof_version(version: u8) -> CofVersionSupport {
         CofVersionSupport::ReadViaMigration
     } else {
         CofVersionSupport::UnsupportedPast
+    }
+}
+
+/// Return the migration plan for an observed COF version.
+///
+/// v0.1 writes only the native COF version. The plan API is intentionally
+/// present before v2 exists so future readers can add old-version migrators
+/// without changing the public compatibility contract.
+pub fn cof_migration_plan(version: u8) -> CofMigrationPlan {
+    CofMigrationPlan {
+        source_version: version,
+        target_version: COF_VERSION,
+        support: classify_cof_version(version),
     }
 }
 
@@ -259,6 +315,28 @@ pub fn cof_decode(data: &[u8]) -> Result<(TypeTag, Vec<u8>), CoreError> {
     Ok((type_tag, payload))
 }
 
+/// Decode COF bytes and return the compatibility plan used for decoding.
+///
+/// Native v1 objects decode directly. Older readable versions will use this
+/// entry point when a migrator is added; until then no older version exists in
+/// the supported range. Future and unsupported-past versions fail closed.
+pub fn cof_decode_with_migration(
+    data: &[u8],
+) -> Result<(TypeTag, Vec<u8>, CofMigrationPlan), CoreError> {
+    let version = cof_version(data)?;
+    let plan = cof_migration_plan(version);
+    match plan.support {
+        CofVersionSupport::Native => {
+            let (type_tag, payload) = cof_decode(data)?;
+            Ok((type_tag, payload, plan))
+        }
+        CofVersionSupport::ReadViaMigration => Err(CoreError::UnsupportedVersion(version)),
+        CofVersionSupport::UnsupportedFuture | CofVersionSupport::UnsupportedPast => {
+            Err(CoreError::UnsupportedVersion(version))
+        }
+    }
+}
+
 /// Peek at the type tag from COF-encoded data without fully decoding.
 ///
 /// This is useful when the raw COF bytes will be forwarded over the wire
@@ -330,6 +408,34 @@ mod tests {
             cof_decode(&data),
             Err(CoreError::UnsupportedVersion(version)) if version == COF_VERSION + 1
         ));
+    }
+
+    #[test]
+    fn migration_plan_describes_native_read_write() {
+        let plan = cof_migration_plan(COF_VERSION);
+        assert_eq!(plan.source_version(), COF_VERSION);
+        assert_eq!(plan.target_version(), COF_VERSION);
+        assert_eq!(plan.support(), CofVersionSupport::Native);
+        assert!(plan.can_read());
+        assert!(plan.can_write_source_version());
+        assert!(!plan.requires_migration());
+    }
+
+    #[test]
+    fn migration_plan_rejects_future_versions() {
+        let plan = cof_migration_plan(COF_VERSION + 1);
+        assert_eq!(plan.support(), CofVersionSupport::UnsupportedFuture);
+        assert!(!plan.can_read());
+        assert!(!plan.can_write_source_version());
+    }
+
+    #[test]
+    fn decode_with_migration_returns_native_plan() {
+        let encoded = cof_encode(TypeTag::Blob, b"migration plan").unwrap();
+        let (tag, payload, plan) = cof_decode_with_migration(&encoded).unwrap();
+        assert_eq!(tag, TypeTag::Blob);
+        assert_eq!(payload, b"migration plan");
+        assert_eq!(plan.support(), CofVersionSupport::Native);
     }
 
     #[test]

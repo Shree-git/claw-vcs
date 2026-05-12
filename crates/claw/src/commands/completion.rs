@@ -19,7 +19,7 @@ enum CompletionShell {
 const COMMANDS: &[(&str, &str)] = &[
     ("admin", "Administrative operations"),
     ("agent", "Manage agent registrations"),
-    ("auth", "Authenticate with ClawLab remotes"),
+    ("auth", "Authenticate with hosted remote profiles"),
     ("branch", "List, create, or delete branches"),
     ("change", "Manage changes"),
     ("checkout", "Switch branches or restore the working tree"),

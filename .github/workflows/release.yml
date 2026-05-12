@@ -84,18 +84,16 @@ jobs:
       - name: Smoke fuzz target
         run: cargo run --manifest-path fuzz/Cargo.toml --bin object_id_parse --locked -- -runs=1
 
-  # Run 'dist plan' (or host) to determine what tasks we need to do
+  # Run 'dist plan' to determine what tasks we need to do
   plan:
     permissions:
-      contents: write
+      contents: read
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
       tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
       publishing: ${{ !github.event.pull_request }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -115,11 +113,10 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         env:
-          DIST_HOST_RELEASE: ${{ !github.event.pull_request }}
           DIST_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ "$DIST_HOST_RELEASE" == "true" ]]; then
-            dist host --steps=create --tag="$DIST_RELEASE_TAG" --output-format=json > plan-dist-manifest.json
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" && -n "$DIST_RELEASE_TAG" ]]; then
+            dist plan --tag="$DIST_RELEASE_TAG" --output-format=json > plan-dist-manifest.json
           else
             dist plan --output-format=json > plan-dist-manifest.json
           fi
@@ -498,7 +495,7 @@ jobs:
       - id: host
         shell: bash
         run: |
-          dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
+          dist host ${{ needs.plan.outputs.tag-flag }} --steps=create --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"

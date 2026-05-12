@@ -102,7 +102,7 @@ pub enum Commands {
     Resolve(resolve::ResolveArgs),
     /// Manage remote repositories
     Remote(remote::RemoteArgs),
-    /// Authenticate with ClawLab remotes
+    /// Authenticate with hosted remote profiles
     Auth(auth::AuthArgs),
 }
 

@@ -24,7 +24,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 5 | Implemented | `.github/workflows/ci.yml` runs formatting, clippy, tests, examples, docs, fuzz compile, `cargo-deny`, and `cargo-vet`. |
 | 6 | Verified | `docs/operations/public-launch-checklist.md` records `main` branch protection settings verified by GitHub API. |
 | 7 | Implemented | Workflows use SHA-pinned actions; `rg "uses: .+@(v[0-9]\|main\|master\|latest)" .github/workflows` returns no tag-only uses. |
-| 8 | Implemented | Workflows default to `contents: read`; write scopes are job-local for release, SAST, Scorecard, SBOM, and attestations. |
+| 8 | Implemented | Workflows default to `contents: read`; write scopes are job-local for release publishing, SAST, Scorecard, SBOM, and attestations. The release planning job uses read-only permissions on PRs. |
 | 9 | Implemented | `.github/workflows/release.yml`, `.github/workflows/ci.yml`, `.github/workflows/sbom.yml`, and `.github/workflows/verify-artifacts.yml` cover artifact/SBOM attestations and verification. |
 | 10 | External pending | `docs/operations/package-registry-strategy.md` and `docs/operations/install-verification-log.md` separate live/planned channels; clean-environment verification remains pending for the next hardened release. |
 | 11 | Implemented | `docs/security/threat-model.md`. |
@@ -105,7 +105,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 66 | Implemented | mTLS flags/docs/tests exist for daemon/sync. |
 | 67 | Implemented | Replay protection uses principal/action/resource-scoped nonce metadata for mutating sync requests, with tests in sync security paths. Capsule evidence freshness separately binds evidence to exact revisions. |
 | 68 | Implemented | `docs/reference/compatibility.md`, `compatibility-matrix.json`, and sync negotiation code. |
-| 69 | Implemented | Remote compatibility/integration tests cover push/pull, partial clone, interruption, auth, TLS, stale token, and protocol mismatch. |
+| 69 | Implemented | Remote compatibility/integration tests cover push/pull, partial clone, interruption, auth, stale token rejection, and protocol mismatch; TLS/mTLS flags are parser-validated and documented for operator live verification. |
 | 70 | Implemented | Recipient model for encrypted capsule fields is implemented in crypto/policy/CLI and documented in agent/security docs. |
 
 ## P1: Release And Packaging
@@ -134,8 +134,8 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 85 | Implemented | `docs/reference/unsafe-audit.md` documents unsafe audit status. |
 | 86 | Implemented | Panic audit guidance and CI clippy panic/todo/unimplemented checks. |
 | 87 | Implemented | Concurrency and load/soak tests cover multi-agent daemon writes, reads, pushes, refs, and overload behavior. |
-| 88 | Implemented | COF/object corruption tests in `crates/claw-core/tests/cof_corruption.rs`, `crates/claw-store/tests/store_props.rs`, and integration chaos tests. |
-| 89 | Implemented | Object-format migration framework and config compatibility checks are documented/tested. |
+| 88 | Implemented | COF/object corruption tests in `crates/claw-core/tests/cof_corruption.rs`, loose-object and pack index/object corruption tests in `crates/claw-store/tests/store_props.rs`, and integration chaos tests. |
+| 89 | Implemented | `claw-core` exposes COF version classification and migration-plan helpers; tests reject future versions and return the native v1 plan. Config compatibility checks and operator migration docs cover the current v0.1 migration surface. |
 | 90 | Implemented | `docs/reference/compatibility.md` and `docs/reference/compatibility-matrix.json`. |
 
 ## P2: Polish, Community, And Adoption
@@ -147,7 +147,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 93 | Implemented | `docs/assets/social-preview.png` upload-ready asset and source SVG. |
 | 94 | External pending | Logo overinvestment intentionally deferred until name/trademark clearance. |
 | 95 | Verified | Repository topics verified with `gh repo view` and recorded in `public-launch-checklist.md`. |
-| 96 | Implemented | `examples/basic-human-workflow`, `agent-capsule`, `policy-gated-integration`, `git-roundtrip`, and `sensitive-path`. |
+| 96 | Implemented | `examples/README.md` indexes `basic-human-workflow`, `agent-capsule`, `policy-gated-integration`, `git-roundtrip`, `sensitive-path`, `backup-restore`, demo media, and integration sketches. |
 | 97 | Implemented | Persona docs under `docs/persona/`. |
 | 98 | Implemented | `docs/maintainers/guide.md` and related maintainer docs. |
 | 99 | Implemented | `docs/maintainers/governance.md`. |
@@ -156,7 +156,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 102 | Implemented | `docs/reference/stability.md`. |
 | 103 | Implemented | `docs/reference/deprecation-policy.md` and `docs/maintainers/deprecations.md`. |
 | 104 | Implemented | `docs/reference/telemetry.md` and `docs/maintainers/telemetry.md`. |
-| 105 | Implemented | ClawLab/hosted remote references are marked planned in README, CLI docs, compatibility docs, known limitations, and telemetry policy. |
+| 105 | Implemented | ClawLab/hosted remote references are marked planned in README, CLI docs, compatibility docs, known limitations, and telemetry policy; auth commands no longer default to a concrete hosted endpoint. |
 | 106 | Implemented | `docs/reference/data-layout.md`. |
 | 107 | Implemented | `examples/backup-restore/` and backup/restore runbook. |
 | 108 | Implemented | Disaster recovery and backup/rollback tests in `tests/integration/backlog_gap_tests.rs` plus CI example smoke. |
