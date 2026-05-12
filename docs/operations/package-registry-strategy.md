@@ -49,6 +49,8 @@ claw-vcs
 
 The internal packages publish under `claw-vcs-*` names while preserving Rust
 crate imports such as `claw_core` and dependency aliases such as `claw-core`.
-`cargo publish --dry-run -p claw-vcs-core --locked --allow-dirty` is expected to
-pass before reservation. Later packages resolve earlier `claw-vcs-*` crates from
-the registry during dry-run, so verify each one after its dependencies are live.
+`scripts/publish-cratesio.sh --package claw-vcs-core` is expected to pass before
+reservation. Later packages resolve earlier `claw-vcs-*` crates from the
+registry during dry-run, so verify each one after its dependencies are live.
+The helper defaults to dry-run and refuses real publishing unless both
+`--publish` and `CLAW_CRATESIO_PUBLISH=1` are present.

@@ -53,7 +53,8 @@ access; they cannot be completed by editing this repository alone.
 1. Review and merge PR #4 after the required approval is recorded.
 2. Reserve or publish the `claw-vcs` crates.io package set before documenting a
    crates.io install path. Publish internal packages in the order documented in
-   `docs/operations/package-registry-strategy.md`.
+   `docs/operations/package-registry-strategy.md`, using
+   `scripts/publish-cratesio.sh --publish` once credentials are configured.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready.
 4. Upload `docs/assets/social-preview.png` as the GitHub social preview.

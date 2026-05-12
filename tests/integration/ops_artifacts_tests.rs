@@ -280,6 +280,7 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     for artifact in [
         "scripts/demo.sh",
         "scripts/public-launch-preflight.sh",
+        "scripts/publish-cratesio.sh",
         "scripts/verify-release-channel.sh",
         "examples/basic-demo/scripts/demo.sh",
         "docs/assets/social-preview.png",
@@ -332,6 +333,21 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         assert!(
             release_verifier.contains(phrase),
             "release-channel verifier must include phrase: {phrase}"
+        );
+    }
+
+    let cratesio_publisher = read_workspace_file("scripts/publish-cratesio.sh");
+    for phrase in [
+        "CLAW_CRATESIO_PUBLISH=1",
+        "claw-vcs-core",
+        "claw-vcs-store",
+        "claw-vcs",
+        "cargo publish -p \"$package\" --dry-run --locked --allow-dirty",
+        "refusing to publish without CLAW_CRATESIO_PUBLISH=1",
+    ] {
+        assert!(
+            cratesio_publisher.contains(phrase),
+            "crates.io publisher must include phrase: {phrase}"
         );
     }
 

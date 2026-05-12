@@ -48,13 +48,20 @@ Before the first publish, `claw-vcs-core` can be verified locally because it has
 no internal registry dependencies:
 
 ```bash
-cargo publish -p claw-vcs-core --dry-run --locked --allow-dirty
+scripts/publish-cratesio.sh --package claw-vcs-core
 ```
 
 For the remaining packages, run `cargo publish --dry-run` immediately before
 each real publish after its earlier `claw-vcs-*` dependencies exist on
 crates.io. Cargo intentionally resolves those version dependencies from the
 registry during packaging.
+
+After credentials are configured and the release commit is final, publish the
+full package set with the guarded helper:
+
+```bash
+CLAW_CRATESIO_PUBLISH=1 scripts/publish-cratesio.sh --publish
+```
 
 ## Cutting a release
 
