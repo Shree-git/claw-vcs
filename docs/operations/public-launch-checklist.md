@@ -140,7 +140,7 @@ Release/install verification evidence is tracked in [install-verification-log.md
 ## Release Channel Verification
 
 On a clean Unix host, use the helper script for the archive, checksum,
-signatures, attestations, SBOM readability, shell installer, and tagged cargo
+signatures, provenance/SBOM attestations, SBOM readability, release metadata, shell installer, and tagged cargo
 install path:
 
 ```bash
@@ -149,7 +149,7 @@ scripts/verify-release-channel.sh <launch-tag>
 
 Before announcement, test each live channel from a clean environment:
 
-- [ ] GitHub release archive, checksum, signatures, attestations, and SBOM
+- [ ] GitHub release archive, checksum, signatures, attestations, SBOM, and release metadata
 - [ ] shell installer
 - [ ] PowerShell installer
 - [ ] Homebrew formula

@@ -31,6 +31,34 @@ jobs:
         run: |
           test -f docs/index.html
           grep -q '<title>Claw VCS' docs/index.html
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class LinkParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.hrefs = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag == "a":
+                      for key, value in attrs:
+                          if key == "href" and value:
+                              self.hrefs.append(value)
+
+          parser = LinkParser()
+          parser.feed(Path("docs/index.html").read_text())
+          relative_markdown = [
+              href
+              for href in parser.hrefs
+              if href.endswith(".md") and "://" not in href and not href.startswith("#")
+          ]
+          if relative_markdown:
+              raise SystemExit(
+                  "relative Markdown links are not rendered by the static Pages artifact: "
+                  + ", ".join(relative_markdown)
+              )
+          PY
 
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
 

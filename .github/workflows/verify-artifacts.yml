@@ -265,6 +265,7 @@ jobs:
           fi
 
           verified_count=0
+          sbom_verified_count=0
           for artifact in "${artifacts[@]}"; do
             echo "Verifying attestation for $artifact"
             if [[ -n "$RELEASE_TAG" ]]; then
@@ -274,6 +275,13 @@ jobs:
                 --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
                 --predicate-type "https://slsa.dev/provenance/v1" \
                 --deny-self-hosted-runners
+              gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+                --source-ref "refs/tags/${RELEASE_TAG}" \
+                --source-digest "$source_digest" \
+                --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+                --predicate-type "https://spdx.dev/Document/v2.3" \
+                --deny-self-hosted-runners
+              ((sbom_verified_count+=1))
             else
               gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
             fi
@@ -282,6 +290,9 @@ jobs:
 
           {
             echo "- Verified attestations: ${verified_count}"
+            if [[ -n "$RELEASE_TAG" ]]; then
+              echo "- Verified SBOM attestations: ${sbom_verified_count}"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify SBOM structure
@@ -309,4 +320,48 @@ jobs:
           {
             echo "- Verified SBOM: $(basename "$sbom")"
             echo "- SBOM packages: $(jq '.packages | length' "$sbom")"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify release metadata
+        if: ${{ steps.source.outputs.release_tag != '' }}
+        env:
+          ARTIFACT_ROOT: ${{ steps.source.outputs.artifact_root }}
+          RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          metadata="$ARTIFACT_ROOT/claw-${RELEASE_TAG}.release-metadata.json"
+          if [[ ! -f "$metadata" ]]; then
+            echo "ERROR: missing release metadata: $metadata" >&2
+            exit 1
+          fi
+
+          tag_refs="$(git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}")"
+          source_digest="$(printf '%s\n' "$tag_refs" | awk -v ref="refs/tags/${RELEASE_TAG}^{}" '$2 == ref { print $1; found = 1 } END { if (!found) exit 1 }' || true)"
+          if [[ -z "$source_digest" ]]; then
+            source_digest="$(printf '%s\n' "$tag_refs" | awk -v ref="refs/tags/${RELEASE_TAG}" '$2 == ref { print $1; exit }')"
+          fi
+          if [[ -z "$source_digest" ]]; then
+            echo "ERROR: could not resolve release tag $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          jq -e --arg tag "$RELEASE_TAG" --arg commit "$source_digest" '
+            .schemaVersion == 1
+            and .tag == $tag
+            and .commit == $commit
+            and (.run.url | startswith("https://github.com/"))
+            and (.runner.os | type == "string")
+            and (.toolchain.rustc | startswith("rustc "))
+            and (.toolchain.cargo | startswith("cargo "))
+            and (.build.defaultFeatures == true)
+            and (.build.explicitFeatures | type == "array")
+            and (.build.declaredFeatures | type == "object")
+          ' "$metadata" >/dev/null
+
+          {
+            echo "- Verified release metadata: $(basename "$metadata")"
+            echo "- Release metadata run: $(jq -r '.run.url' "$metadata")"
           } >> "$GITHUB_STEP_SUMMARY"

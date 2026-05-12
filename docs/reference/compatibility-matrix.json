@@ -4,7 +4,7 @@
   "components": {
     "cli": {
       "versioning": "semver",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     },
     "daemon": {
       "versioning": "semver",
@@ -12,11 +12,11 @@
     },
     "policySchema": {
       "versioning": "integer",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     },
     "storageFormat": {
       "versioning": "integer",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     }
   },
   "supportLevels": [

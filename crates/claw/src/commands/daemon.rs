@@ -32,7 +32,8 @@ use claw_sync::proto::sync::sync_service_server::SyncServiceServer;
 use claw_sync::proto::workstream::workstream_service_server::WorkstreamServiceServer;
 use claw_sync::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
 use claw_sync::security::{
-    AuditSink, AuthorizationRole, AuthorizationScope, Authorizer, JsonlAuditSink,
+    now_ms, request_id_from_request, subject_from_request, AuditEvent, AuditSink,
+    AuthorizationAction, AuthorizationRole, AuthorizationScope, Authorizer, JsonlAuditSink,
     ReplayProtectionConfig, RoleBasedAuthorizer, TeeAuditSink, TracingAuditSink,
     PRINCIPAL_METADATA_KEY, TOKEN_ID_METADATA_KEY,
 };
@@ -100,6 +101,7 @@ pub struct DaemonArgs {
 
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 const MAX_HEALTH_REQUEST_BODY_BYTES: usize = 64 * 1024;
+const GRPC_MESSAGE_OVERHEAD_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone)]
 struct BearerAuthInterceptor {
@@ -107,16 +109,34 @@ struct BearerAuthInterceptor {
     principal: Arc<str>,
     token_id: Arc<str>,
     metrics: Arc<DaemonMetrics>,
+    audit_sink: Arc<dyn AuditSink>,
 }
 
 impl BearerAuthInterceptor {
-    fn new(token: String, principal: String, metrics: Arc<DaemonMetrics>) -> Self {
+    fn new(
+        token: String,
+        principal: String,
+        metrics: Arc<DaemonMetrics>,
+        audit_sink: Arc<dyn AuditSink>,
+    ) -> Self {
         Self {
             token_id: Arc::<str>::from(bearer_token_id(&token)),
             expected_header: Arc::<str>::from(format!("Bearer {token}")),
             principal: Arc::<str>::from(principal),
             metrics,
+            audit_sink,
         }
+    }
+
+    fn record_auth_denied(&self, request: &Request<()>, reason: &'static str) {
+        self.audit_sink.record(AuditEvent::denied(
+            now_ms(),
+            request_id_from_request(request),
+            subject_from_request(request),
+            AuthorizationAction::Hello,
+            None,
+            reason,
+        ));
     }
 }
 
@@ -148,6 +168,7 @@ impl tonic::service::Interceptor for BearerAuthInterceptor {
                     .auth_failures
                     .with_label_values(&["invalid"])
                     .inc();
+                self.record_auth_denied(&request, "invalid bearer token");
                 Err(Status::unauthenticated("invalid bearer token"))
             }
             None => {
@@ -155,6 +176,7 @@ impl tonic::service::Interceptor for BearerAuthInterceptor {
                     .auth_failures
                     .with_label_values(&["missing"])
                     .inc();
+                self.record_auth_denied(&request, "missing bearer token");
                 Err(Status::unauthenticated("missing bearer token"))
             }
         }
@@ -726,6 +748,17 @@ fn build_audit_sink(path: Option<&Path>) -> anyhow::Result<Arc<dyn AuditSink>> {
     Ok(Arc::new(TeeAuditSink::new(tracing_sink, file_sink)))
 }
 
+fn grpc_message_limit_bytes(options: &SyncServerOptions) -> usize {
+    options
+        .max_push_chunk_bytes
+        .unwrap_or_else(|| {
+            SyncServerOptions::default()
+                .max_push_chunk_bytes
+                .unwrap_or(8 * 1024 * 1024)
+        })
+        .saturating_add(GRPC_MESSAGE_OVERHEAD_BYTES)
+}
+
 pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let cfg = config::load_or_default_config(&root)?;
@@ -832,26 +865,28 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     let event_bus = EventBus::default();
     let sync_defaults = SyncServerOptions::default();
 
+    let sync_options = SyncServerOptions {
+        worker_pool_size: cfg.queues.worker_pool_size,
+        queue_capacity: cfg.queues.queue_capacity,
+        backpressure: cfg.queues.backpressure,
+        io_timeout: std::time::Duration::from_millis(cfg.timeouts.io_ms),
+        max_push_chunk_bytes: args
+            .max_push_chunk_bytes
+            .or(cfg.queues.max_push_chunk_bytes)
+            .or(sync_defaults.max_push_chunk_bytes),
+        max_push_request_bytes: args
+            .max_push_request_bytes
+            .or(cfg.queues.max_push_request_bytes)
+            .or(sync_defaults.max_push_request_bytes),
+        rate_limit_per_minute: args
+            .rate_limit_per_minute
+            .or(cfg.queues.rate_limit_per_minute)
+            .or(sync_defaults.rate_limit_per_minute),
+    };
+    let grpc_message_limit = grpc_message_limit_bytes(&sync_options);
     let mut sync_server = SyncServer::from_shared_with_options_and_events(
         shared_store.clone(),
-        SyncServerOptions {
-            worker_pool_size: cfg.queues.worker_pool_size,
-            queue_capacity: cfg.queues.queue_capacity,
-            backpressure: cfg.queues.backpressure,
-            io_timeout: std::time::Duration::from_millis(cfg.timeouts.io_ms),
-            max_push_chunk_bytes: args
-                .max_push_chunk_bytes
-                .or(cfg.queues.max_push_chunk_bytes)
-                .or(sync_defaults.max_push_chunk_bytes),
-            max_push_request_bytes: args
-                .max_push_request_bytes
-                .or(cfg.queues.max_push_request_bytes)
-                .or(sync_defaults.max_push_request_bytes),
-            rate_limit_per_minute: args
-                .rate_limit_per_minute
-                .or(cfg.queues.rate_limit_per_minute)
-                .or(sync_defaults.rate_limit_per_minute),
-        },
+        sync_options,
         Some(event_bus.clone()),
     )
     .with_replay_protection(ReplayProtectionConfig::default(), args.require_replay_nonce);
@@ -869,7 +904,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     change_server = change_server.with_audit_sink(audit_sink.clone());
     capsule_server = capsule_server.with_audit_sink(audit_sink.clone());
     workstream_server = workstream_server.with_audit_sink(audit_sink.clone());
-    event_server = event_server.with_audit_sink(audit_sink);
+    event_server = event_server.with_audit_sink(audit_sink.clone());
     if let Some(authorizer) = sync_authorizer {
         intent_server = intent_server.with_authorizer(authorizer.clone());
         change_server = change_server.with_authorizer(authorizer.clone());
@@ -904,43 +939,83 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     let auth_principal = validate_metadata_value("--auth-principal", &args.auth_principal)?;
     let grpc_task = async move {
         if let Some(token) = auth_token {
-            let interceptor =
-                BearerAuthInterceptor::new(token, auth_principal, grpc_metrics.clone());
+            let interceptor = BearerAuthInterceptor::new(
+                token,
+                auth_principal,
+                grpc_metrics.clone(),
+                audit_sink.clone(),
+            );
             grpc_builder
-                .add_service(SyncServiceServer::with_interceptor(
-                    sync_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    SyncServiceServer::new(sync_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(IntentServiceServer::with_interceptor(
-                    intent_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    IntentServiceServer::new(intent_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(ChangeServiceServer::with_interceptor(
-                    change_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    ChangeServiceServer::new(change_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(CapsuleServiceServer::with_interceptor(
-                    capsule_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    CapsuleServiceServer::new(capsule_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(WorkstreamServiceServer::with_interceptor(
-                    workstream_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    WorkstreamServiceServer::new(workstream_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(EventStreamServiceServer::with_interceptor(
-                    event_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    EventStreamServiceServer::new(event_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor,
                 ))
                 .serve(addr)
                 .await?;
         } else {
             grpc_builder
-                .add_service(SyncServiceServer::new(sync_server))
-                .add_service(IntentServiceServer::new(intent_server))
-                .add_service(ChangeServiceServer::new(change_server))
-                .add_service(CapsuleServiceServer::new(capsule_server))
-                .add_service(WorkstreamServiceServer::new(workstream_server))
-                .add_service(EventStreamServiceServer::new(event_server))
+                .add_service(
+                    SyncServiceServer::new(sync_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    IntentServiceServer::new(intent_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    ChangeServiceServer::new(change_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    CapsuleServiceServer::new(capsule_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    WorkstreamServiceServer::new(workstream_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    EventStreamServiceServer::new(event_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
                 .serve(addr)
                 .await?;
         }
@@ -957,8 +1032,20 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::sync::Mutex;
     use tonic::metadata::MetadataValue;
     use tonic::service::Interceptor;
+
+    #[derive(Clone, Default)]
+    struct TestAuditSink {
+        events: Arc<Mutex<Vec<AuditEvent>>>,
+    }
+
+    impl AuditSink for TestAuditSink {
+        fn record(&self, event: AuditEvent) {
+            self.events.lock().expect("audit lock").push(event);
+        }
+    }
 
     fn test_metrics() -> Arc<DaemonMetrics> {
         Arc::new(DaemonMetrics::new(8).expect("create test metrics"))
@@ -1131,10 +1218,12 @@ mod tests {
     #[test]
     fn auth_failure_metrics_increment_for_missing_and_invalid_bearer() {
         let metrics = test_metrics();
+        let audit = TestAuditSink::default();
         let mut interceptor = BearerAuthInterceptor::new(
             "correct-token".to_string(),
             "agent-a".to_string(),
             metrics.clone(),
+            Arc::new(audit.clone()),
         );
 
         let missing = interceptor.call(Request::new(()));
@@ -1155,6 +1244,31 @@ mod tests {
         assert_eq!(
             metrics.auth_failures.with_label_values(&["invalid"]).get(),
             1
+        );
+        let events = audit.events.lock().expect("audit lock");
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|event| event.outcome == claw_sync::security::AuditOutcome::Denied));
+        assert!(events
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("missing bearer token")));
+        assert!(events
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("invalid bearer token")));
+    }
+
+    #[test]
+    fn grpc_message_limit_tracks_configured_push_chunk_limit() {
+        let options = SyncServerOptions {
+            max_push_chunk_bytes: Some(16 * 1024 * 1024),
+            ..SyncServerOptions::default()
+        };
+
+        assert_eq!(
+            grpc_message_limit_bytes(&options),
+            17 * 1024 * 1024,
+            "tonic message limits should leave headroom above Claw's push chunk limit"
         );
     }
 
@@ -1187,8 +1301,12 @@ mod tests {
     #[test]
     fn bearer_auth_interceptor_attaches_authorization_subject_metadata() {
         let metrics = test_metrics();
-        let mut interceptor =
-            BearerAuthInterceptor::new("correct-token".to_string(), "agent-a".to_string(), metrics);
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics,
+            Arc::new(TracingAuditSink),
+        );
 
         let mut request = Request::new(());
         request.metadata_mut().insert(

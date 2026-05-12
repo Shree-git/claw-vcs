@@ -555,10 +555,94 @@ jobs:
             cd artifacts
             sha256sum "claw-${RELEASE_TAG}.sbom.spdx.json" >> sha256.sum
           )
+      - name: Write release metadata
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          cargo metadata --format-version=1 --locked > "$RUNNER_TEMP/cargo-metadata.json"
+          declared_features="$(
+            jq -c '.packages[] | select(.name == "claw-vcs") | .features' "$RUNNER_TEMP/cargo-metadata.json"
+          )"
+          workspace_members="$(jq -c '.workspace_members' "$RUNNER_TEMP/cargo-metadata.json")"
+          rustc_verbose="$(rustc -vV)"
+          host_triple="$(printf '%s\n' "$rustc_verbose" | awk -F': ' '$1 == "host" { print $2 }')"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg tag "$RELEASE_TAG" \
+            --arg commit "$GITHUB_SHA" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg workflowRef "$GITHUB_WORKFLOW_REF" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg runUrl "$run_url" \
+            --arg runnerOs "$RUNNER_OS" \
+            --arg runnerArch "$RUNNER_ARCH" \
+            --arg runnerName "$RUNNER_NAME" \
+            --arg runnerImage "${ImageOS:-}" \
+            --arg rustcVersion "$(rustc --version)" \
+            --arg cargoVersion "$(cargo --version)" \
+            --arg hostTriple "$host_triple" \
+            --arg buildCommand "dist build ${{ needs.plan.outputs.tag-flag }}" \
+            --argjson declaredFeatures "$declared_features" \
+            --argjson workspaceMembers "$workspace_members" \
+            '{
+              schemaVersion: 1,
+              repository: $repository,
+              tag: $tag,
+              commit: $commit,
+              workflow: $workflow,
+              workflowRef: $workflowRef,
+              run: {
+                id: $runId,
+                attempt: $runAttempt,
+                url: $runUrl
+              },
+              runner: {
+                os: $runnerOs,
+                arch: $runnerArch,
+                name: $runnerName,
+                image: $runnerImage
+              },
+              toolchain: {
+                rustc: $rustcVersion,
+                cargo: $cargoVersion,
+                hostTriple: $hostTriple
+              },
+              build: {
+                command: $buildCommand,
+                defaultFeatures: true,
+                explicitFeatures: [],
+                declaredFeatures: $declaredFeatures,
+                workspaceMembers: $workspaceMembers
+              }
+            }' > "artifacts/claw-${RELEASE_TAG}.release-metadata.json"
+
+          jq -e '
+            .schemaVersion == 1
+            and (.repository | type == "string")
+            and (.tag | type == "string")
+            and (.commit | type == "string")
+            and (.toolchain.rustc | startswith("rustc "))
+            and (.toolchain.cargo | startswith("cargo "))
+            and (.build.defaultFeatures == true)
+          ' "artifacts/claw-${RELEASE_TAG}.release-metadata.json" >/dev/null
+          (
+            cd artifacts
+            sha256sum "claw-${RELEASE_TAG}.release-metadata.json" >> sha256.sum
+          )
       - name: Attest release artifact provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: artifacts/*
+      - name: Attest release SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-path: artifacts/*
+          sbom-path: artifacts/claw-${{ needs.plan.outputs.tag }}.sbom.spdx.json
       - name: Install cosign
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
       - name: Sign release artifacts
@@ -619,6 +703,12 @@ jobs:
               --source-digest "$GITHUB_SHA" \
               --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
               --predicate-type "https://slsa.dev/provenance/v1" \
+              --deny-self-hosted-runners
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --predicate-type "https://spdx.dev/Document/v2.3" \
               --deny-self-hosted-runners
           done
       - name: Create GitHub Release

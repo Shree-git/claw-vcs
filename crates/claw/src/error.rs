@@ -72,6 +72,9 @@ impl CliDiagnostic {
                     Some("Run `claw doctor` to inspect repository configuration, then fix the reported file."),
                 )
         } else if text.contains("no token found")
+            || text.contains("missing bearer token")
+            || text.contains("invalid bearer token")
+            || text.contains("unauthenticated")
             || text.contains("authorization code")
             || text.contains("token exchange failed")
         {
@@ -86,7 +89,12 @@ impl CliDiagnostic {
                 exit_codes::POLICY,
                 Some("Review the policy requirements, add the required evidence/signatures, or run `claw policy eval --json` for details."),
             )
-        } else if text.contains("compatibility check failed") || text.contains("incompatible") {
+        } else if text.contains("compatibility check failed")
+            || text.contains("protocol negotiation failed")
+            || text.contains("protocol mismatch")
+            || text.contains("unsupported protocol")
+            || text.contains("incompatible")
+        {
             (
                 "COMPATIBILITY_ERROR",
                 exit_codes::COMPATIBILITY,
@@ -165,6 +173,27 @@ mod tests {
 
         assert_eq!(diagnostic.code, "COMPATIBILITY_ERROR");
         assert_eq!(diagnostic.exit_code, exit_codes::COMPATIBILITY);
+    }
+
+    #[test]
+    fn classifies_protocol_negotiation_failures() {
+        let err =
+            anyhow::anyhow!("protocol negotiation failed: server protocol claw-sync/9 unsupported");
+        let diagnostic = CliDiagnostic::from_error(&err);
+
+        assert_eq!(diagnostic.code, "COMPATIBILITY_ERROR");
+        assert_eq!(diagnostic.exit_code, exit_codes::COMPATIBILITY);
+    }
+
+    #[test]
+    fn classifies_bearer_token_failures() {
+        for message in ["missing bearer token", "invalid bearer token"] {
+            let err = anyhow::anyhow!(message);
+            let diagnostic = CliDiagnostic::from_error(&err);
+
+            assert_eq!(diagnostic.code, "AUTH_ERROR");
+            assert_eq!(diagnostic.exit_code, exit_codes::AUTH);
+        }
     }
 
     #[test]

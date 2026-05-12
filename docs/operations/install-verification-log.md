@@ -79,7 +79,7 @@ CLAW_RELEASE_VERIFY_REPORT=release-verification/<launch-tag>-unix.json scripts/v
 ```
 
 - GitHub release archive from the next launch-hardening release.
-- `sha256.sum`, Cosign signatures, GitHub attestations, and SBOM readability
+- `sha256.sum`, Cosign signatures, GitHub attestations, SBOM attestations, SBOM readability, and release metadata
   from the next launch-hardening release.
 - Shell installer from the next launch-hardening release.
 - PowerShell installer on Windows.
@@ -121,7 +121,8 @@ Expected coverage:
 - Cosign signatures and certificates
 - GitHub artifact attestations
 - GitHub release target commit matches the release tag commit
-- SPDX SBOM readability
+- SPDX SBOM readability and SBOM attestation verification
+- Release metadata asset validation
 - structured JSON report written to `CLAW_RELEASE_VERIFY_REPORT`
 - shell installer in an isolated temporary `HOME`
 - tagged `cargo install --git`

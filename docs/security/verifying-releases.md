@@ -54,6 +54,18 @@ gh attestation verify ./claw-x86_64-unknown-linux-gnu.tar.xz --repo Shree-git/cl
 ```
 
 Verify the attestation references the expected repository, commit SHA, workflow, and tag.
+For launch releases, verify both provenance and SBOM attestations by pinning
+predicate types:
+
+```bash
+gh attestation verify ./claw-x86_64-unknown-linux-gnu.tar.xz \
+  --repo Shree-git/claw-vcs \
+  --predicate-type https://slsa.dev/provenance/v1
+
+gh attestation verify ./claw-x86_64-unknown-linux-gnu.tar.xz \
+  --repo Shree-git/claw-vcs \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
 
 ## SBOM
 
@@ -65,11 +77,15 @@ jq '.name, .packages | length' claw-vX.Y.Z.sbom.spdx.json
 
 Use the SBOM to review dependency inventory and compare it with the release commit.
 
+Each release also includes `claw-vX.Y.Z.release-metadata.json`, which records
+the source commit, workflow run URL, runner details, Rust toolchain, target
+triple, and Cargo feature metadata used for the release.
+
 ## Unix Release-Channel Helper
 
 On Linux or macOS, this helper verifies the release target commit, host archive,
 `sha256.sum`, Cosign signatures, GitHub artifact attestations, SBOM readability,
-the shell installer, and the tagged `cargo install --git` path. Set
+release metadata, the shell installer, and the tagged `cargo install --git` path. Set
 `CLAW_RELEASE_VERIFY_REPORT` to keep a machine-readable JSON report with checked
 assets, channels, versions, and SHA-256 digests:
 

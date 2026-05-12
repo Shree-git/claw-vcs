@@ -19,6 +19,11 @@ Publish with every release:
 - SBOM
 - release workflow file and run URL
 
+The release workflow publishes these fields in
+`claw-<tag>.release-metadata.json`. The metadata asset is checksummed, signed,
+covered by SLSA provenance, covered by the release SBOM attestation, and
+validated by `scripts/verify-release-channel.sh`.
+
 ## Local Rebuild
 
 ```bash

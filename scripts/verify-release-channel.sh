@@ -59,6 +59,7 @@ require shasum
 
 expected_version="${tag#v}"
 sbom="claw-${tag}.sbom.spdx.json"
+metadata="claw-${tag}.release-metadata.json"
 report_path="${CLAW_RELEASE_VERIFY_REPORT:-}"
 
 case "$(uname -s):$(uname -m)" in
@@ -183,6 +184,9 @@ gh release download "$tag" --repo "$repo" \
   --pattern "$sbom" \
   --pattern "$sbom.sig" \
   --pattern "$sbom.pem" \
+  --pattern "$metadata" \
+  --pattern "$metadata.sig" \
+  --pattern "$metadata.pem" \
   --dir "$assets"
 
 require_asset() {
@@ -229,13 +233,46 @@ verify_attestation() {
     --deny-self-hosted-runners
 }
 
-for signed_asset in "$archive" "sha256.sum" "claw-installer.sh" "$sbom"; do
+verify_sbom_attestation() {
+  local file="$1"
+
+  gh attestation verify "$assets/$file" --repo "$repo" \
+    --source-ref "refs/tags/${tag}" \
+    --source-digest "$tag_commit" \
+    --signer-workflow "${repo}/.github/workflows/release.yml" \
+    --predicate-type "https://spdx.dev/Document/v2.3" \
+    --deny-self-hosted-runners
+}
+
+for signed_asset in "$archive" "sha256.sum" "claw-installer.sh" "$sbom" "$metadata"; do
   require_signed_asset "$signed_asset"
   verify_cosign_blob "$signed_asset"
   record_check "provenance" "cosign:$signed_asset" "pass" "$(jq -cn --arg asset "$signed_asset" '{asset: $asset}')"
   verify_attestation "$signed_asset"
   record_check "provenance" "attestation:$signed_asset" "pass" "$(jq -cn --arg asset "$signed_asset" '{asset: $asset}')"
+  verify_sbom_attestation "$signed_asset"
+  record_check "sbom" "attestation:$signed_asset" "pass" "$(jq -cn --arg asset "$signed_asset" '{asset: $asset}')"
 done
+
+jq -e --arg tag "$tag" --arg commit "$tag_commit" '
+  .schemaVersion == 1
+  and .tag == $tag
+  and .commit == $commit
+  and (.run.url | startswith("https://github.com/"))
+  and (.runner.os | type == "string")
+  and (.toolchain.rustc | startswith("rustc "))
+  and (.toolchain.cargo | startswith("cargo "))
+  and (.build.defaultFeatures == true)
+  and (.build.explicitFeatures | type == "array")
+  and (.build.declaredFeatures | type == "object")
+' "$assets/$metadata" >/dev/null
+record_check "release" "metadata-asset:$metadata" "pass" "$(
+  jq -cn \
+    --arg asset "$metadata" \
+    --arg tag "$tag" \
+    --arg commit "$tag_commit" \
+    '{asset: $asset, tag: $tag, commit: $commit}'
+)"
 
 jq -e '
   .spdxVersion
@@ -299,6 +336,7 @@ verify_sha256_entry() {
 verify_sha256_entry "$archive"
 verify_sha256_entry "claw-installer.sh"
 verify_sha256_entry "$sbom"
+verify_sha256_entry "$metadata"
 
 smoke_repo() {
   local binary="$1"

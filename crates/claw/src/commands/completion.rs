@@ -54,17 +54,25 @@ const COMMON_COMMAND_OPTIONS: &[&str] = &[
     "--all-heads",
     "--branch",
     "--check",
+    "--decrypt-private",
     "--dry-run",
+    "--from",
     "--git-dir",
     "--git-ref",
     "--id",
     "--json",
+    "--message",
     "--name",
+    "--path",
+    "--private-file",
     "--public-key",
     "--reason",
+    "--recipient-key",
+    "--recipient-secret-key",
     "--ref-name",
     "--remote",
     "--right",
+    "--to",
     "--token-profile",
     "--client-cert",
     "--client-key",
@@ -320,10 +328,18 @@ mod tests {
             "--tls-key",
             "--client-ca-cert",
             "--audit-log",
+            "--message",
+            "--from",
+            "--to",
+            "--path",
+            "--private-file",
+            "--recipient-key",
+            "--decrypt-private",
+            "--recipient-secret-key",
         ] {
             assert!(
                 bash.contains(option),
-                "bash completion should include daemon option {option}"
+                "bash completion should include command option {option}"
             );
         }
 

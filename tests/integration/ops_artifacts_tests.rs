@@ -351,7 +351,11 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "schemaVersion: 1",
         "checks: .",
         "claw-${tag}.sbom.spdx.json",
+        "claw-${tag}.release-metadata.json",
         "verify_sha256_entry \"$sbom\"",
+        "verify_sha256_entry \"$metadata\"",
+        "verify_sbom_attestation",
+        "--predicate-type \"https://spdx.dev/Document/v2.3\"",
         "--tag \"$tag\"",
         "CLAW_VERIFY_HOMEBREW",
     ] {
@@ -444,6 +448,13 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     );
 
     let launch_checklist = read_workspace_file("docs/operations/public-launch-checklist.md");
+    let landing_page = read_workspace_file("docs/index.html");
+    assert!(
+        !landing_page.contains("href=\"getting-started/quickstart.md\"")
+            && !landing_page.contains("href=\"security/threat-model.md\"")
+            && !landing_page.contains("href=\"security/verifying-releases.md\""),
+        "static landing page must not link to raw relative Markdown files when published by the Pages artifact workflow"
+    );
     assert!(
         launch_checklist.contains("docs/assets/social-preview.png"),
         "launch checklist must name the upload-ready social preview asset"
@@ -518,16 +529,35 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     let release_workflow = read_workspace_file(".github/workflows/release.yml");
     for phrase in [
         "Verify signed artifacts before release upload",
+        "Write release metadata",
+        "claw-${RELEASE_TAG}.release-metadata.json",
+        "cargo metadata --format-version=1 --locked",
+        "Attest release SBOM",
+        "actions/attest-sbom@",
+        "subject-path: artifacts/*",
         "sha256sum -c sha256.sum --ignore-missing",
         "jq -e '",
         "cosign verify-blob",
         "gh attestation verify \"$artifact\" --repo \"$GITHUB_REPOSITORY\" \\",
         "--source-digest \"$GITHUB_SHA\"",
         "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release.yml\"",
+        "--predicate-type \"https://spdx.dev/Document/v2.3\"",
     ] {
         assert!(
             release_workflow.contains(phrase),
             "release workflow must pre-verify artifact provenance before upload: {phrase}"
+        );
+    }
+    let verify_artifacts_workflow = read_workspace_file(".github/workflows/verify-artifacts.yml");
+    for phrase in [
+        "Verify release metadata",
+        "claw-${RELEASE_TAG}.release-metadata.json",
+        "Verified SBOM attestations",
+        "--predicate-type \"https://spdx.dev/Document/v2.3\"",
+    ] {
+        assert!(
+            verify_artifacts_workflow.contains(phrase),
+            "artifact verifier must validate release metadata and SBOM attestations: {phrase}"
         );
     }
     let upload_index = release_workflow
