@@ -309,6 +309,7 @@ jobs:
           cargo test -p claw-integration-tests --test spec_tests --locked
           cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
           cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
 
   artifact-smoke-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
@@ -454,6 +455,7 @@ jobs:
           cargo test -p claw-integration-tests --test cli_core_workflow_tests --locked
           cargo test -p claw-integration-tests --test cli_error_contract_tests --locked
           cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
   # Determines if we should publish/announce
   host:
     permissions:
