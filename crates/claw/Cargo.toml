@@ -7,6 +7,10 @@ authors.workspace = true
 description.workspace = true
 homepage.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 
 [package.metadata.wix]
 upgrade-guid = "A0125272-4F24-4EBE-8DE9-805BA0342C28"

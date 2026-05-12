@@ -75,7 +75,7 @@ Status: checksum and binary launch pass, but this release predates the hardened 
 Unix clean-host helper:
 
 ```bash
-scripts/verify-release-channel.sh <launch-tag>
+CLAW_RELEASE_VERIFY_REPORT=release-verification/<launch-tag>-unix.json scripts/verify-release-channel.sh <launch-tag>
 ```
 
 - GitHub release archive from the next launch-hardening release.
@@ -120,7 +120,9 @@ Expected coverage:
 - `sha256.sum`
 - Cosign signatures and certificates
 - GitHub artifact attestations
+- GitHub release target commit matches the release tag commit
 - SPDX SBOM readability
+- structured JSON report written to `CLAW_RELEASE_VERIFY_REPORT`
 - shell installer in an isolated temporary `HOME`
 - tagged `cargo install --git`
 - `claw --version`
@@ -132,6 +134,12 @@ Observed result:
 
 ```text
 paste command output or summary
+```
+
+Evidence artifact:
+
+```text
+release-verification/<launch-tag>-unix.json or release-channel-smoke workflow artifact URL
 ```
 
 Status: pass/fail
@@ -163,7 +171,7 @@ Source:
 Observed result:
 
 ```text
-paste workflow URL, command output, or summary
+paste workflow URL or summarize the uploaded release-verification-windows-install artifact
 ```
 
 Status: pass/fail

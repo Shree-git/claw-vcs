@@ -7,6 +7,10 @@ authors.workspace = true
 description = "Three-way merge support and conflict handling for Claw VCS."
 homepage.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 
 [lib]
 name = "claw_merge"

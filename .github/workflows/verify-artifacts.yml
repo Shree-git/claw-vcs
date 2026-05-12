@@ -207,9 +207,23 @@ jobs:
           ARTIFACT_ROOT: ${{ steps.source.outputs.artifact_root }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
+
+          source_digest=""
+          if [[ -n "$RELEASE_TAG" ]]; then
+            tag_refs="$(git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}")"
+            source_digest="$(printf '%s\n' "$tag_refs" | awk -v ref="refs/tags/${RELEASE_TAG}^{}" '$2 == ref { print $1; found = 1 } END { if (!found) exit 1 }' || true)"
+            if [[ -z "$source_digest" ]]; then
+              source_digest="$(printf '%s\n' "$tag_refs" | awk -v ref="refs/tags/${RELEASE_TAG}" '$2 == ref { print $1; exit }')"
+            fi
+            if [[ -z "$source_digest" ]]; then
+              echo "ERROR: could not resolve release tag $RELEASE_TAG" >&2
+              exit 1
+            fi
+          fi
 
           is_manifest_metadata() {
             local path base
@@ -253,10 +267,46 @@ jobs:
           verified_count=0
           for artifact in "${artifacts[@]}"; do
             echo "Verifying attestation for $artifact"
-            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+            if [[ -n "$RELEASE_TAG" ]]; then
+              gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+                --source-ref "refs/tags/${RELEASE_TAG}" \
+                --source-digest "$source_digest" \
+                --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+                --predicate-type "https://slsa.dev/provenance/v1" \
+                --deny-self-hosted-runners
+            else
+              gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+            fi
             ((verified_count+=1))
           done
 
           {
             echo "- Verified attestations: ${verified_count}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify SBOM structure
+        if: ${{ steps.source.outputs.release_tag != '' }}
+        env:
+          ARTIFACT_ROOT: ${{ steps.source.outputs.artifact_root }}
+          RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sbom="$ARTIFACT_ROOT/claw-${RELEASE_TAG}.sbom.spdx.json"
+          if [[ ! -f "$sbom" ]]; then
+            echo "ERROR: missing release SBOM: $sbom" >&2
+            exit 1
+          fi
+
+          jq -e '
+            .spdxVersion
+            and (.SPDXID == "SPDXRef-DOCUMENT")
+            and (.packages | type == "array")
+            and (.packages | length > 0)
+          ' "$sbom" >/dev/null
+
+          {
+            echo "- Verified SBOM: $(basename "$sbom")"
+            echo "- SBOM packages: $(jq '.packages | length' "$sbom")"
           } >> "$GITHUB_STEP_SUMMARY"

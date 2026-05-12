@@ -11,7 +11,7 @@ Status key:
 
 ## Completion Summary
 
-The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening branch. The goal is not complete until the external pending items below are finished: package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, optional GitHub Pages publication if the landing page should be served publicly, PR review/merge, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
+The in-repository P0/P1/P2 hardening work is implemented on the `codex/public-launch-hardening` branch / PR #4. The goal is not complete until the external pending items below are finished: package/name reservation where required, trademark/domain/social-handle review, GitHub social preview upload, optional GitHub Pages publication if the landing page should be served publicly, PR review/merge, hardened public release publication, public artifact attestation verification, and clean-environment release-channel verification.
 
 ## P0
 
@@ -112,10 +112,10 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 
 | # | Status | Evidence |
 |---:|---|---|
-| 71 | Implemented | `docs/operations/release-reproducibility.md` and release workflow metadata/signing/attestation/SBOM gates. |
-| 72 | Implemented | `RELEASING.md` and `release.yml` include fmt, clippy, `cargo test --workspace --all-targets --locked`, audit, deny, vet, all fuzz-target smoke, dry-run, install verification, signatures, attestations, SBOM, Homebrew, Windows, and rollback. |
-| 73 | Implemented | `docs/operations/package-registry-strategy.md` documents live/planned/unsupported channels and the `claw-vcs` crates.io package set. |
-| 74 | External pending | Registry availability checks are recorded; `scripts/public-launch-preflight.sh` automates repeatable package-name/repository checks for `claw-vcs` and `claw-vcs-*`; strict preflight also requires completed name/domain/social/package evidence. `docs/operations/name-clearance.md` gives the evidence template for trademark, domain, and social-handle checks. Actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
+| 71 | Implemented | `docs/operations/release-reproducibility.md` and release workflow metadata/signing/attestation/SBOM gates, including pre-upload verification of checksums, signatures, tag source digest, signer workflow, and SBOM structure. |
+| 72 | Implemented | `RELEASING.md` and `release.yml` include fmt, clippy, `cargo test --workspace --all-targets --locked`, audit, deny, vet, all fuzz-target smoke, dry-run, install verification, signatures, attestations, SBOM, Homebrew, Windows, JSON release-channel evidence, and rollback. |
+| 73 | Implemented | `docs/operations/package-registry-strategy.md` documents live/planned/unsupported channels and the `claw-vcs` crates.io package set; publish helper enforces release tag/version/owner guardrails before real publishing. |
+| 74 | External pending | Registry availability checks are recorded; `scripts/public-launch-preflight.sh` automates repeatable package-name/repository checks for `claw-vcs` and `claw-vcs-*`; `scripts/publish-cratesio.sh` requires exact tag/version and `CLAW_CRATESIO_EXPECTED_OWNER` for real publishing; strict preflight also requires completed name/domain/social/package evidence. `docs/operations/name-clearance.md` gives the evidence template for trademark, domain, and social-handle checks. Actual reservation, domain/social handles, and trademark clearance require maintainer/account action. |
 | 75 | Implemented | Install docs end with `claw --version`, `claw doctor`, and smoke test commands. |
 | 76 | Implemented | README and release verification docs provide manual download and verification alternatives to pipe installers. |
 | 77 | Implemented | `docs/operations/uninstall.md`. |
@@ -133,7 +133,7 @@ The in-repository P0/P1/P2 hardening work is implemented on the launch-hardening
 | 84 | Implemented | Windows path/release-channel coverage is in compatibility matrix CI and path safety tests; broader real-world validation remains called out before rollout. |
 | 85 | Implemented | `docs/reference/unsafe-audit.md` documents unsafe audit status. |
 | 86 | Implemented | Panic audit guidance and CI clippy panic/todo/unimplemented checks. |
-| 87 | Implemented | Concurrency and load/soak tests cover multi-agent daemon writes, reads, pushes, refs, and overload behavior. |
+| 87 | Implemented | Concurrency and load/soak tests cover multi-agent daemon pushes, ref writes, rate limits, and overload behavior; fetch/read interruption coverage lives in chaos and sync e2e tests. |
 | 88 | Implemented | COF/object corruption tests in `crates/claw-core/tests/cof_corruption.rs`, loose-object and pack index/object corruption tests in `crates/claw-store/tests/store_props.rs`, and integration chaos tests. |
 | 89 | Implemented | `claw-core` exposes COF version classification and migration-plan helpers; tests reject future versions and return the native v1 plan. Config compatibility checks and operator migration docs cover the current v0.1 migration surface. |
 | 90 | Implemented | `docs/reference/compatibility.md` and `docs/reference/compatibility-matrix.json`. |

@@ -67,12 +67,14 @@ Use the SBOM to review dependency inventory and compare it with the release comm
 
 ## Unix Release-Channel Helper
 
-On Linux or macOS, this helper verifies the host archive, `sha256.sum`, Cosign
-signatures, GitHub artifact attestations, SBOM readability, the shell installer,
-and the tagged `cargo install --git` path:
+On Linux or macOS, this helper verifies the release target commit, host archive,
+`sha256.sum`, Cosign signatures, GitHub artifact attestations, SBOM readability,
+the shell installer, and the tagged `cargo install --git` path. Set
+`CLAW_RELEASE_VERIFY_REPORT` to keep a machine-readable JSON report with checked
+assets, channels, versions, and SHA-256 digests:
 
 ```bash
-scripts/verify-release-channel.sh vX.Y.Z
+CLAW_RELEASE_VERIFY_REPORT=release-verification/vX.Y.Z-unix.json scripts/verify-release-channel.sh vX.Y.Z
 ```
 
 ## Install Smoke Test

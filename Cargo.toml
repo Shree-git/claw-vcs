@@ -21,6 +21,10 @@ authors = ["Claw contributors"]
 description = "Claw VCS: intent-native, agent-native version control."
 homepage = "https://github.com/shree-git/claw-vcs"
 repository = "https://github.com/shree-git/claw-vcs"
+readme = "README.md"
+keywords = ["vcs", "provenance", "ai-agents", "version-control"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
 
 [workspace.dependencies]
 # Hashing & encoding

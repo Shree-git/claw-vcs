@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to validate (defaults to the published release tag or latest release)"
-        required: false
+        description: "Release tag to validate"
+        required: true
         type: string
 
 permissions:
@@ -34,9 +34,35 @@ jobs:
           elif [[ -n "$RELEASE_TAG" ]]; then
             tag="$RELEASE_TAG"
           else
-            tag="$(gh release view --json tagName -q .tagName)"
+            echo "workflow_dispatch release-channel smoke requires an explicit tag input" >&2
+            exit 2
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  provenance-release-smoke:
+    needs: release-metadata
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Verify release provenance and Unix channels
+        run: |
+          mkdir -p release-verification
+          CLAW_SKIP_CARGO_INSTALL=1 \
+            CLAW_RELEASE_VERIFY_REPORT="release-verification/${RELEASE_TAG}-provenance-linux.json" \
+            scripts/verify-release-channel.sh "$RELEASE_TAG"
+      - name: Upload release verification report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-provenance-linux
+          path: release-verification/*.json
+          if-no-files-found: error
 
   linux-release-smoke:
     needs: release-metadata
@@ -114,6 +140,27 @@ jobs:
             "$HOME/.local/bin/claw" status
             "$HOME/.local/bin/claw" doctor
           )
+
+      - name: Write Linux install evidence
+        run: |
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              channels: ["linux-archive", "linux-shell-installer"],
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-linux-install.json"
+
+      - name: Upload Linux install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-linux-install
+          path: release-verification/*.json
+          if-no-files-found: error
 
   macos-release-smoke:
     needs: release-metadata
@@ -196,6 +243,29 @@ jobs:
             claw status
             claw doctor
           )
+
+      - name: Write macOS install evidence
+        run: |
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            --arg arch "$(uname -m)" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              arch: $arch,
+              channels: ["macos-archive", "macos-shell-installer", "homebrew"],
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-macos-install.json"
+
+      - name: Upload macOS install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-macos-install
+          path: release-verification/*.json
+          if-no-files-found: error
 
   windows-release-smoke:
     needs: release-metadata
@@ -311,6 +381,25 @@ jobs:
           & $binary doctor
           Pop-Location
 
+      - name: Write Windows install evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-verification | Out-Null
+          @{
+            schemaVersion = 1
+            tag = $env:RELEASE_TAG
+            runner = $env:RUNNER_OS
+            channels = @("windows-zip", "windows-powershell-installer", "windows-msi")
+            status = "pass"
+          } | ConvertTo-Json -Depth 4 | Set-Content "release-verification\$($env:RELEASE_TAG)-windows-install.json"
+
+      - name: Upload Windows install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-windows-install
+          path: release-verification/*.json
+          if-no-files-found: error
+
   cargo-install-git-smoke:
     needs: release-metadata
     runs-on: ubuntu-22.04
@@ -339,3 +428,23 @@ jobs:
             "$root/bin/claw" status
             "$root/bin/claw" doctor
           )
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            --arg version "$actual" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              channels: ["cargo-install-git"],
+              version: $version,
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-cargo-install-git.json"
+
+      - name: Upload cargo install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-cargo-install-git
+          path: release-verification/*.json
+          if-no-files-found: error

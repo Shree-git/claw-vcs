@@ -545,6 +545,16 @@ jobs:
           gh api "/repos/${GH_REPO}/dependency-graph/sbom" \
             --jq '.sbom' \
             > "artifacts/claw-${RELEASE_TAG}.sbom.spdx.json"
+          jq -e '
+            .spdxVersion
+            and (.SPDXID == "SPDXRef-DOCUMENT")
+            and (.packages | type == "array")
+            and (.packages | length > 0)
+          ' "artifacts/claw-${RELEASE_TAG}.sbom.spdx.json" >/dev/null
+          (
+            cd artifacts
+            sha256sum "claw-${RELEASE_TAG}.sbom.spdx.json" >> sha256.sum
+          )
       - name: Attest release artifact provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
@@ -574,6 +584,43 @@ jobs:
               --output-certificate "${artifact}.pem" \
               "$artifact"
           done
+      - name: Verify signed artifacts before release upload
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -f artifacts/sha256.sum ]]; then
+            (cd artifacts && sha256sum -c sha256.sum --ignore-missing)
+          fi
+
+          mapfile -t artifacts_to_verify < <(
+            find artifacts -type f \
+              ! -name '*.sig' \
+              ! -name '*.pem' \
+              | sort
+          )
+
+          if [[ ${#artifacts_to_verify[@]} -eq 0 ]]; then
+            echo "No release artifacts found to verify" >&2
+            exit 1
+          fi
+
+          for artifact in "${artifacts_to_verify[@]}"; do
+            cosign verify-blob \
+              --signature "${artifact}.sig" \
+              --certificate "${artifact}.pem" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.*@refs/tags/${RELEASE_TAG}$" \
+              "$artifact"
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --deny-self-hosted-runners
+          done
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
@@ -587,8 +634,8 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > "$RUNNER_TEMP/notes.txt"
 
           if gh release view "${{ needs.plan.outputs.tag }}" >/dev/null 2>&1; then
-            gh release edit "${{ needs.plan.outputs.tag }}" --draft=false --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
             gh release upload "${{ needs.plan.outputs.tag }}" --clobber artifacts/*
+            gh release edit "${{ needs.plan.outputs.tag }}" --draft=false --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
           else
             gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
           fi

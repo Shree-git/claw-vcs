@@ -108,7 +108,7 @@ crates/
 ├── claw-merge      Three-way merge with conflicts (package `claw-vcs-merge`)
 ├── claw-crypto     Signing, verification, capsules (package `claw-vcs-crypto`)
 ├── claw-policy     Policy and visibility checks (package `claw-vcs-policy`)
-├── claw-sync       gRPC sync and partial clone (package `claw-vcs-sync`)
+├── claw-sync       gRPC sync with daemon fetch filters (package `claw-vcs-sync`)
 ├── claw-git        Git import/export (package `claw-vcs-git`)
 └── claw            The `claw-vcs` Cargo package, publishing the `claw` binary
 
@@ -186,7 +186,8 @@ service SyncService {
 }
 ```
 
-Partial clone filters let you fetch selectively:
+At the daemon protocol layer, `FetchObjects` accepts filters for selective object
+fetches:
 
 - **Intent IDs** — fetch only work related to a specific goal
 - **Path prefixes** — fetch only `src/frontend/`
@@ -194,6 +195,9 @@ Partial clone filters let you fetch selectively:
 - **Codec types** — fetch only JSON files
 - **Capsule visibility** — respect public/private/encrypted-metadata-required policy modes
 - **Byte budget / depth limit** — resource-constrained fetching
+
+Current CLI limitation: `claw sync clone` still performs a full clone and does
+not expose these filters.
 
 ### Daemon
 
@@ -251,7 +255,7 @@ claw git-roundtrip           Verify claw -> git -> claw integrity for a ref
 | Distinguish human from AI agent | Freeform author string | Registered agent identities with Ed25519 keys |
 | Enforce policies in the repo | GitHub/GitLab settings (external) | Policy objects versioned alongside code |
 | Codec-aware merging | Line-based diff only | Pluggable codecs (JSON tree diff, etc.) |
-| Partial clone by intent/time/codec | Treeless/blobless only | Filter by intent, path, time, codec, visibility, byte budget |
+| Daemon fetch filters by intent/time/codec | Treeless/blobless only | Daemon object fetch can filter by intent, path, time, codec, visibility, and byte budget; CLI clone currently fetches all refs/objects |
 | Agent-native daemon | None | gRPC server for programmatic agent access |
 | Patch commutation | N/A | Darcs-style independent patch reordering |
 | Capsule encryption | N/A | XChaCha20-Poly1305 encrypted private metadata |

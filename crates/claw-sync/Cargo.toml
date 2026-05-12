@@ -7,6 +7,10 @@ authors.workspace = true
 description = "gRPC sync protocol, event streaming, and remote services for Claw VCS."
 homepage.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 
 [lib]
 name = "claw_sync"

@@ -26,10 +26,15 @@ Define the current, implemented release gates and operator responsibilities for 
   - Validates container build smoke, Helm lint/template rendering, Terraform static validation, and systemd template sanity.
 - **Signed artifact flow (`release.yml` + `verify-artifacts.yml`):**
   - `release.yml` signs each release artifact with `cosign sign-blob`, producing `<artifact>.sig` and `<artifact>.pem`.
+  - `release.yml` verifies checksums, Cosign signatures, GitHub artifact
+    attestations, exact tag/source digest, signer workflow, and SBOM structure
+    before uploading the signed artifact set to the GitHub Release.
   - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob`, verifies GitHub artifact attestations with `gh attestation verify`, and fails on missing pairs.
 - **Release channel smoke (`release-channel-smoke.yml`):**
   - Runs on published releases or manual dispatch.
   - Validates Linux, macOS, and Windows release archives/installers where assets exist, plus checksum consistency and Homebrew installability.
+  - Uploads JSON release-verification artifacts for provenance, platform install
+    channels, and tagged `cargo install --git`.
 - **Nightly drill (`nightly-chaos.yml`):**
   - Scheduled daily at `03:00 UTC`.
   - Runs deterministic failure drills via `chaos_tests`.

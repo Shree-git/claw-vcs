@@ -61,4 +61,18 @@ already live and skips the rest with an explicit dependency list; explicit
 `--package` and `--start-at` dry-runs fail fast when their prerequisites are not
 published yet.
 The helper defaults to dry-run and refuses real publishing unless both
-`--publish` and `CLAW_CRATESIO_PUBLISH=1` are present.
+`--publish` and `CLAW_CRATESIO_PUBLISH=1` are present. Real publishing also
+requires:
+
+- a clean working tree
+- `HEAD` exactly at `CLAW_CRATESIO_RELEASE_TAG` or `v<workspace version>`
+- the same release tag present in the canonical remote configured by
+  `CLAW_CRATESIO_REPO_URL`
+- every package in the publish set at the same workspace version
+- `CLAW_CRATESIO_EXPECTED_OWNER` set to the crates.io owner login or team id
+  that must appear on each crate after publication
+
+The script polls crates.io after each real publish and verifies that the
+exact package version is visible and the expected owner login is attached
+before continuing to the next package. Resumed publishes also verify the owner
+on already-live internal dependency crates before publishing a dependent crate.

@@ -9,7 +9,7 @@ Status as of 2026-05-12:
 - GitHub repository: `Shree-git/claw-vcs`.
 - Secret scanning, push protection, and Dependabot security updates are enabled.
 - Full-history local secret scans passed on 2026-05-12 for the
-  launch-hardening branch history:
+  `codex/public-launch-hardening` branch history:
   `gitleaks detect --source . --no-git=false --redact --no-banner` reported no
   leaks, and `trufflehog git file://$PWD --json --no-update` reported 0
   verified and 0 unverified secrets. Re-run both commands after the final
@@ -61,7 +61,8 @@ access; they cannot be completed by editing this repository alone.
 2. Reserve or publish the `claw-vcs` crates.io package set before documenting a
    crates.io install path. Publish internal packages in the order documented in
    `docs/operations/package-registry-strategy.md`, using
-   `scripts/publish-cratesio.sh --publish` once credentials are configured.
+   `CLAW_CRATESIO_EXPECTED_OWNER=<owner> CLAW_CRATESIO_PUBLISH=1 scripts/publish-cratesio.sh --publish`
+   from the exact release tag once credentials are configured.
 3. Complete trademark, domain, and social-handle checks before treating the name
    and permanent visual identity as launch-ready. Use
    [name-clearance.md](name-clearance.md) to record evidence in
@@ -75,11 +76,13 @@ access; they cannot be completed by editing this repository alone.
 
 ```bash
 scripts/public-launch-preflight.sh
-scripts/verify-release-channel.sh <launch-tag>
+CLAW_RELEASE_VERIFY_REPORT=release-verification/<launch-tag>.json scripts/verify-release-channel.sh <launch-tag>
 ```
 
 7. Record clean-environment verification results for every live install channel
-   in [install-verification-log.md](install-verification-log.md).
+   in [install-verification-log.md](install-verification-log.md). Prefer the
+   JSON reports uploaded by `release-channel-smoke.yml` over pasted terminal
+   summaries.
 
 ## Repository Identity
 

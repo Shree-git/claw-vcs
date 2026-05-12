@@ -335,10 +335,21 @@ fn public_launch_assets_exist_and_are_upload_ready() {
     let release_verifier = read_workspace_file("scripts/verify-release-channel.sh");
     for phrase in [
         "gh release download",
+        "gh release view",
+        "targetCommitish",
+        "git ls-remote --tags",
         "claw-installer.sh",
         "cosign verify-blob",
         "gh attestation verify",
+        "--source-ref \"refs/tags/${tag}\"",
+        "--source-digest \"$tag_commit\"",
+        "--signer-workflow \"${repo}/.github/workflows/release.yml\"",
+        "--deny-self-hosted-runners",
+        "CLAW_RELEASE_VERIFY_REPORT",
+        "schemaVersion: 1",
+        "checks: .",
         "claw-${tag}.sbom.spdx.json",
+        "verify_sha256_entry \"$sbom\"",
         "--tag \"$tag\"",
         "CLAW_VERIFY_HOMEBREW",
     ] {
@@ -354,14 +365,49 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "claw-vcs-core",
         "claw-vcs-store",
         "claw-vcs",
-        "cargo publish -p \"$package\" --dry-run --locked --allow-dirty",
+        "cargo publish -p \"$package\" --dry-run --locked --allow-dirty --registry crates-io",
+        "cargo publish -p \"$package\" --locked --registry crates-io",
         "skipping dry-run for $package until registry dependencies are live",
         "cannot dry-run $package until registry dependencies are live",
         "refusing to publish without CLAW_CRATESIO_PUBLISH=1",
+        "CLAW_CRATESIO_EXPECTED_OWNER",
+        "CLAW_CRATESIO_RELEASE_TAG",
+        "CLAW_CRATESIO_REPO_URL",
+        "https://crates.io/api/v1/crates/$package/$workspace_version",
+        "git describe --tags --exact-match HEAD",
+        "git ls-remote --tags",
+        "refusing to publish from a dirty working tree",
+        ".users[]? | select(.login == $owner)",
+        "crates.io owner verified for $package",
     ] {
         assert!(
             cratesio_publisher.contains(phrase),
             "crates.io publisher must include phrase: {phrase}"
+        );
+    }
+
+    let workspace_manifest = read_workspace_file("Cargo.toml");
+    for phrase in [
+        "readme = \"README.md\"",
+        "keywords = [\"vcs\", \"provenance\", \"ai-agents\", \"version-control\"]",
+        "categories = [\"command-line-utilities\", \"development-tools\"]",
+        "publish = [\"crates-io\"]",
+    ] {
+        assert!(
+            workspace_manifest.contains(phrase),
+            "workspace package metadata must include crates.io publishing field: {phrase}"
+        );
+    }
+    let cli_manifest = read_workspace_file("crates/claw/Cargo.toml");
+    for phrase in [
+        "readme.workspace = true",
+        "keywords.workspace = true",
+        "categories.workspace = true",
+        "publish.workspace = true",
+    ] {
+        assert!(
+            cli_manifest.contains(phrase),
+            "publishable crates must inherit workspace publishing metadata: {phrase}"
         );
     }
 
@@ -427,12 +473,55 @@ fn public_launch_assets_exist_and_are_upload_ready() {
         "release-channel smoke workflow must include a cargo install from Git job"
     );
     assert!(
+        release_channel_smoke.contains("provenance-release-smoke:"),
+        "release-channel smoke workflow must include a provenance verifier job"
+    );
+    assert!(
+        release_channel_smoke.contains("CLAW_SKIP_CARGO_INSTALL=1")
+            && release_channel_smoke.contains("scripts/verify-release-channel.sh \"$RELEASE_TAG\""),
+        "provenance release smoke must reuse the release-channel verifier"
+    );
+    assert!(
+        release_channel_smoke.contains("CLAW_RELEASE_VERIFY_REPORT="),
+        "release-channel smoke workflow must write structured verification reports"
+    );
+    assert!(
+        release_channel_smoke.contains("actions/upload-artifact@"),
+        "release-channel smoke workflow must upload durable verification evidence"
+    );
+    assert!(
         release_channel_smoke.contains("needs: release-metadata"),
         "cargo install from Git smoke must use the resolved release metadata"
     );
     assert!(
         release_channel_smoke.contains("--tag \"$RELEASE_TAG\""),
         "cargo install from Git smoke must install the exact release tag under validation"
+    );
+
+    let release_workflow = read_workspace_file(".github/workflows/release.yml");
+    for phrase in [
+        "Verify signed artifacts before release upload",
+        "sha256sum -c sha256.sum --ignore-missing",
+        "jq -e '",
+        "cosign verify-blob",
+        "gh attestation verify \"$artifact\" --repo \"$GITHUB_REPOSITORY\" \\",
+        "--source-digest \"$GITHUB_SHA\"",
+        "--signer-workflow \"${GITHUB_REPOSITORY}/.github/workflows/release.yml\"",
+    ] {
+        assert!(
+            release_workflow.contains(phrase),
+            "release workflow must pre-verify artifact provenance before upload: {phrase}"
+        );
+    }
+    let upload_index = release_workflow
+        .find("gh release upload \"${{ needs.plan.outputs.tag }}\" --clobber artifacts/*")
+        .expect("release workflow must upload the complete signed artifact set");
+    let publish_index = release_workflow
+        .find("gh release edit \"${{ needs.plan.outputs.tag }}\" --draft=false")
+        .expect("release workflow must publish the GitHub Release after upload");
+    assert!(
+        upload_index < publish_index,
+        "existing draft releases must receive the signed artifact set before --draft=false promotion"
     );
 
     let install_log = read_workspace_file("docs/operations/install-verification-log.md");
@@ -504,6 +593,26 @@ fn release_helper_scripts_have_safe_cli_guards() {
     );
     let stderr = String::from_utf8(publish_without_opt_in.stderr).expect("stderr is utf-8");
     assert!(stderr.contains("refusing to publish without CLAW_CRATESIO_PUBLISH=1"));
+
+    let publish_without_owner = Command::new("bash")
+        .args([
+            "scripts/publish-cratesio.sh",
+            "--publish",
+            "--package",
+            "claw-vcs-core",
+        ])
+        .env("CLAW_CRATESIO_PUBLISH", "1")
+        .env_remove("CLAW_CRATESIO_EXPECTED_OWNER")
+        .current_dir(&root)
+        .output()
+        .expect("run crates.io publisher without expected owner");
+    assert_eq!(
+        publish_without_owner.status.code(),
+        Some(2),
+        "crates.io publisher must refuse real publishing without expected owner"
+    );
+    let stderr = String::from_utf8(publish_without_owner.stderr).expect("stderr is utf-8");
+    assert!(stderr.contains("refusing to publish without CLAW_CRATESIO_EXPECTED_OWNER"));
 }
 
 #[test]
