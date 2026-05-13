@@ -64,7 +64,7 @@ Claw VCS is v0.1 experimental software. It is appropriate for local exploration,
 ## Platforms
 
 - Release tooling targets macOS, Linux, and Windows.
-- Windows CI covers workspace compatibility plus release-channel smoke checks. Broader real-world validation for executable bits, symlinks, reserved filenames, path length, and CRLF handling should still be recorded before broad Windows rollout.
+- Windows CI covers workspace compatibility, release-channel smoke checks, path separators, Windows-reserved basenames, portable Unicode/space-containing basenames, and component-length validation. Broader real-world validation for executable bits, symlinks, very long paths, and CRLF-heavy workflows should still be recorded before broad Windows rollout.
 
 ## Remote Sync
 

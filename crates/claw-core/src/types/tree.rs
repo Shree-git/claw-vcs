@@ -42,6 +42,10 @@ pub fn validate_tree_entry_name(name: &str) -> Result<(), CoreError> {
         || name.contains('/')
         || name.contains('\\')
         || name.contains('\0')
+        || name.len() > 255
+        || name.ends_with([' ', '.'])
+        || has_windows_reserved_char(name)
+        || is_windows_reserved_device_name(name)
     {
         return Err(CoreError::InvalidTreeEntryName(name.to_string()));
     }
@@ -51,6 +55,26 @@ pub fn validate_tree_entry_name(name: &str) -> Result<(), CoreError> {
     }
 
     Ok(())
+}
+
+fn has_windows_reserved_char(name: &str) -> bool {
+    name.chars()
+        .any(|ch| matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+}
+
+fn is_windows_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    let upper = stem.to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || is_numbered_windows_device(&upper, "COM")
+        || is_numbered_windows_device(&upper, "LPT")
+}
+
+fn is_numbered_windows_device(name: &str, prefix: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
 }
 
 impl Tree {
@@ -80,6 +104,23 @@ mod tests {
         assert!(validate_tree_entry_name("..").is_err());
         assert!(validate_tree_entry_name("a/b").is_err());
         assert!(validate_tree_entry_name("a\\b").is_err());
+        assert!(validate_tree_entry_name("name:stream").is_err());
+        assert!(validate_tree_entry_name("name*glob").is_err());
+        assert!(validate_tree_entry_name("trailing-dot.").is_err());
+        assert!(validate_tree_entry_name("trailing-space ").is_err());
+        assert!(validate_tree_entry_name(&"a".repeat(256)).is_err());
+    }
+
+    #[test]
+    fn rejects_windows_reserved_device_names() {
+        for name in [
+            "CON", "con", "CON.txt", "PRN", "AUX", "NUL", "COM1", "com9.log", "LPT1", "lpt9.txt",
+        ] {
+            assert!(
+                validate_tree_entry_name(name).is_err(),
+                "reserved device name should be rejected: {name}"
+            );
+        }
     }
 
     #[test]
@@ -87,5 +128,8 @@ mod tests {
         assert!(validate_tree_entry_name("README.md").is_ok());
         assert!(validate_tree_entry_name(".env.example").is_ok());
         assert!(validate_tree_entry_name("src").is_ok());
+        assert!(validate_tree_entry_name("notes with spaces.txt").is_ok());
+        assert!(validate_tree_entry_name("unicodé-資料.txt").is_ok());
+        assert!(validate_tree_entry_name(&"a".repeat(255)).is_ok());
     }
 }

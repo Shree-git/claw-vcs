@@ -51,6 +51,24 @@ fn tree_entries_reject_windows_path_like_names() {
         r"C:\Users\project\file.txt",
         "C:/Users/project/file.txt",
         r"..\outside",
+        "name:stream",
+        "name*glob",
+        "name?query",
+        "name<in",
+        "name>out",
+        "pipe|name",
+        "quoted\"name",
+        "trailing-dot.",
+        "trailing-space ",
+        "CON",
+        "con.txt",
+        "PRN",
+        "AUX",
+        "NUL",
+        "COM1",
+        "com9.log",
+        "LPT1",
+        "lpt9.txt",
     ] {
         assert!(
             validate_tree_entry_name(name).is_err(),
@@ -66,6 +84,31 @@ fn tree_entries_reject_windows_path_like_names() {
         }],
     };
     assert!(tree.validate().is_err());
+}
+
+#[test]
+fn tree_entries_accept_portable_unicode_spaces_and_long_names() {
+    let long_name = "a".repeat(255);
+    for name in [
+        "notes with spaces.txt",
+        "unicodé-資料.txt",
+        "crlf-fixture.txt",
+        long_name.as_str(),
+    ] {
+        validate_tree_entry_name(name).unwrap_or_else(|err| {
+            panic!("portable tree entry name should be accepted: {name}: {err}")
+        });
+    }
+}
+
+#[test]
+fn tree_entries_reject_overlong_basenames() {
+    let name = "a".repeat(256);
+    let err = validate_tree_entry_name(&name).expect_err("overlong basename should be rejected");
+    assert!(
+        err.to_string().contains("invalid tree entry name"),
+        "unexpected error: {err}"
+    );
 }
 
 #[cfg(windows)]

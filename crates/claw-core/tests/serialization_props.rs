@@ -3,9 +3,10 @@ use claw_core::hash::content_hash;
 use claw_core::id::{ChangeId, IntentId, ObjectId};
 use claw_core::object::{Object, TypeTag};
 use claw_core::types::{
-    Blob, Capsule, CapsulePublic, CapsuleSignature, Change, ChangeStatus, Conflict, ConflictStatus,
-    Evidence, EvidencePolicy, FileMode, Intent, IntentStatus, Patch, PatchOp, Policy, RefLog,
-    RefLogEntry, Revision, Snapshot, Tree, TreeEntry, Visibility, Workstream,
+    validate_tree_entry_name, Blob, Capsule, CapsulePublic, CapsuleSignature, Change, ChangeStatus,
+    Conflict, ConflictStatus, Evidence, EvidencePolicy, FileMode, Intent, IntentStatus, Patch,
+    PatchOp, Policy, RefLog, RefLogEntry, Revision, Snapshot, Tree, TreeEntry, Visibility,
+    Workstream,
 };
 use proptest::prelude::*;
 use serde::Deserialize;
@@ -256,10 +257,16 @@ fn object_for(selector: u8, data: &[u8], name: &str) -> Object {
 }
 
 fn safe_tree_name(raw: &str) -> String {
-    match raw {
-        "." | ".." => "file".to_string(),
-        other => other.to_string(),
+    let mut candidate = raw.trim_end_matches([' ', '.']).to_string();
+    if candidate.is_empty() || candidate == "." || candidate == ".." {
+        candidate = "file".to_string();
     }
+    if validate_tree_entry_name(&candidate).is_err() {
+        candidate = format!("_{candidate}");
+    }
+    validate_tree_entry_name(&candidate)
+        .expect("proptest tree name sanitizer must produce valid names");
+    candidate
 }
 
 fn non_empty(data: &[u8], fallback: u8) -> Vec<u8> {

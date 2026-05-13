@@ -19,3 +19,20 @@ flowchart LR
   Policy -->|allows or blocks| Integrate["Integrate"]
   Integrate --> Revision["Revision"]
 ```
+
+Attestations and signatures do not remove the need to reason about the trust boundary. A Claw repository can preserve and verify signed claims, but those claims still depend on agent keys, runner integrity, remote object integrity, and policy strength.
+
+```mermaid
+flowchart TD
+  Agent["Agent key"] --> Capsule["Signed capsule"]
+  Runner["Runner integrity"] --> Evidence["Evidence"]
+  Remote["Remote refs and objects"] --> Revision["Revision"]
+  Policy["Repository policy"] --> Decision["Integration decision"]
+  Capsule --> Decision
+  Evidence --> Decision
+  Revision --> Decision
+  BadKey["Compromised key"] -. "can sign bad claims" .-> Capsule
+  BadRunner["Compromised runner"] -. "can produce bad evidence" .-> Evidence
+  BadRemote["Tampered remote"] -. "can hide or reorder state" .-> Revision
+  WeakPolicy["Weak policy"] -. "can allow weak evidence" .-> Decision
+```
