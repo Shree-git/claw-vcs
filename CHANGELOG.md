@@ -3,7 +3,7 @@
 All public launch notes for Claw VCS live here from the `v0.1.x` line onward.
 Earlier build details may appear in GitHub Releases.
 
-## Unreleased
+## v0.1.1
 
 ### Added
 
