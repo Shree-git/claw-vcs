@@ -164,6 +164,7 @@ fn test_object_roundtrip_all_12_types() {
         encrypted_private: None,
         encryption: String::new(),
         key_id: None,
+        recipients: vec![],
         signatures: vec![],
     });
     let capsule_obj_id = store.store_object(&capsule).unwrap();
@@ -181,6 +182,9 @@ fn test_object_roundtrip_all_12_types() {
         sensitive_paths: vec![],
         quarantine_lane: false,
         min_trust_score: None,
+        authorized_recipients: vec![],
+        revoked_recipients: vec![],
+        evidence_policy: EvidencePolicy::default(),
     });
     let policy_obj_id = store.store_object(&policy).unwrap();
     assert!(matches!(

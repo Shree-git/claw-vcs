@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Claw VCS social preview</title>
+  <desc id="desc">Claw VCS: Intent. Evidence. Provenance. Version control for human and AI code.</desc>
+  <rect width="1280" height="640" fill="#101418"/>
+  <rect x="72" y="72" width="1136" height="496" rx="12" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="120" y="205" fill="#e6edf3" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="700">Claw VCS</text>
+  <text x="120" y="310" fill="#79c0ff" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="600">Intent. Evidence. Provenance.</text>
+  <text x="120" y="405" fill="#c8d1da" font-family="Inter, Arial, sans-serif" font-size="38">Version control for human + AI code.</text>
+  <text x="120" y="500" fill="#8b949e" font-family="Menlo, Consolas, monospace" font-size="28">claw ship --evidence test=pass --evidence lint=pass</text>
+</svg>

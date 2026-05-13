@@ -6,6 +6,7 @@ use rand::RngCore;
 
 use crate::CryptoError;
 
+/// Encrypts plaintext with XChaCha20-Poly1305 and prepends the generated nonce.
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let cipher = XChaCha20Poly1305::new(key.into());
     let mut nonce_bytes = [0u8; 24];
@@ -23,6 +24,7 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError>
     Ok(result)
 }
 
+/// Decrypts data produced by [`encrypt`].
 pub fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if data.len() < 24 {
         return Err(CryptoError::DecryptionFailed("data too short".into()));

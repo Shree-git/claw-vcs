@@ -1,6 +1,52 @@
 mod support;
 
+use claw_crypto::recipient::recipient_public_key;
+use claw_store::ClawStore;
 use support::CliTestEnv;
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[test]
+fn cli_dx_aliases_completions_and_init_hints_are_executable() {
+    let env = CliTestEnv::new();
+    let repo = env.repo_path("cli-dx-surfaces");
+    std::fs::create_dir_all(&repo).expect("create repo dir");
+
+    let init = env.run_ok(
+        env.temp_root(),
+        ["init", repo.to_str().expect("repo path utf-8")],
+    );
+    assert!(init.stdout.contains("Next steps:"));
+    assert!(init.stdout.contains("claw status"));
+    assert!(init
+        .stdout
+        .contains("claw snapshot -m \"initial snapshot\""));
+    assert!(init.stdout.contains("claw intent create"));
+
+    let completions = env.run_ok(env.temp_root(), ["completion", "bash"]);
+    assert!(completions.stdout.contains("claw"));
+    assert!(completions.stdout.contains("COMPREPLY"));
+
+    let serve_help = env.run_ok(env.temp_root(), ["serve", "--help"]);
+    assert!(serve_help.stdout.contains("Run the sync daemon"));
+
+    let intent = env.run_ok(
+        &repo,
+        [
+            "intent",
+            "create",
+            "--title",
+            "Alias coverage",
+            "--goal",
+            "Exercise documented aliases",
+        ],
+    );
+    let intent_id = intent.value_after("Created intent: ");
+    let change = env.run_ok(&repo, ["change", "create", "--intent", intent_id.as_str()]);
+    assert!(!change.value_after("Created change: ").is_empty());
+}
 
 #[test]
 fn core_cli_workflow_covers_init_snapshot_and_ship() {
@@ -85,6 +131,14 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     );
     assert!(entries_before_ship[0].get("capsule_id").is_none());
 
+    let recipient_secret = [9u8; 32];
+    let recipient_public = recipient_public_key(&recipient_secret);
+    env.write_file(
+        &repo.join("capsule-private.json"),
+        "{\"ticket\":\"SEC-1\",\"note\":\"reviewed\"}\n",
+    );
+    env.write_file(&repo.join("security.x25519"), &to_hex(&recipient_secret));
+
     let shipped = env.run_ok(
         &repo,
         [
@@ -95,6 +149,20 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
             "test=pass:42",
             "--evidence",
             "lint=pass",
+            "--evidence-command",
+            "cargo test --workspace",
+            "--runner",
+            "github-actions/release",
+            "--environment-digest",
+            "sha256:toolchain",
+            "--log-digest",
+            "sha256:log",
+            "--evidence-expires-in-ms",
+            "86400000",
+            "--private-file",
+            "capsule-private.json",
+            "--recipient-key",
+            &format!("security:security-key:{}", to_hex(&recipient_public)),
         ],
     );
     let capsule_id = shipped.value_after("Capsule: ");
@@ -104,6 +172,58 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     assert!(show_capsule.stdout.contains("agent_id"));
     assert!(show_capsule.stdout.contains("test (pass)"));
     assert!(show_capsule.stdout.contains("lint (pass)"));
+    assert!(show_capsule.stdout.contains("private"));
+    assert!(show_capsule.stdout.contains("security (security-key)"));
+
+    let capsule_json = env.run_ok(&repo, ["show", "--json", capsule_id.as_str()]);
+    let capsule_value = capsule_json.stdout_json();
+    let evidence = &capsule_value["object"]["value"]["Capsule"]["public_fields"]["evidence"][0];
+    assert_eq!(evidence["command"], "cargo test --workspace");
+    assert_eq!(evidence["runner_identity"], "github-actions/release");
+    assert_eq!(evidence["environment_digest"], "sha256:toolchain");
+    assert_eq!(evidence["log_digest"], "sha256:log");
+
+    let decrypted = env.run_ok(
+        &repo,
+        [
+            "show",
+            capsule_id.as_str(),
+            "--decrypt-private",
+            "--recipient",
+            "security",
+            "--recipient-secret-key",
+            "security.x25519",
+        ],
+    );
+    assert!(decrypted.stdout.contains("\"ticket\":\"SEC-1\""));
+
+    env.run_ok(
+        &repo,
+        [
+            "policy",
+            "create",
+            "--id",
+            "revoked-recipient-policy",
+            "--recipient",
+            "security",
+            "--revoked-recipient",
+            "security",
+        ],
+    );
+    let revoked = env.run_fail(
+        &repo,
+        [
+            "policy",
+            "eval",
+            "revoked-recipient-policy",
+            "--revision",
+            "heads/main",
+            "--capsule",
+            capsule_id.as_str(),
+            "--json",
+        ],
+    );
+    assert!(revoked.combined_output().contains("revoked by policy"));
 
     let intent_show = env.run_ok(&repo, ["intent", "show", intent_id.as_str()]);
     assert!(intent_show.stdout.contains("Status: Done"));
@@ -121,6 +241,162 @@ fn core_cli_workflow_covers_init_snapshot_and_ship() {
     assert_eq!(
         entries_after_ship[0]["capsule_id"].as_str(),
         Some(capsule_id.as_str())
+    );
+}
+
+#[test]
+fn agent_revoke_blocks_ship_until_rotation() {
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("agent-revoke-rotate");
+
+    let intent = env.run_ok(
+        &repo,
+        [
+            "intent",
+            "create",
+            "--title",
+            "Agent lifecycle",
+            "--goal",
+            "Exercise explicit agent key revocation",
+        ],
+    );
+    let intent_id = intent.value_after("Created intent: ");
+    let change = env.run_ok(&repo, ["change", "create", "--intent", intent_id.as_str()]);
+    let change_id = change.value_after("Created change: ");
+
+    env.write_file(&repo.join("README.md"), "agent lifecycle\n");
+    env.run_ok(
+        &repo,
+        [
+            "snapshot",
+            "-m",
+            "tracked revision",
+            "--change",
+            change_id.as_str(),
+        ],
+    );
+
+    env.run_ok(&repo, ["agent", "register", "--name", "ci-agent"]);
+
+    let dry_revoke = env.run_ok(
+        &repo,
+        [
+            "agent",
+            "revoke",
+            "--name",
+            "ci-agent",
+            "--reason",
+            "compromised",
+            "--dry-run",
+        ],
+    );
+    assert!(dry_revoke.stdout.contains("Dry run: would revoke agent"));
+
+    let active = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(active.stdout.contains("Status: active"));
+
+    env.run_ok(
+        &repo,
+        [
+            "agent",
+            "revoke",
+            "--name",
+            "ci-agent",
+            "--reason",
+            "compromised",
+        ],
+    );
+    let revoked = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(revoked.stdout.contains("Status: revoked"));
+    assert!(revoked.stdout.contains("compromised"));
+
+    let blocked = env.run_fail(
+        &repo,
+        [
+            "ship",
+            "--intent",
+            intent_id.as_str(),
+            "--agent",
+            "ci-agent",
+            "--evidence",
+            "test=pass",
+        ],
+    );
+    assert!(blocked
+        .combined_output()
+        .contains("agent 'ci-agent' is revoked"));
+
+    env.run_ok(
+        &repo,
+        [
+            "agent",
+            "rotate",
+            "--name",
+            "ci-agent",
+            "--version",
+            "rotated",
+        ],
+    );
+    let rotated = env.run_ok(&repo, ["agent", "status", "ci-agent"]);
+    assert!(rotated.stdout.contains("Status: active"));
+    assert!(rotated.stdout.contains("Version: rotated"));
+
+    let shipped = env.run_ok(
+        &repo,
+        [
+            "ship",
+            "--intent",
+            intent_id.as_str(),
+            "--agent",
+            "ci-agent",
+            "--evidence",
+            "test=pass",
+        ],
+    );
+    assert!(shipped.stdout.contains("Capsule: "));
+}
+
+#[test]
+fn integrate_dry_run_skips_ref_and_worktree_mutation() {
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("integrate-dry-run");
+
+    env.write_file(&repo.join("app.txt"), "base\n");
+    env.run_ok(&repo, ["snapshot", "-m", "Base"]);
+    let main_before = ClawStore::open(&repo)
+        .expect("open repo")
+        .get_ref("heads/main")
+        .expect("read main ref")
+        .expect("main ref exists");
+
+    env.run_ok(&repo, ["branch", "create", "feature"]);
+    env.run_ok(&repo, ["checkout", "feature"]);
+    env.write_file(&repo.join("app.txt"), "feature\n");
+    env.run_ok(&repo, ["snapshot", "-m", "Feature"]);
+
+    env.run_ok(&repo, ["checkout", "main"]);
+    assert_eq!(env.read_file(&repo.join("app.txt")), "base\n");
+
+    let dry_run = env.run_ok(
+        &repo,
+        ["integrate", "--right", "heads/feature", "--dry-run"],
+    );
+    assert!(dry_run
+        .stdout
+        .contains("Dry run: integration can be applied cleanly."));
+    assert!(dry_run.stdout.contains("Ref update skipped."));
+    assert!(dry_run.stdout.contains("Worktree update skipped."));
+
+    let store = ClawStore::open(&repo).expect("open repo after dry-run");
+    let main_after = store
+        .get_ref("heads/main")
+        .expect("read main ref after dry-run")
+        .expect("main ref exists after dry-run");
+    assert_eq!(main_after, main_before);
+    assert_eq!(env.read_file(&repo.join("app.txt")), "base\n");
+    assert!(
+        !repo.join(".claw").join("MERGE_STATE.toml").exists(),
+        "integrate --dry-run must not write merge state"
     );
 }
 

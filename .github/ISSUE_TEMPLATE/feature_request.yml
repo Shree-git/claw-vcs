@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a Claw feature or behavior change
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What job are you trying to do with Claw?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the command, API, policy, or workflow you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Current workaround
+      description: What do you do today?
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - CLI
+        - daemon API
+        - sync protocol
+        - policy schema
+        - Git interop
+        - docs
+        - release/install
+        - unsure
+    validations:
+      required: true

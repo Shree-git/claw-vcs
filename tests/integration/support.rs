@@ -2,7 +2,7 @@
 
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -224,8 +224,7 @@ impl RunningDaemon {
                 );
             }
 
-            let response = std::panic::catch_unwind(|| self.get("/v1/health/ready"));
-            if let Ok(response) = response {
+            if let Ok(response) = try_http_get(&self.health_addr, "/v1/health/ready") {
                 if response.status_code == 200 {
                     return;
                 }
@@ -280,10 +279,13 @@ fn claw_binary() -> &'static Path {
         let workspace = workspace_root();
         let status = Command::new("cargo")
             .current_dir(&workspace)
-            .args(["build", "-q", "-p", "claw", "--bin", "claw"])
+            .args(["build", "-q", "-p", "claw-vcs", "--bin", "claw"])
             .status()
             .expect("build claw binary for integration tests");
-        assert!(status.success(), "cargo build -p claw failed with {status}");
+        assert!(
+            status.success(),
+            "cargo build -p claw-vcs failed with {status}"
+        );
 
         let target_dir = std::env::var_os("CARGO_TARGET_DIR")
             .map(PathBuf::from)
@@ -334,8 +336,12 @@ where
 }
 
 fn http_get(addr: &str, path: &str) -> HttpResponse {
-    let mut stream = TcpStream::connect(addr)
-        .unwrap_or_else(|err| panic!("connect to http endpoint {}{}: {err}", addr, path));
+    try_http_get(addr, path)
+        .unwrap_or_else(|err| panic!("request http endpoint {}{}: {err}", addr, path))
+}
+
+fn try_http_get(addr: &str, path: &str) -> io::Result<HttpResponse> {
+    let mut stream = TcpStream::connect(addr)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .expect("set read timeout");
@@ -344,35 +350,42 @@ fn http_get(addr: &str, path: &str) -> HttpResponse {
         .expect("set write timeout");
 
     let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
-    stream
-        .write_all(request.as_bytes())
-        .unwrap_or_else(|err| panic!("write http request to {}{}: {err}", addr, path));
-    stream
-        .shutdown(Shutdown::Write)
-        .expect("shutdown http write half");
+    stream.write_all(request.as_bytes())?;
+    stream.shutdown(Shutdown::Write)?;
 
     let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .unwrap_or_else(|err| panic!("read http response from {}{}: {err}", addr, path));
+    stream.read_to_string(&mut response)?;
 
-    let (head, body) = response
-        .split_once("\r\n\r\n")
-        .unwrap_or_else(|| panic!("invalid http response from {}{}:\n{}", addr, path, response));
+    let (head, body) = response.split_once("\r\n\r\n").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid http response from {addr}{path}:\n{response}"),
+        )
+    })?;
     let status_line = head
         .lines()
         .next()
-        .unwrap_or_else(|| panic!("missing http status line for {}{}", addr, path))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("missing http status line for {addr}{path}"),
+            )
+        })?
         .to_string();
     let status_code = status_line
         .split_whitespace()
         .nth(1)
         .and_then(|code| code.parse::<u16>().ok())
-        .unwrap_or_else(|| panic!("invalid http status line '{}'", status_line));
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid http status line '{status_line}'"),
+            )
+        })?;
 
-    HttpResponse {
+    Ok(HttpResponse {
         status_code,
         status_line,
         body: body.to_string(),
-    }
+    })
 }

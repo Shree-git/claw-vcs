@@ -1,12 +1,24 @@
+use claw_core::id::ObjectId;
+
+/// Runtime evidence used during policy evaluation.
 #[derive(Debug, Clone, Default)]
 pub struct PolicyContext {
+    /// Object ID of the revision currently being evaluated.
+    pub revision_id: Option<ObjectId>,
+    /// Agent identities associated with verified capsule signatures.
     pub signer_agent_ids: Vec<String>,
+    /// Key identifiers associated with verified capsule signatures.
     pub signer_key_ids: Vec<String>,
+    /// Repository paths touched by the evaluated revision.
     pub touched_paths: Vec<String>,
+    /// Optional trust score in the inclusive range `0.0..=1.0`.
     pub trust_score: Option<f32>,
+    /// Optional wall-clock timestamp for freshness evaluation.
+    pub now_ms: Option<u64>,
 }
 
 impl PolicyContext {
+    /// Return the first touched path that matches one of the sensitive path prefixes.
     pub fn touched_sensitive_path(&self, sensitive_paths: &[String]) -> Option<String> {
         if sensitive_paths.is_empty() || self.touched_paths.is_empty() {
             return None;

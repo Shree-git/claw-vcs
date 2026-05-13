@@ -98,6 +98,9 @@ fn scan_dir(
 }
 
 fn detect_file_mode(path: &Path) -> FileMode {
+    #[cfg(not(unix))]
+    let _ = path;
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -134,10 +137,12 @@ pub fn materialize_tree(
             FileMode::Symlink => {
                 let obj = store.load_object(&entry.object_id)?;
                 if let Object::Blob(b) = obj {
-                    let target = String::from_utf8_lossy(&b.data);
                     remove_path_if_exists(&path)?;
                     #[cfg(unix)]
-                    std::os::unix::fs::symlink(target.as_ref(), &path)?;
+                    {
+                        let target = String::from_utf8_lossy(&b.data);
+                        std::os::unix::fs::symlink(target.as_ref(), &path)?;
+                    }
                     #[cfg(not(unix))]
                     std::fs::write(&path, &b.data)?;
                 }

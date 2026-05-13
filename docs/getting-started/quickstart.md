@@ -8,6 +8,11 @@ Install `claw` from releases, then verify:
 
 ```bash
 claw --version
+claw doctor
+tmpdir="$(mktemp -d)"
+cd "$tmpdir"
+claw init
+claw status
 ```
 
 ## 2) Initialize repository metadata

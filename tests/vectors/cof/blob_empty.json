@@ -1,0 +1,13 @@
+{
+  "name": "blob_empty",
+  "input_object": {
+    "type": "Blob",
+    "data_hex": "",
+    "media_type": null
+  },
+  "canonical_payload_hex": "",
+  "cof_hex": "434c5731010100000000000000",
+  "expected_object_id_hex": "4e25dcd9313142d6434d543d0d3a86d07d9289ef5ef621d0afa0c1bce0bfd89a",
+  "expected_object_id": "clw_jys5zwjrgfbnmq2nkq6q2oug2b6zfcppl33cdufpuda3zyf73cna",
+  "expected_verification_result": "valid"
+}

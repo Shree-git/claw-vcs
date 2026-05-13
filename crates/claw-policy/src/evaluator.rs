@@ -1,14 +1,16 @@
 use claw_core::types::{Capsule, Policy, Revision};
 
 use crate::checks::{
-    verify_min_trust_score, verify_quarantine_lane, verify_required_checks,
-    verify_required_reviewers, verify_sensitive_paths,
+    verify_authorized_recipients, verify_evidence_freshness, verify_min_trust_score,
+    verify_quarantine_lane, verify_required_checks, verify_required_reviewers,
+    verify_sensitive_paths,
 };
 use crate::context::PolicyContext;
 use crate::plugin::evaluate_plugins;
 use crate::visibility::check_visibility;
 use crate::PolicyError;
 
+/// Evaluate all built-in policy gates and configured external policy plugins.
 pub fn evaluate_policy(
     policy: &Policy,
     _revision: &Revision,
@@ -16,10 +18,16 @@ pub fn evaluate_policy(
     context: &PolicyContext,
 ) -> Result<(), PolicyError> {
     // Check visibility constraints
-    check_visibility(policy, capsule)?;
+    check_visibility(policy, capsule, context)?;
 
     // Check required checks
     verify_required_checks(policy, capsule)?;
+
+    // Check recipient ACLs for encrypted private capsule fields.
+    verify_authorized_recipients(policy, capsule)?;
+
+    // Check freshness and runner binding when policy enables it.
+    verify_evidence_freshness(policy, _revision, capsule, context)?;
 
     // Check required reviewers against verified signers.
     verify_required_reviewers(policy, context)?;

@@ -11,10 +11,10 @@ Define the current, implemented release gates and operator responsibilities for 
   - Fails when contract artifacts change without updates to release governance docs or `CHANGELOG.md`.
 - **Release gates (`release.yml`, tag publish path):**
   - `quality` (fmt, clippy, workspace tests).
-  - `security-audit-gate` (`cargo audit`).
+  - `security-audit-gate` (`cargo audit --deny warnings`).
   - `contract-tests-gate` (core and integration contract suites, including ops artifacts checks).
-  - `artifact-smoke-gate` for Linux and macOS release archives before publish.
-  - `compatibility-matrix-gate` on Linux and macOS.
+  - `artifact-smoke-gate` for Linux, macOS, and Windows release archives and generated installer assets before publish; full installer installability is verified by post-publish release-channel smoke.
+  - `compatibility-matrix-gate` on Linux, macOS, and Windows.
 - **Cross-version runtime checks (`cross-version-runtime.yml`):**
   - Runs on PRs and pushes to `main`.
   - Runs `cross_version_runtime_tests` (`claw-integration-tests`).
@@ -26,20 +26,29 @@ Define the current, implemented release gates and operator responsibilities for 
   - Validates container build smoke, Helm lint/template rendering, Terraform static validation, and systemd template sanity.
 - **Signed artifact flow (`release.yml` + `verify-artifacts.yml`):**
   - `release.yml` signs each release artifact with `cosign sign-blob`, producing `<artifact>.sig` and `<artifact>.pem`.
-  - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob` and fails on missing pairs.
+  - `release.yml` verifies checksums, Cosign signatures, GitHub artifact
+    attestations, exact tag/source digest, signer workflow, and SBOM structure
+    before uploading the signed artifact set to the GitHub Release.
+  - `verify-artifacts.yml` verifies signature and certificate sidecars with `cosign verify-blob`, verifies GitHub artifact attestations with `gh attestation verify`, and fails on missing pairs.
 - **Release channel smoke (`release-channel-smoke.yml`):**
   - Runs on published releases or manual dispatch.
-  - Validates Linux and macOS release archives, installer script installs, checksum consistency, and Homebrew installability.
+  - Validates Linux, macOS, and Windows release archives/installers where assets exist, plus checksum consistency and Homebrew installability.
+  - Uploads JSON release-verification artifacts for provenance, platform install
+    channels, and tagged `cargo install --git`.
 - **Nightly drill (`nightly-chaos.yml`):**
   - Scheduled daily at `03:00 UTC`.
   - Runs deterministic failure drills via `chaos_tests`.
   - Runs deterministic mutating-sync load pressure (`load_soak_tests`) and live compatibility drills (`cross_version_runtime_tests`) in serial mode.
+- **Large repository capacity drill (`large-repo-drill.yml`):**
+  - Scheduled weekly and manually dispatchable.
+  - Runs the ignored 10k-file `backlog_gap_tests` drill separately from required PR gates so capacity regressions are visible without making every review wait on the large fixture.
 
 ## Recommended Operator Practice (Not CI-Enforced)
 
 - Run/review `soak-24h.yml` for a full 24h soak before stable promotion.
 - Run rollback drill in staging for each release candidate.
 - Review release-channel smoke results before broad promotion.
+- Review the latest large-repo drill result and record a follow-up if the 10k-file run exceeds its timeout.
 - Record go/no-go decision with Release Owner, Tech Lead, and SRE.
 - Publish release notes with migration notes, known issues, and rollback reference.
 - Review nightly chaos workflow results and track remediation tasks.

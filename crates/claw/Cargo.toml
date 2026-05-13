@@ -1,5 +1,5 @@
 [package]
-name = "claw"
+name = "claw-vcs"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -7,6 +7,10 @@ authors.workspace = true
 description.workspace = true
 homepage.workspace = true
 repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 
 [package.metadata.wix]
 upgrade-guid = "A0125272-4F24-4EBE-8DE9-805BA0342C28"
@@ -27,8 +31,9 @@ claw-crypto = { workspace = true }
 claw-policy = { workspace = true }
 claw-sync = { workspace = true }
 claw-git = { workspace = true }
-tonic = { workspace = true, features = ["tls"] }
+tonic = { workspace = true, features = ["tls-ring"] }
 clap = { workspace = true }
+clap_complete = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

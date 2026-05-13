@@ -1,0 +1,100 @@
+[package]
+name = "claw-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+claw-core = { package = "claw-vcs-core", path = "../crates/claw-core" }
+claw-crypto = { package = "claw-vcs-crypto", path = "../crates/claw-crypto" }
+claw-git = { package = "claw-vcs-git", path = "../crates/claw-git" }
+claw-patch = { package = "claw-vcs-patch", path = "../crates/claw-patch" }
+claw-policy = { package = "claw-vcs-policy", path = "../crates/claw-policy" }
+claw-store = { package = "claw-vcs-store", path = "../crates/claw-store" }
+claw-sync = { package = "claw-vcs-sync", path = "../crates/claw-sync" }
+libfuzzer-sys = "0.4"
+prost = "0.14"
+serde_json = "1.0"
+tempfile = "3.15"
+
+[[bin]]
+name = "core_cof_decode"
+path = "fuzz_targets/core_cof_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cof_decode"
+path = "fuzz_targets/cof_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "patch_codecs"
+path = "fuzz_targets/patch_codecs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "patch_apply"
+path = "fuzz_targets/patch_apply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_tree_merge"
+path = "fuzz_targets/json_tree_merge.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "policy_checks"
+path = "fuzz_targets/policy_checks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_capsule"
+path = "fuzz_targets/crypto_capsule.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store_objects"
+path = "fuzz_targets/store_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "object_id_parse"
+path = "fuzz_targets/object_id_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "git_import_parse"
+path = "fuzz_targets/git_import_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sync_chunk_decode"
+path = "fuzz_targets/sync_chunk_decode.rs"
+test = false
+doc = false
+bench = false

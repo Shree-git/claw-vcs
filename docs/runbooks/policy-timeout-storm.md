@@ -3,8 +3,10 @@
 ## Symptoms
 
 - Sudden rise in policy-related request failures and retries.
-- `claw_policy_eval_duration_seconds` and `claw_retries_total` spike.
-- `claw_policy_eval_total` shifts rapidly (deny or timeout-driven failures).
+- `claw_daemon_policy_eval_duration_seconds` rises above baseline when policy
+  evaluation is served through the daemon metrics surface.
+- Audit logs or `sync_audit_event` records show a sharp policy deny/timeout
+  increase for mutating operations.
 - User operations fail even when daemon and storage look otherwise healthy.
 
 ## Immediate triage
@@ -34,8 +36,9 @@ claw sync pull --remote origin --ref-name heads/main
 
 ## Validation checks
 
-- `claw_policy_eval_duration_seconds` returns near baseline.
-- Policy failure/deny spike clears, and retry rate normalizes.
+- `claw_daemon_policy_eval_duration_seconds` returns near baseline when that
+  daemon metric is present.
+- Policy failure/deny spikes clear in audit logs or `sync_audit_event` records.
 - Representative `claw sync pull` and `claw sync push` operations succeed.
 - Incident channel confirms user-facing error rate is back within SLO.
 

@@ -21,6 +21,10 @@ authors = ["Claw contributors"]
 description = "Claw VCS: intent-native, agent-native version control."
 homepage = "https://github.com/shree-git/claw-vcs"
 repository = "https://github.com/shree-git/claw-vcs"
+readme = "README.md"
+keywords = ["vcs", "provenance", "ai-agents", "version-control"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
 
 [workspace.dependencies]
 # Hashing & encoding
@@ -36,20 +40,23 @@ flate2 = "1.1"
 # Crypto
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 chacha20poly1305 = "0.10"
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rand = "0.8"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
-prost = "0.13"
-prost-types = "0.13"
-prost-build = "0.13"
+prost = "0.14"
+prost-types = "0.14"
+prost-build = "0.14"
 protoc-bin-vendored = "3.2"
 
 # gRPC
-tonic = "0.12"
-tonic-build = "0.12"
+tonic = "0.14"
+tonic-prost = "0.14"
+tonic-build = "0.14"
+tonic-prost-build = "0.14"
 
 # Async
 tokio = { version = "1", features = ["full"] }
@@ -66,6 +73,7 @@ ulid = { version = "1.2", features = ["serde"] }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
 anyhow = "1.0"
 dirs = "5.0"
 
@@ -91,16 +99,17 @@ globset = "0.4"
 
 # Testing
 proptest = "1.6"
+criterion = "0.5"
 
 # Internal crates
-claw-core = { path = "crates/claw-core" }
-claw-store = { path = "crates/claw-store" }
-claw-patch = { path = "crates/claw-patch" }
-claw-merge = { path = "crates/claw-merge" }
-claw-crypto = { path = "crates/claw-crypto" }
-claw-policy = { path = "crates/claw-policy" }
-claw-sync = { path = "crates/claw-sync" }
-claw-git = { path = "crates/claw-git" }
+claw-core = { package = "claw-vcs-core", version = "0.1.0", path = "crates/claw-core" }
+claw-store = { package = "claw-vcs-store", version = "0.1.0", path = "crates/claw-store" }
+claw-patch = { package = "claw-vcs-patch", version = "0.1.0", path = "crates/claw-patch" }
+claw-merge = { package = "claw-vcs-merge", version = "0.1.0", path = "crates/claw-merge" }
+claw-crypto = { package = "claw-vcs-crypto", version = "0.1.0", path = "crates/claw-crypto" }
+claw-policy = { package = "claw-vcs-policy", version = "0.1.0", path = "crates/claw-policy" }
+claw-sync = { package = "claw-vcs-sync", version = "0.1.0", path = "crates/claw-sync" }
+claw-git = { package = "claw-vcs-git", version = "0.1.0", path = "crates/claw-git" }
 
 # The profile that 'dist' will build with
 [profile.dist]

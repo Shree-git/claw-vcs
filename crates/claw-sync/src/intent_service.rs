@@ -11,14 +11,29 @@ use claw_store::ClawStore;
 
 use crate::proto::intent::intent_service_server::IntentService;
 use crate::proto::intent::*;
+use crate::security::{AuditSink, AuthorizationAction, Authorizer, ServiceSecurity};
 
 pub struct IntentServer {
     store: Arc<RwLock<ClawStore>>,
+    security: ServiceSecurity,
 }
 
 impl IntentServer {
     pub fn new(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = self.security.with_audit_sink(audit_sink);
+        self
     }
 }
 
@@ -72,6 +87,8 @@ impl IntentService for IntentServer {
         &self,
         request: Request<CreateIntentRequest>,
     ) -> Result<Response<CreateIntentResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::CreateIntent, None)?;
         let req = request.into_inner();
         let now = now_ms();
         let id = IntentId::new();
@@ -114,6 +131,8 @@ impl IntentService for IntentServer {
         &self,
         request: Request<GetIntentRequest>,
     ) -> Result<Response<GetIntentResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadIntent, None)?;
         let req = request.into_inner();
         let ulid = req
             .id
@@ -146,6 +165,8 @@ impl IntentService for IntentServer {
         &self,
         request: Request<ListIntentsRequest>,
     ) -> Result<Response<ListIntentsResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadIntent, None)?;
         let req = request.into_inner();
         let store = self.store.read().await;
         let refs = store
@@ -168,6 +189,8 @@ impl IntentService for IntentServer {
         &self,
         request: Request<UpdateIntentRequest>,
     ) -> Result<Response<UpdateIntentResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::UpdateIntent, None)?;
         let req = request.into_inner();
         let ulid = req
             .id
@@ -225,4 +248,33 @@ fn status_matches(s: &IntentStatus, filter: &str) -> bool {
             | (IntentStatus::Done, "done")
             | (IntentStatus::Superseded, "superseded")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::{AuthorizationRole, RoleBasedAuthorizer, PRINCIPAL_METADATA_KEY};
+
+    #[tokio::test]
+    async fn reader_role_cannot_create_intent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Arc::new(RwLock::new(ClawStore::init(tmp.path()).unwrap()));
+        let server = IntentServer::new(store).with_authorizer(Arc::new(
+            RoleBasedAuthorizer::new().grant_role("reader", AuthorizationRole::Reader),
+        ));
+        let mut request = Request::new(CreateIntentRequest {
+            title: "intent".to_string(),
+            description: "goal".to_string(),
+            author: "reader".to_string(),
+            labels: vec![],
+        });
+        request
+            .metadata_mut()
+            .insert(PRINCIPAL_METADATA_KEY, "reader".parse().unwrap());
+
+        let err = server.create(request).await.unwrap_err();
+
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+        assert!(err.message().contains("missing required scope"));
+    }
 }

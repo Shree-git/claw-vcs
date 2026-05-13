@@ -3,6 +3,7 @@ mod support;
 use std::path::Path;
 use std::process::Command;
 
+use serde_json::Value;
 use support::CliTestEnv;
 
 fn run_git_ok(cwd: &Path, args: &[&str]) -> String {
@@ -64,6 +65,56 @@ fn integrate_command_merges_feature_branch_and_updates_the_worktree() {
 }
 
 #[test]
+fn admin_preflight_and_support_bundle_match_operator_docs() {
+    let env = CliTestEnv::new();
+    let repo = env.init_repo("admin-operator-docs");
+
+    let preflight = env.run_ok(&repo, ["admin", "preflight"]);
+    assert!(preflight.stdout.contains("Preflight: PASS"));
+    assert!(preflight.stdout.contains("metadata directory"));
+    assert!(preflight.stdout.contains("tls configuration"));
+
+    let bundle_path = env.temp_root().join("support-bundle.json");
+    let bundle = env.run_ok(
+        &repo,
+        [
+            "admin",
+            "support-bundle",
+            "--out",
+            bundle_path.to_str().expect("support bundle path utf-8"),
+        ],
+    );
+    assert!(bundle.stdout.contains("Support bundle written:"));
+    assert!(
+        bundle_path.exists(),
+        "support bundle file should be written"
+    );
+
+    let bundle_json: Value =
+        serde_json::from_slice(&std::fs::read(&bundle_path).expect("read support bundle JSON"))
+            .expect("support bundle must be valid JSON");
+    let expected_repo_root = std::fs::canonicalize(&repo).expect("canonicalize repo root");
+    assert_eq!(
+        bundle_json["repo_root"].as_str(),
+        Some(expected_repo_root.to_str().expect("repo path utf-8"))
+    );
+    assert!(
+        bundle_json["request_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("req_")),
+        "support bundle must include a generated request id"
+    );
+    assert!(
+        bundle_json["refs_count"].as_u64().is_some(),
+        "support bundle must include refs_count"
+    );
+
+    let ledger = std::fs::read_to_string(repo.join(".claw/migrations/ledger.jsonl"))
+        .expect("support bundle should append admin ledger entry");
+    assert!(ledger.contains("\"action\":\"support-bundle\""));
+}
+
+#[test]
 fn admin_migrate_and_git_bridge_commands_work_end_to_end() {
     let env = CliTestEnv::new();
     let repo = env.init_repo("git-bridge");
@@ -80,6 +131,12 @@ fn admin_migrate_and_git_bridge_commands_work_end_to_end() {
     assert!(dry_run
         .stdout
         .contains("Dry run complete. No files changed."));
+
+    let applied = env.run_ok(&repo, ["admin", "migrate", "apply"]);
+    assert!(applied.stdout.contains("Migration applied."));
+    let ledger = std::fs::read_to_string(repo.join(".claw/migrations/ledger.jsonl"))
+        .expect("migration ledger should be written");
+    assert!(ledger.contains("\"action\":\"migrate.apply\""));
 
     let exported = env.run_ok(&repo, ["git-export"]);
     assert!(exported

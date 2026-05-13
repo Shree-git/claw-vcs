@@ -1,0 +1,20 @@
+[
+  {
+    "name": "blob_hello",
+    "type_tag": "blob",
+    "payload_hex": "68656c6c6f",
+    "cof_hex": "434c5731010100000568656c6c6f86a61036"
+  },
+  {
+    "name": "policy_empty_json",
+    "type_tag": "policy",
+    "payload_hex": "7b7d",
+    "cof_hex": "434c5731010a0000027b7d43bfa6a3"
+  },
+  {
+    "name": "patch_two_lines",
+    "type_tag": "patch",
+    "payload_hex": "6c696e65310a6c696e65320a",
+    "cof_hex": "434c5731010300000c6c696e65310a6c696e65320a575d8d3a"
+  }
+]

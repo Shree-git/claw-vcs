@@ -48,43 +48,79 @@ jobs:
   quality:
     runs-on: "ubuntu-22.04"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Rustfmt
         run: cargo fmt --all -- --check
+      - name: Verify generated protobuf output
+        run: scripts/verify-generated-protos.sh
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Production panic audit
+        run: cargo clippy --workspace --lib --bins --locked -- -D clippy::panic -D clippy::todo -D clippy::unimplemented
+      - name: Unsafe code audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn --include='*.rs' --exclude-dir=generated 'unsafe' crates tests; then
+            echo "unsafe Rust requires an explicit audit entry before release" >&2
+            exit 1
+          fi
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Example workflow smoke scripts
+        run: |
+          cargo build -p claw-vcs --locked
+          CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
+          CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
+          CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh
+          CLAW_BIN=target/debug/claw examples/backup-restore/scripts/demo.sh
+      - name: Build rustdoc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+      - name: Compile fuzz targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+      - name: Smoke fuzz targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in \
+            core_cof_decode \
+            cof_decode \
+            patch_codecs \
+            patch_apply \
+            json_tree_merge \
+            policy_checks \
+            crypto_capsule \
+            store_objects \
+            object_id_parse \
+            git_import_parse \
+            sync_chunk_decode; do
+            cargo run --manifest-path fuzz/Cargo.toml --bin "$target" --locked -- -runs=1
+          done
 
-  # Run 'dist plan' (or host) to determine what tasks we need to do
+  # Run 'dist plan' to determine what tasks we need to do
   plan:
     permissions:
-      contents: write
+      contents: read
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
       tag: ${{ !github.event.pull_request && github.ref_name || '' }}
       tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
       publishing: ${{ !github.event.pull_request }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install dist
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` returned non-0
-        shell: bash
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.30.3/cargo-dist-installer.sh | sh"
+        run: cargo install cargo-dist --version 0.30.3 --locked
       - name: Cache dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
@@ -94,13 +130,19 @@ jobs:
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
+        env:
+          DIST_RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" && -n "$DIST_RELEASE_TAG" ]]; then
+            dist plan --tag="$DIST_RELEASE_TAG" --output-format=json > plan-dist-manifest.json
+          else
+            dist plan --output-format=json > plan-dist-manifest.json
+          fi
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
@@ -135,10 +177,61 @@ jobs:
       - name: enable windows longpaths
         run: |
           git config --global core.longpaths true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Validate dist matrix inputs
+        shell: bash
+        env:
+          DIST_CONTAINER_IMAGE: ${{ matrix.container && matrix.container.image || '' }}
+          DIST_INSTALL_RUN: ${{ matrix.install_dist.run }}
+          DIST_PACKAGES_INSTALL: ${{ matrix.packages_install }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$DIST_CONTAINER_IMAGE" ]]; then
+            case "$DIST_CONTAINER_IMAGE" in
+              ghcr.io/axodotdev/*|messense/rust-musl-cross:*|quay.io/pypa/manylinux*|ubuntu:*|debian:*|fedora:*|centos:*)
+                ;;
+              *)
+                echo "Unapproved dist container image: $DIST_CONTAINER_IMAGE" >&2
+                exit 1
+                ;;
+            esac
+            if [[ "$DIST_CONTAINER_IMAGE" != *@sha256:* ]]; then
+              echo "::warning::dist container image is allowlisted but not digest-pinned: $DIST_CONTAINER_IMAGE"
+            fi
+          fi
+
+          validate_dist_command_lines() {
+            local label="$1"
+            local value="$2"
+            while IFS= read -r line; do
+              line="${line#"${line%%[![:space:]]*}"}"
+              line="${line%"${line##*[![:space:]]}"}"
+              [[ -z "$line" || "$line" == \#* ]] && continue
+              case "$line" in
+                "cargo install cargo-dist --version 0.30.3 --locked"*|\
+                "rustup target add "*|\
+                "sudo apt-get update"*|\
+                "sudo apt-get install "*|\
+                "brew install "*|\
+                "choco install "*|\
+                "pwsh "*|\
+                "powershell "*|\
+                "true"|":")
+                  ;;
+                *)
+                  echo "Unapproved generated dist command in $label: $line" >&2
+                  exit 1
+                  ;;
+              esac
+            done <<< "$value"
+          }
+
+          validate_dist_command_lines "matrix.install_dist.run" "$DIST_INSTALL_RUN"
+          validate_dist_command_lines "matrix.packages_install" "$DIST_PACKAGES_INSTALL"
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -150,7 +243,7 @@ jobs:
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -177,7 +270,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-build-local-${{ join(matrix.targets, '_') }}
           path: |
@@ -195,19 +288,19 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -225,7 +318,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-build-global
           path: |
@@ -239,16 +332,24 @@ jobs:
       - quality
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --version 0.22.1 --locked
       - name: Run cargo audit
-        run: cargo audit
+        run: cargo audit --deny warnings
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.19.6 --locked
+      - name: Run cargo-deny
+        run: cargo deny check
+      - name: Install cargo-vet
+        run: cargo install cargo-vet --version 0.10.2 --locked
+      - name: Run cargo-vet
+        run: cargo vet
 
   contract-tests-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
@@ -259,23 +360,25 @@ jobs:
       - build-global-artifacts
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Fetch ops artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
       - name: Run contract tests
         run: |
-          cargo test -p claw -- --nocapture
-          cargo test -p claw-integration-tests --test spec_tests
-          cargo test -p claw-integration-tests --test ops_artifacts_tests
+          cargo test -p claw-vcs --locked -- --nocapture
+          cargo test -p claw-integration-tests --test spec_tests --locked
+          cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
+          cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
 
   artifact-smoke-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
@@ -290,20 +393,22 @@ jobs:
         os:
           - ubuntu-22.04
           - macos-latest
+          - windows-latest
     name: artifact-smoke-gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Fetch built artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
       - name: Smoke release archives
+        if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail
@@ -319,10 +424,6 @@ jobs:
                 *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
               esac
               archive="$(find target/distrib -maxdepth 1 -type f -name "$pattern" | head -n 1)"
-              ;;
-            *)
-              echo "unsupported matrix OS: ${{ matrix.os }}" >&2
-              exit 1
               ;;
           esac
 
@@ -352,12 +453,45 @@ jobs:
                 fi
                 sleep 1
               done
-              grep -q '"code":"OK"' /tmp/claw-artifact-health.json
+              grep -q '"code":"ok"' /tmp/claw-artifact-health.json
               kill "$daemon_pid"
               wait "$daemon_pid" || true
               trap - EXIT
             )
           fi
+
+      - name: Smoke Windows release archive
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $zip = Get-ChildItem -Path target/distrib -Filter "claw-x86_64-pc-windows-msvc.zip" -File | Select-Object -First 1
+          if (-not $zip) {
+            throw "missing Windows release zip"
+          }
+
+          $msi = Get-ChildItem -Path target/distrib -Filter "claw-x86_64-pc-windows-msvc.msi" -File | Select-Object -First 1
+          if (-not $msi) {
+            throw "missing Windows MSI"
+          }
+
+          New-Item -ItemType Directory -Force -Path smoke-archive | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath smoke-archive -Force
+          $binary = Get-ChildItem -Path smoke-archive -Filter "claw.exe" -Recurse -File | Select-Object -First 1
+          if (-not $binary) {
+            throw "missing claw.exe in Windows release zip"
+          }
+
+          & $binary.FullName --version
+          New-Item -ItemType Directory -Force -Path smoke-archive\repo | Out-Null
+          Push-Location smoke-archive\repo
+          try {
+            & $binary.FullName init
+            & $binary.FullName status
+          } finally {
+            Pop-Location
+          }
 
   compatibility-matrix-gate:
     if: ${{ needs.plan.outputs.publishing == 'true' }}
@@ -370,24 +504,33 @@ jobs:
         os:
           - ubuntu-22.04
           - macos-latest
+          - windows-latest
     name: compatibility-matrix-gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets --locked
       - name: Cargo test
-        run: cargo test --workspace --all-targets
+        run: cargo test --workspace --all-targets --locked --exclude claw-integration-tests
+      - name: Core CLI smoke suites
+        run: |
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_error_contract_tests --locked
+          cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
   # Determines if we should publish/announce
   host:
     permissions:
       contents: write
       id-token: write
+      attestations: write
     needs:
       - quality
       - plan
@@ -405,19 +548,19 @@ jobs:
     outputs:
       val: ${{ steps.host.outputs.manifest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Fetch artifacts from scratch-storage
       - name: Fetch artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -425,19 +568,19 @@ jobs:
       - id: host
         shell: bash
         run: |
-          dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
-          echo "artifacts uploaded and released successfully"
+          dist host ${{ needs.plan.outputs.tag-flag }} --steps=create --steps=upload --output-format=json > dist-manifest.json
+          echo "artifacts uploaded successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           # Overwrite the previous copy
           name: artifacts-dist-manifest
           path: dist-manifest.json
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: artifacts
@@ -446,8 +589,115 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      - name: Export release SBOM
+        env:
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GH_REPO}/dependency-graph/sbom" \
+            --jq '.sbom' \
+            > "artifacts/claw-${RELEASE_TAG}.sbom.spdx.json"
+          jq -e '
+            .spdxVersion
+            and (.SPDXID == "SPDXRef-DOCUMENT")
+            and (.packages | type == "array")
+            and (.packages | length > 0)
+          ' "artifacts/claw-${RELEASE_TAG}.sbom.spdx.json" >/dev/null
+          (
+            cd artifacts
+            sha256sum "claw-${RELEASE_TAG}.sbom.spdx.json" >> sha256.sum
+          )
+      - name: Write release metadata
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          cargo metadata --format-version=1 --locked > "$RUNNER_TEMP/cargo-metadata.json"
+          declared_features="$(
+            jq -c '.packages[] | select(.name == "claw-vcs") | .features' "$RUNNER_TEMP/cargo-metadata.json"
+          )"
+          workspace_members="$(jq -c '.workspace_members' "$RUNNER_TEMP/cargo-metadata.json")"
+          rustc_verbose="$(rustc -vV)"
+          host_triple="$(printf '%s\n' "$rustc_verbose" | awk -F': ' '$1 == "host" { print $2 }')"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg tag "$RELEASE_TAG" \
+            --arg commit "$GITHUB_SHA" \
+            --arg workflow "$GITHUB_WORKFLOW" \
+            --arg workflowRef "$GITHUB_WORKFLOW_REF" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg runUrl "$run_url" \
+            --arg runnerOs "$RUNNER_OS" \
+            --arg runnerArch "$RUNNER_ARCH" \
+            --arg runnerName "$RUNNER_NAME" \
+            --arg runnerImage "${ImageOS:-}" \
+            --arg rustcVersion "$(rustc --version)" \
+            --arg cargoVersion "$(cargo --version)" \
+            --arg hostTriple "$host_triple" \
+            --arg buildCommand "dist build ${{ needs.plan.outputs.tag-flag }}" \
+            --argjson declaredFeatures "$declared_features" \
+            --argjson workspaceMembers "$workspace_members" \
+            '{
+              schemaVersion: 1,
+              repository: $repository,
+              tag: $tag,
+              commit: $commit,
+              workflow: $workflow,
+              workflowRef: $workflowRef,
+              run: {
+                id: $runId,
+                attempt: $runAttempt,
+                url: $runUrl
+              },
+              runner: {
+                os: $runnerOs,
+                arch: $runnerArch,
+                name: $runnerName,
+                image: $runnerImage
+              },
+              toolchain: {
+                rustc: $rustcVersion,
+                cargo: $cargoVersion,
+                hostTriple: $hostTriple
+              },
+              build: {
+                command: $buildCommand,
+                defaultFeatures: true,
+                explicitFeatures: [],
+                declaredFeatures: $declaredFeatures,
+                workspaceMembers: $workspaceMembers
+              }
+            }' > "artifacts/claw-${RELEASE_TAG}.release-metadata.json"
+
+          jq -e '
+            .schemaVersion == 1
+            and (.repository | type == "string")
+            and (.tag | type == "string")
+            and (.commit | type == "string")
+            and (.toolchain.rustc | startswith("rustc "))
+            and (.toolchain.cargo | startswith("cargo "))
+            and (.build.defaultFeatures == true)
+          ' "artifacts/claw-${RELEASE_TAG}.release-metadata.json" >/dev/null
+          (
+            cd artifacts
+            sha256sum "claw-${RELEASE_TAG}.release-metadata.json" >> sha256.sum
+          )
+      - name: Attest release artifact provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: artifacts/*
+      - name: Attest release SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-path: artifacts/*
+          sbom-path: artifacts/claw-${{ needs.plan.outputs.tag }}.sbom.spdx.json
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
       - name: Sign release artifacts
         shell: bash
         run: |
@@ -471,6 +721,49 @@ jobs:
               --output-certificate "${artifact}.pem" \
               "$artifact"
           done
+      - name: Verify signed artifacts before release upload
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -f artifacts/sha256.sum ]]; then
+            (cd artifacts && sha256sum -c sha256.sum --ignore-missing)
+          fi
+
+          mapfile -t artifacts_to_verify < <(
+            find artifacts -type f \
+              ! -name '*.sig' \
+              ! -name '*.pem' \
+              | sort
+          )
+
+          if [[ ${#artifacts_to_verify[@]} -eq 0 ]]; then
+            echo "No release artifacts found to verify" >&2
+            exit 1
+          fi
+
+          for artifact in "${artifacts_to_verify[@]}"; do
+            cosign verify-blob \
+              --signature "${artifact}.sig" \
+              --certificate "${artifact}.pem" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/\\.github/workflows/release\\.yml@refs/tags/${RELEASE_TAG}$" \
+              "$artifact"
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --deny-self-hosted-runners
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --source-digest "$GITHUB_SHA" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --predicate-type "https://spdx.dev/Document/v2.3" \
+              --deny-self-hosted-runners
+          done
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
@@ -484,8 +777,8 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > "$RUNNER_TEMP/notes.txt"
 
           if gh release view "${{ needs.plan.outputs.tag }}" >/dev/null 2>&1; then
-            gh release edit "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
             gh release upload "${{ needs.plan.outputs.tag }}" --clobber artifacts/*
+            gh release edit "${{ needs.plan.outputs.tag }}" --draft=false --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt"
           else
             gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
           fi
@@ -502,14 +795,14 @@ jobs:
       GITHUB_EMAIL: "admin+bot@axo.dev"
     if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
-          persist-credentials: true
+          persist-credentials: false
           repository: "shree-git/homebrew-tap"
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       # So we have access to the formula
       - name: Fetch homebrew formulae
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: artifacts-*
           path: Formula/
@@ -517,6 +810,8 @@ jobs:
       # This is extra complex because you can make your Formula name not match your app name
       # so we need to find releases with a *.rb file, and publish with that filename.
       - name: Commit formula files
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -541,7 +836,8 @@ jobs:
 
             git commit -m "${name} ${version}"
           done
-          git push
+          auth_header="$(printf 'x-access-token:%s' "$HOMEBREW_TAP_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_header}" push
 
   announce:
     needs:
@@ -556,7 +852,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
           submodules: recursive

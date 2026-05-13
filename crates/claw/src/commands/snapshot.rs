@@ -23,6 +23,9 @@ pub struct SnapshotArgs {
     /// Optional change ID to associate
     #[arg(long)]
     change: Option<String>,
+    /// Output result as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
@@ -38,7 +41,9 @@ pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
     let head_state = store.read_head()?;
     let branch_ref = match &head_state {
         HeadState::Symbolic { ref_name } => ref_name.clone(),
-        HeadState::Detached { .. } => anyhow::bail!("cannot snapshot in detached HEAD state"),
+        HeadState::Detached { .. } => anyhow::bail!(
+            "cannot snapshot in detached HEAD state. Run `claw checkout <branch>` before snapshotting."
+        ),
     };
 
     let old_tip = store.get_ref(&branch_ref)?;
@@ -92,12 +97,26 @@ pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
             let _ = std::fs::remove_file(right_path);
         }
 
-        println!("Merge resolved: {rev_id}");
+        if args.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "snapshot_created": true,
+                    "merge_resolved": true,
+                    "revision_id": rev_id.to_hex(),
+                    "branch": branch_ref,
+                    "parents": [left_rev.to_hex(), right_rev.to_hex()],
+                }))?
+            );
+        } else {
+            println!("Merge resolved: {rev_id}");
+        }
         return Ok(());
     }
 
     // Normal snapshot
     let mut patches = Vec::new();
+    let mut changed_files: Option<usize> = None;
 
     if let Some(ref tip_id) = old_tip {
         // Get old tree from tip revision
@@ -108,9 +127,21 @@ pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
         };
 
         let changes = diff_trees(&store, old_tree_id.as_ref(), Some(&new_tree), "")?;
+        changed_files = Some(changes.len());
 
         if changes.is_empty() {
-            println!("No changes to snapshot.");
+            if args.json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "snapshot_created": false,
+                        "reason": "clean",
+                        "branch": branch_ref,
+                    }))?
+                );
+            } else {
+                println!("No changes to snapshot.");
+            }
             return Ok(());
         }
 
@@ -163,6 +194,7 @@ pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
         }
     }
 
+    let patch_count = patches.len();
     let revision = Revision {
         change_id,
         parents: old_tip.into_iter().collect(),
@@ -185,6 +217,20 @@ pub fn run(args: SnapshotArgs) -> anyhow::Result<()> {
         &args.message,
     )?;
 
-    println!("Snapshot: {rev_id}");
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "snapshot_created": true,
+                "merge_resolved": false,
+                "revision_id": rev_id.to_hex(),
+                "branch": branch_ref,
+                "patches": patch_count,
+                "changed_files": changed_files,
+            }))?
+        );
+    } else {
+        println!("Snapshot: {rev_id}");
+    }
     Ok(())
 }

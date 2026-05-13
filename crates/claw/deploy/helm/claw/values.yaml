@@ -1,8 +1,10 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/infinite-apps/claw
-  tag: latest
+  # Local/evaluation default. Use an official registry only after release notes
+  # publish a signed, attested OCI image and tag.
+  repository: claw-vcs
+  tag: dev
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -29,9 +31,19 @@ service:
   healthPort: 50052
 
 daemon:
-  listen: "0.0.0.0:50051"
+  # Safe default: gRPC stays local unless auth and TLS are configured explicitly.
+  listen: "127.0.0.1:50051"
   healthListen: "0.0.0.0:50052"
+  allowPublicHealth: true
   extraArgs: []
+
+state:
+  mountPath: /var/lib/claw/repo
+  existingClaim: ""
+  size: 10Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
 
 probes:
   readiness:

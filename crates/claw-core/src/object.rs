@@ -5,24 +5,38 @@ use serde::{Deserialize, Serialize};
 use crate::id::ObjectId;
 use crate::types::*;
 
+/// Numeric object kind written into COF headers and protobuf envelopes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TypeTag {
+    /// Raw file/blob content object.
     Blob = 0x01,
+    /// Directory tree object.
     Tree = 0x02,
+    /// Patch object.
     Patch = 0x03,
+    /// Revision object.
     Revision = 0x04,
+    /// Snapshot object.
     Snapshot = 0x05,
+    /// Intent object.
     Intent = 0x06,
+    /// Change object.
     Change = 0x07,
+    /// Conflict object.
     Conflict = 0x08,
+    /// Signed capsule object.
     Capsule = 0x09,
+    /// Policy object.
     Policy = 0x0A,
+    /// Workstream object.
     Workstream = 0x0B,
+    /// Ref log object.
     RefLog = 0x0C,
 }
 
 impl TypeTag {
+    /// Convert a serialized type-tag byte to a known object kind.
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
             0x01 => Some(Self::Blob),
@@ -41,6 +55,7 @@ impl TypeTag {
         }
     }
 
+    /// Return a stable lowercase name for display and diagnostics.
     pub fn name(&self) -> &'static str {
         match self {
             Self::Blob => "blob",
@@ -59,23 +74,37 @@ impl TypeTag {
     }
 }
 
+/// Typed Claw repository object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Object {
+    /// Raw file/blob content object.
     Blob(Blob),
+    /// Directory tree object.
     Tree(Tree),
+    /// Patch object.
     Patch(Patch),
+    /// Revision object.
     Revision(Revision),
+    /// Snapshot object.
     Snapshot(Snapshot),
+    /// Intent object.
     Intent(Intent),
+    /// Change object.
     Change(Change),
+    /// Conflict object.
     Conflict(Conflict),
+    /// Signed capsule object.
     Capsule(Capsule),
+    /// Policy object.
     Policy(Policy),
+    /// Workstream object.
     Workstream(Workstream),
+    /// Ref log object.
     RefLog(RefLog),
 }
 
 impl Object {
+    /// Return the COF/protobuf type tag for this object.
     pub fn type_tag(&self) -> TypeTag {
         match self {
             Object::Blob(_) => TypeTag::Blob,

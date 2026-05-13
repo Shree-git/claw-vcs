@@ -189,7 +189,9 @@ fn validate_initialize_response(
         return Ok(InitializeResponse::Success);
     }
 
-    let error_value = error.expect("validated has_error above");
+    let Some(error_value) = error else {
+        anyhow::bail!("response must include an error object when 'error' is non-null");
+    };
     let (code, message) = extract_error_fields(error_value);
     Ok(InitializeResponse::Error { code, message })
 }

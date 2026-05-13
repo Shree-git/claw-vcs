@@ -1,10 +1,10 @@
 {
   "schemaVersion": "1.0",
-  "lastUpdated": "2026-02-26",
+  "lastUpdated": "2026-05-12",
   "components": {
     "cli": {
       "versioning": "semver",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     },
     "daemon": {
       "versioning": "semver",
@@ -12,17 +12,16 @@
     },
     "policySchema": {
       "versioning": "integer",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     },
     "storageFormat": {
       "versioning": "integer",
-      "publicStability": "stable"
+      "publicStability": "experimental"
     }
   },
   "supportLevels": [
     "full",
     "limited",
-    "read-only",
     "unsupported"
   ],
   "releases": [
@@ -78,8 +77,8 @@
         },
         {
           "targetRelease": "N",
-          "support": "read-only",
-          "notes": "Access allowed for migration/export only."
+          "support": "limited",
+          "notes": "Migration/export access requires explicit validation; runtime compatibility only exposes full, limited, or unsupported."
         }
       ]
     }
@@ -95,11 +94,11 @@
     },
     {
       "id": "policy-forward-one",
-      "description": "A component may read policy schema up to one version ahead but cannot write it.",
+      "description": "A component may inspect policy schema up to one version ahead only during controlled migration validation.",
       "match": {
         "policySchemaDelta": 1
       },
-      "resultingSupport": "read-only"
+      "resultingSupport": "limited"
     },
     {
       "id": "storage-forward-none",
@@ -111,11 +110,11 @@
     },
     {
       "id": "storage-backward-one",
-      "description": "One-version backward storage reads are allowed during migration.",
+      "description": "One-version backward storage reads require controlled migration validation.",
       "match": {
         "storageFormatDelta": -1
       },
-      "resultingSupport": "read-only"
+      "resultingSupport": "limited"
     }
   ]
 }

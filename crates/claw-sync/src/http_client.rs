@@ -13,10 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::proto;
 use crate::proto::sync::{HelloResponse, PushObjectsResponse, UpdateRefsResponse};
+use crate::protocol::{CAP_PARTIAL_CLONE, CAP_PROTOCOL_V1};
+use crate::security::{redacted_secret_marker, REPLAY_NONCE_METADATA_KEY};
 use crate::transport::SyncTransport;
 use crate::SyncError;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HttpSyncClient {
     base_url: String,
     repo: String,
@@ -28,6 +30,25 @@ pub struct HttpSyncClient {
     capabilities_advertised: bool,
 }
 
+impl std::fmt::Debug for HttpSyncClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut caps: Vec<_> = self.server_capabilities.iter().collect();
+        caps.sort();
+        f.debug_struct("HttpSyncClient")
+            .field("base_url", &self.base_url)
+            .field("repo", &self.repo)
+            .field(
+                "bearer_token",
+                &redacted_secret_marker(self.bearer_token.is_some()),
+            )
+            .field("health_checked", &self.health_checked)
+            .field("server_version", &self.server_version)
+            .field("server_capabilities", &caps)
+            .field("capabilities_advertised", &self.capabilities_advertised)
+            .finish()
+    }
+}
+
 // Keep transfers under Vercel's hard request/response size limits.
 const OBJECT_BYTES_CHUNK_SIZE: usize = 4_000_000;
 const INLINE_OBJECT_MAX_BYTES: usize = 1_000_000;
@@ -37,6 +58,16 @@ const CAP_PACK_UPLOAD: &str = "pack-upload";
 const CAP_BATCH_COMPLETE: &str = "batch-complete";
 const MAX_CONCURRENT_UPLOADS: usize = 8;
 const MAX_BATCH_SIZE: usize = 500;
+
+fn legacy_http_fallback_capabilities() -> HashSet<String> {
+    [
+        CAP_PROTOCOL_V1.to_string(),
+        CAP_PARTIAL_CLONE.to_string(),
+        "polling-events".to_string(),
+    ]
+    .into_iter()
+    .collect()
+}
 
 // ---------------------------------------------------------------------------
 // Prepared object: raw COF bytes read directly from disk (no decode/re-encode)
@@ -141,7 +172,9 @@ impl HttpSyncClient {
             let mut bytes = [0_u8; 16];
             rand::thread_rng().fill_bytes(&mut bytes);
             let key = BASE64_URL_SAFE_NO_PAD.encode(bytes);
-            builder = builder.header("idempotency-key", key);
+            builder = builder
+                .header("idempotency-key", key.clone())
+                .header(REPLAY_NONCE_METADATA_KEY, key);
         }
 
         if let Some(token) = &self.bearer_token {
@@ -180,9 +213,7 @@ impl HttpSyncClient {
 
         // Older servers may not advertise capabilities; assume a minimal baseline.
         if self.server_capabilities.is_empty() && !self.capabilities_advertised {
-            self.server_capabilities.insert("partial-clone".to_string());
-            self.server_capabilities
-                .insert("polling-events".to_string());
+            self.server_capabilities = legacy_http_fallback_capabilities();
         }
 
         self.health_checked = true;
@@ -1429,5 +1460,32 @@ impl SyncTransport for HttpSyncClient {
             Ok(result) => Ok(result),
             Err(_) => self.push_objects_legacy(store, ids).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_bearer_token() {
+        let client = HttpSyncClient::new(
+            "https://sync.example.test".to_string(),
+            "repo".to_string(),
+            Some("super-secret-token".to_string()),
+        );
+
+        let rendered = format!("{client:?}");
+        assert!(!rendered.contains("super-secret-token"));
+        assert!(rendered.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn legacy_health_fallback_capabilities_include_protocol_marker() {
+        let fallback = legacy_http_fallback_capabilities();
+        let caps: std::collections::HashSet<_> = fallback.iter().map(String::as_str).collect();
+        assert!(caps.contains(CAP_PROTOCOL_V1));
+        assert!(caps.contains(CAP_PARTIAL_CLONE));
+        assert!(caps.contains("polling-events"));
     }
 }

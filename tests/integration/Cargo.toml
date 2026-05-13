@@ -45,6 +45,14 @@ path = "cli_error_contract_tests.rs"
 name = "cli_admin_git_workflow_tests"
 path = "cli_admin_git_workflow_tests.rs"
 
+[[test]]
+name = "backlog_gap_tests"
+path = "backlog_gap_tests.rs"
+
+[[test]]
+name = "vector_manifest_tests"
+path = "vector_manifest_tests.rs"
+
 [dependencies]
 claw-core = { workspace = true }
 claw-store = { workspace = true }
@@ -56,6 +64,7 @@ claw-sync = { workspace = true }
 claw-git = { workspace = true }
 tempfile = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }

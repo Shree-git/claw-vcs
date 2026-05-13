@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to validate (defaults to the published release tag or latest release)"
-        required: false
+        description: "Release tag to validate"
+        required: true
         type: string
 
 permissions:
@@ -34,9 +34,35 @@ jobs:
           elif [[ -n "$RELEASE_TAG" ]]; then
             tag="$RELEASE_TAG"
           else
-            tag="$(gh release view --json tagName -q .tagName)"
+            echo "workflow_dispatch release-channel smoke requires an explicit tag input" >&2
+            exit 2
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  provenance-release-smoke:
+    needs: release-metadata
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Verify release provenance and Unix channels
+        run: |
+          mkdir -p release-verification
+          CLAW_SKIP_CARGO_INSTALL=1 \
+            CLAW_RELEASE_VERIFY_REPORT="release-verification/${RELEASE_TAG}-provenance-linux.json" \
+            scripts/verify-release-channel.sh "$RELEASE_TAG"
+      - name: Upload release verification report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-provenance-linux
+          path: release-verification/*.json
+          if-no-files-found: error
 
   linux-release-smoke:
     needs: release-metadata
@@ -69,12 +95,16 @@ jobs:
           tar -xJf release-assets/claw-x86_64-unknown-linux-gnu.tar.xz -C archive-smoke
           binary="$(find archive-smoke -type f -name claw | head -n 1)"
           test -n "$binary"
-          "$binary" --version
+          expected="${RELEASE_TAG#v}"
+          actual="$("$binary" --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          "$binary" doctor
           mkdir -p archive-smoke/repo
           (
             cd archive-smoke/repo
             "$binary" init
             "$binary" status
+            "$binary" doctor
           )
           (
             cd archive-smoke/repo
@@ -87,7 +117,7 @@ jobs:
               fi
               sleep 1
             done
-            grep -q '"code":"OK"' /tmp/claw-release-health.json
+            grep -q '"code":"ok"' /tmp/claw-release-health.json
             kill "$daemon_pid"
             wait "$daemon_pid" || true
             trap - EXIT
@@ -99,7 +129,38 @@ jobs:
           export HOME="$RUNNER_TEMP/linux-installer-home"
           mkdir -p "$HOME"
           bash release-assets/claw-installer.sh
-          "$HOME/.local/bin/claw" --version
+          expected="${RELEASE_TAG#v}"
+          actual="$("$HOME/.local/bin/claw" --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          "$HOME/.local/bin/claw" doctor
+          mkdir -p "$RUNNER_TEMP/linux-installer-repo"
+          (
+            cd "$RUNNER_TEMP/linux-installer-repo"
+            "$HOME/.local/bin/claw" init
+            "$HOME/.local/bin/claw" status
+            "$HOME/.local/bin/claw" doctor
+          )
+
+      - name: Write Linux install evidence
+        run: |
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              channels: ["linux-archive", "linux-shell-installer"],
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-linux-install.json"
+
+      - name: Upload Linux install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-linux-install
+          path: release-verification/*.json
+          if-no-files-found: error
 
   macos-release-smoke:
     needs: release-metadata
@@ -134,12 +195,16 @@ jobs:
           tar -xJf "release-assets/${{ steps.arch.outputs.pattern }}" -C archive-smoke
           binary="$(find archive-smoke -type f -name claw | head -n 1)"
           test -n "$binary"
-          "$binary" --version
+          expected="${RELEASE_TAG#v}"
+          actual="$("$binary" --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          "$binary" doctor
           mkdir -p archive-smoke/repo
           (
             cd archive-smoke/repo
             "$binary" init
             "$binary" status
+            "$binary" doctor
           )
 
       - name: Installer script smoke
@@ -148,13 +213,238 @@ jobs:
           export HOME="$RUNNER_TEMP/macos-installer-home"
           mkdir -p "$HOME"
           bash release-assets/claw-installer.sh
-          "$HOME/.local/bin/claw" --version
+          expected="${RELEASE_TAG#v}"
+          actual="$("$HOME/.local/bin/claw" --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          "$HOME/.local/bin/claw" doctor
+          mkdir -p "$RUNNER_TEMP/macos-installer-repo"
+          (
+            cd "$RUNNER_TEMP/macos-installer-repo"
+            "$HOME/.local/bin/claw" init
+            "$HOME/.local/bin/claw" status
+            "$HOME/.local/bin/claw" doctor
+          )
 
       - name: Homebrew smoke
         run: |
           set -euo pipefail
-          brew untap shree-git/homebrew-tap >/dev/null 2>&1 || true
+          brew untap shree-git/tap >/dev/null 2>&1 || true
           brew uninstall --force claw >/dev/null 2>&1 || true
-          brew tap shree-git/homebrew-tap
-          brew install claw
-          claw --version
+          brew tap shree-git/tap
+          brew install shree-git/tap/claw
+          expected="${RELEASE_TAG#v}"
+          actual="$(claw --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          claw doctor
+          mkdir -p "$RUNNER_TEMP/homebrew-repo"
+          (
+            cd "$RUNNER_TEMP/homebrew-repo"
+            claw init
+            claw status
+            claw doctor
+          )
+
+      - name: Write macOS install evidence
+        run: |
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            --arg arch "$(uname -m)" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              arch: $arch,
+              channels: ["macos-archive", "macos-shell-installer", "homebrew"],
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-macos-install.json"
+
+      - name: Upload macOS install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-macos-install
+          path: release-verification/*.json
+          if-no-files-found: error
+
+  windows-release-smoke:
+    needs: release-metadata
+    runs-on: windows-2022
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+    steps:
+      - name: Download Windows release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          gh release download "$env:RELEASE_TAG" `
+            -p 'claw-installer.ps1' `
+            -p 'claw-x86_64-pc-windows-msvc.zip' `
+            -p 'claw-x86_64-pc-windows-msvc.msi' `
+            -p 'sha256.sum' `
+            -D release-assets
+
+      - name: Verify release metadata consistency
+        shell: pwsh
+        run: |
+          $sum = Get-Content release-assets\sha256.sum
+          foreach ($asset in @(
+            "claw-installer.ps1",
+            "claw-x86_64-pc-windows-msvc.zip",
+            "claw-x86_64-pc-windows-msvc.msi"
+          )) {
+            $line = ($sum | Select-String -SimpleMatch $asset | Select-Object -First 1).Line
+            if (-not $line) {
+              throw "missing checksum for $asset"
+            }
+            $expected = $line.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)[0].ToLowerInvariant()
+            $actual = (Get-FileHash "release-assets\$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) {
+              throw "checksum mismatch for $asset"
+            }
+          }
+
+      - name: Zip archive smoke
+        shell: pwsh
+        run: |
+          Expand-Archive release-assets\claw-x86_64-pc-windows-msvc.zip -DestinationPath zip-smoke
+          $binary = Get-ChildItem zip-smoke -Recurse -Filter claw.exe | Select-Object -First 1
+          if (-not $binary) {
+            throw "claw.exe not found in zip archive"
+          }
+          $expected = $env:RELEASE_TAG.TrimStart("v")
+          $actual = ((& $binary.FullName --version) -split " ")[1]
+          if ($actual -ne $expected) {
+            throw "version mismatch for $($binary.FullName): expected $expected, got $actual"
+          }
+          & $binary.FullName doctor
+          New-Item -ItemType Directory -Force zip-smoke\repo | Out-Null
+          Push-Location zip-smoke\repo
+          & $binary.FullName init
+          & $binary.FullName status
+          & $binary.FullName doctor
+          Pop-Location
+
+      - name: PowerShell installer smoke
+        shell: pwsh
+        run: |
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP "powershell-installer-home"
+          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          powershell -ExecutionPolicy Bypass -File .\release-assets\claw-installer.ps1
+          $candidates = @(
+            (Join-Path $env:USERPROFILE ".cargo\bin\claw.exe"),
+            (Join-Path $env:USERPROFILE ".local\bin\claw.exe")
+          )
+          $binary = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $binary) {
+            throw "installed claw.exe not found after PowerShell installer"
+          }
+          $expected = $env:RELEASE_TAG.TrimStart("v")
+          $actual = ((& $binary --version) -split " ")[1]
+          if ($actual -ne $expected) {
+            throw "version mismatch for ${binary}: expected $expected, got $actual"
+          }
+          & $binary doctor
+          $repo = Join-Path $env:RUNNER_TEMP "powershell-installer-repo"
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          Push-Location $repo
+          & $binary init
+          & $binary status
+          & $binary doctor
+          Pop-Location
+
+      - name: MSI smoke
+        shell: pwsh
+        run: |
+          $msi = Resolve-Path release-assets\claw-x86_64-pc-windows-msvc.msi
+          $process = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/norestart") -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "msiexec failed with exit code $($process.ExitCode)"
+          }
+          $binary = "C:\Program Files\claw\bin\claw.exe"
+          if (-not (Test-Path $binary)) {
+            throw "MSI-installed claw.exe not found at $binary"
+          }
+          $expected = $env:RELEASE_TAG.TrimStart("v")
+          $actual = ((& $binary --version) -split " ")[1]
+          if ($actual -ne $expected) {
+            throw "version mismatch for ${binary}: expected $expected, got $actual"
+          }
+          & $binary doctor
+          $repo = Join-Path $env:RUNNER_TEMP "msi-repo"
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          Push-Location $repo
+          & $binary init
+          & $binary status
+          & $binary doctor
+          Pop-Location
+
+      - name: Write Windows install evidence
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-verification | Out-Null
+          @{
+            schemaVersion = 1
+            tag = $env:RELEASE_TAG
+            runner = $env:RUNNER_OS
+            channels = @("windows-zip", "windows-powershell-installer", "windows-msi")
+            status = "pass"
+          } | ConvertTo-Json -Depth 4 | Set-Content "release-verification\$($env:RELEASE_TAG)-windows-install.json"
+
+      - name: Upload Windows install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-windows-install
+          path: release-verification/*.json
+          if-no-files-found: error
+
+  cargo-install-git-smoke:
+    needs: release-metadata
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+    steps:
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cargo install from Git smoke
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/claw-cargo-install"
+          cargo install --git https://github.com/shree-git/claw-vcs.git --tag "$RELEASE_TAG" --package claw-vcs --locked --root "$root"
+          expected="${RELEASE_TAG#v}"
+          actual="$("$root/bin/claw" --version | awk '{ print $2 }')"
+          test "$actual" = "$expected"
+          "$root/bin/claw" doctor
+          mkdir -p "$RUNNER_TEMP/claw-cargo-install-repo"
+          (
+            cd "$RUNNER_TEMP/claw-cargo-install-repo"
+            "$root/bin/claw" init
+            "$root/bin/claw" status
+            "$root/bin/claw" doctor
+          )
+          mkdir -p release-verification
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg runner "$RUNNER_OS" \
+            --arg version "$actual" \
+            '{
+              schemaVersion: 1,
+              tag: $tag,
+              runner: $runner,
+              channels: ["cargo-install-git"],
+              version: $version,
+              status: "pass"
+            }' > "release-verification/${RELEASE_TAG}-cargo-install-git.json"
+
+      - name: Upload cargo install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-verification-cargo-install-git
+          path: release-verification/*.json
+          if-no-files-found: error

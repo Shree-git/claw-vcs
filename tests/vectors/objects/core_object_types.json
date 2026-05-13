@@ -1,0 +1,128 @@
+[
+  {
+    "name": "patch_basic",
+    "input_object": {
+      "type": "Patch",
+      "target_path": "src/main.rs",
+      "codec_id": "text/line",
+      "base_object": "clw_aeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq",
+      "result_object": "clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+      "ops": [
+        {
+          "address": "L1",
+          "op_type": "replace",
+          "old_data_utf8": "old\n",
+          "new_data_utf8": "new\n",
+          "context_hash": 42
+        }
+      ]
+    },
+    "canonical_payload_hex": "0a0b7372632f6d61696e2e72731209746578742f6c696e651a220a20010101010101010101010101010101010101010101010101010101010101010122220a2002020202020202020202020202020202020202020202020202020202020202022a1b0a024c3112077265706c6163651a046f6c640a22046e65770a282a",
+    "expected_object_id_hex": "e90e10f2de9c64502a6dcdf8bad2df66ec8d0ac7cf05502984cb698a380e9e34",
+    "expected_object_id": "clw_5ehbb4w6trsfaktnzx4lvuw7m3wi2cwhz4cvakmeznuyuoaoty2a",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "snapshot_basic",
+    "input_object": {
+      "type": "Snapshot",
+      "tree_root": "clw_aeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq",
+      "revision_id": "clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+      "created_at_ms": 1778500001000
+    },
+    "canonical_payload_hex": "0a220a20010101010101010101010101010101010101010101010101010101010101010112220a20020202020202020202020202020202020202020202020202020202020202020218e8b9f1b6e133",
+    "expected_object_id_hex": "c340395050ea38934981a41b62677f5df63323eaf8c601efcef17d33f93d73cd",
+    "expected_object_id": "clw_ynadsucq5i4jgsmbuqnwez37lx3dgi7k7ddad36o6f6th6j5opgq",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "intent_basic",
+    "input_object": {
+      "type": "Intent",
+      "id_hex": "11111111111111111111111111111111",
+      "title": "Add launch vectors",
+      "goal": "Cover all object tags",
+      "constraints": ["deterministic"],
+      "acceptance_tests": ["vector manifest passes"],
+      "links": ["docs/spec/object-format.md"],
+      "policy_refs": ["default"],
+      "agents": ["agent@example.com"],
+      "change_ids": ["1248H248H248H248H248H248H2"],
+      "status": "open",
+      "created_at_ms": 1778500002000,
+      "updated_at_ms": 1778500003000
+    },
+    "canonical_payload_hex": "0a120a10111111111111111111111111111111111212416464206c61756e636820766563746f72731a15436f76657220616c6c206f626a6563742074616773220d64657465726d696e69737469632a16766563746f72206d616e696665737420706173736573321a646f63732f737065632f6f626a6563742d666f726d61742e6d643a0764656661756c7442116167656e74406578616d706c652e636f6d4a1a313234384832343848323438483234384832343848323438483262046f70656e68d0c1f1b6e13370b8c9f1b6e133",
+    "expected_object_id_hex": "2668441bd5afb57f653995583eeb6ba36f2b411ed0d522729ece3387bc152391",
+    "expected_object_id": "clw_ezueig6vv62x6zjzsvmd523lunxswqi62dkse4u6zyzyppaveoiq",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "change_basic",
+    "input_object": {
+      "type": "Change",
+      "id_hex": "22222222222222222222222222222222",
+      "intent_id_hex": "11111111111111111111111111111111",
+      "head_revision": "clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+      "workstream_id": "launch-hardening",
+      "status": "ready",
+      "created_at_ms": 1778500004000,
+      "updated_at_ms": 1778500005000
+    },
+    "canonical_payload_hex": "0a120a102222222222222222222222222222222212120a10111111111111111111111111111111111a220a20020202020202020202020202020202020202020202020202020202020202020222106c61756e63682d68617264656e696e672a05726561647930a0d1f1b6e1333888d9f1b6e133",
+    "expected_object_id_hex": "d4fd727be046809da80605befdb30f061caa8ff9cacf437b5a2c8ec1e32acff9",
+    "expected_object_id": "clw_2t6xe67ai2aj3kagaw7p3mypayokvd7zzlhug622fshmdyzkz74q",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "conflict_basic",
+    "input_object": {
+      "type": "Conflict",
+      "base_revision": "clw_aeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq",
+      "left_revision": "clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+      "right_revision": "clw_ambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambq",
+      "file_path": "src/main.rs",
+      "codec_id": "text/line",
+      "left_patch_ids": ["clw_aeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq"],
+      "right_patch_ids": ["clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba"],
+      "status": "open",
+      "created_at_ms": 1778500006000
+    },
+    "canonical_payload_hex": "0a220a20010101010101010101010101010101010101010101010101010101010101010112220a2002020202020202020202020202020202020202020202020202020202020202021a220a200303030303030303030303030303030303030303030303030303030303030303220b7372632f6d61696e2e72732a09746578742f6c696e6532220a2001010101010101010101010101010101010101010101010101010101010101013a220a2002020202020202020202020202020202020202020202020202020202020202024a046f70656e50f0e0f1b6e133",
+    "expected_object_id_hex": "5984a233f827c79445a42f5efe41cab7f12aa89d5640cca0d888f1398a831ede",
+    "expected_object_id": "clw_lgckem7ye7dzirnef5pp4qokw7ysvke5kzamzigyrdyttcudd3pa",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "workstream_basic",
+    "input_object": {
+      "type": "Workstream",
+      "workstream_id": "launch-hardening",
+      "change_stack": ["1248H248H248H248H248H248H2"]
+    },
+    "canonical_payload_hex": "0a106c61756e63682d68617264656e696e6712120a1022222222222222222222222222222222",
+    "expected_object_id_hex": "5f79e9aa849ca082143df28e90c09ec232137d54c261ce72eefa9f33eb7b08f5",
+    "expected_object_id": "clw_l546tkuetsqiefb56khjbqe6yizbg7kuyjq444xo7kpth233bd2q",
+    "expected_verification_result": "valid"
+  },
+  {
+    "name": "reflog_basic",
+    "input_object": {
+      "type": "RefLog",
+      "ref_name": "heads/main",
+      "entries": [
+        {
+          "old_target": "clw_aeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq",
+          "new_target": "clw_aibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaiba",
+          "author": "agent@example.com",
+          "message": "advance launch branch",
+          "timestamp": 1778500007000
+        }
+      ]
+    },
+    "canonical_payload_hex": "0a0a68656164732f6d61696e12790a220a20010101010101010101010101010101010101010101010101010101010101010112220a2002020202020202020202020202020202020202020202020202020202020202021a116167656e74406578616d706c652e636f6d2215616476616e6365206c61756e6368206272616e636828d8e8f1b6e133",
+    "expected_object_id_hex": "4090750158a51b19c22729ab5c902d72302f2dc2875f9acd13bfe510150c46c3",
+    "expected_object_id": "clw_icihkakyuunrtqrhfgvvzebnoiyc6locq5pzvtitx7srafimi3bq",
+    "expected_verification_result": "valid"
+  }
+]

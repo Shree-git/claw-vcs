@@ -17,8 +17,8 @@ Set variables at apply time:
 terraform apply \
   -var='namespace=claw-system' \
   -var='release_name=claw' \
-  -var='image_repository=ghcr.io/infinite-apps/claw' \
-  -var='image_tag=v0.1.0' \
+  -var='image_repository=claw-vcs' \
+  -var='image_tag=<release-tag>' \
   -var='values_files=["../helm/claw/values.yaml"]'
 ```
 
@@ -26,3 +26,5 @@ terraform apply \
 
 - `chart_path` defaults to `../helm/claw` in this repository.
 - The example intentionally stays minimal and is intended as a deployment reference.
+- Use `ghcr.io/shree-git/claw-vcs` only after release notes publish a signed,
+  attested OCI image for the tag you deploy.

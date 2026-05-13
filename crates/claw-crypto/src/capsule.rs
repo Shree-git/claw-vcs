@@ -1,11 +1,16 @@
 use claw_core::id::ObjectId;
-use claw_core::types::{Capsule, CapsulePublic, CapsuleSignature};
+use claw_core::types::{
+    Capsule, CapsulePublic, CapsuleRecipient, CapsuleSignature, CAPSULE_PRIVATE_ENCRYPTION,
+    CAPSULE_RECIPIENT_PRIVATE_ENCRYPTION,
+};
 
 use crate::encrypt;
 use crate::keypair::KeyPair;
+use crate::recipient::{random_content_key, wrap_content_key_for_recipients, RecipientPublicKey};
 use crate::sign;
 use crate::CryptoError;
 
+/// Builds and signs a capsule, optionally encrypting private fields with a shared key.
 pub fn build_capsule(
     revision_id: &ObjectId,
     public_fields: CapsulePublic,
@@ -20,7 +25,7 @@ pub fn build_capsule(
     };
 
     let encryption = if encryption_key.is_some() {
-        "xchacha20poly1305".to_string()
+        CAPSULE_PRIVATE_ENCRYPTION.to_string()
     } else {
         String::new()
     };
@@ -31,12 +36,45 @@ pub fn build_capsule(
         encrypted_private,
         encryption,
         key_id: None,
+        recipients: vec![],
         signatures: vec![],
     };
     append_capsule_signature(&mut capsule, signing_keypair)?;
     Ok(capsule)
 }
 
+/// Builds and signs a capsule whose private fields are encrypted for named recipients.
+pub fn build_capsule_for_recipients(
+    revision_id: &ObjectId,
+    public_fields: CapsulePublic,
+    private_data: &[u8],
+    recipients: &[RecipientPublicKey],
+    signing_keypair: &KeyPair,
+) -> Result<Capsule, CryptoError> {
+    if recipients.is_empty() {
+        return Err(CryptoError::EncryptionFailed(
+            "recipient capsule requires at least one recipient".into(),
+        ));
+    }
+
+    let content_key = random_content_key();
+    let encrypted_private = Some(encrypt::encrypt(&content_key, private_data)?);
+    let recipient_envelopes = wrap_content_key_for_recipients(&content_key, recipients)?;
+
+    let mut capsule = Capsule {
+        revision_id: *revision_id,
+        public_fields,
+        encrypted_private,
+        encryption: CAPSULE_RECIPIENT_PRIVATE_ENCRYPTION.to_string(),
+        key_id: None,
+        recipients: recipient_envelopes,
+        signatures: vec![],
+    };
+    append_capsule_signature(&mut capsule, signing_keypair)?;
+    Ok(capsule)
+}
+
+/// Verifies the first signature on a capsule against an Ed25519 public key.
 pub fn verify_capsule(capsule: &Capsule, public_key: &[u8; 32]) -> Result<bool, CryptoError> {
     let sig = capsule
         .signatures
@@ -48,6 +86,7 @@ pub fn verify_capsule(capsule: &Capsule, public_key: &[u8; 32]) -> Result<bool, 
     crate::verify::verify(public_key, &sign_payload, &sig.signature)
 }
 
+/// Appends a signature for `signing_keypair` unless that signer is already present.
 pub fn append_capsule_signature(
     capsule: &mut Capsule,
     signing_keypair: &KeyPair,
@@ -71,11 +110,13 @@ pub fn append_capsule_signature(
     Ok(())
 }
 
+/// Returns the canonical bytes signed by capsule signatures.
 pub fn capsule_signing_payload(capsule: &Capsule) -> Result<Vec<u8>, CryptoError> {
     signing_payload(
         &capsule.revision_id,
         &capsule.public_fields,
         capsule.encrypted_private.as_deref(),
+        &capsule.recipients,
     )
     .map_err(|e| CryptoError::VerificationFailed(e.to_string()))
 }
@@ -84,6 +125,7 @@ fn signing_payload(
     revision_id: &ObjectId,
     public_fields: &CapsulePublic,
     encrypted_private: Option<&[u8]>,
+    recipients: &[CapsuleRecipient],
 ) -> Result<Vec<u8>, serde_json::Error> {
     let public_bytes = serde_json::to_vec(public_fields)?;
     let public_hash = blake3::hash(&public_bytes);
@@ -94,6 +136,11 @@ fn signing_payload(
     if let Some(enc) = encrypted_private {
         let enc_hash = blake3::hash(enc);
         sign_payload.extend_from_slice(enc_hash.as_bytes());
+    }
+    if !recipients.is_empty() {
+        let recipients_bytes = serde_json::to_vec(recipients)?;
+        let recipients_hash = blake3::hash(&recipients_bytes);
+        sign_payload.extend_from_slice(recipients_hash.as_bytes());
     }
     Ok(sign_payload)
 }

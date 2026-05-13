@@ -270,6 +270,7 @@ mod tests {
             encrypted_private: None,
             encryption: String::new(),
             key_id: None,
+            recipients: vec![],
             signatures: vec![],
         });
 
@@ -285,6 +286,7 @@ mod tests {
             encrypted_private: Some(vec![1, 2, 3]),
             encryption: "xchacha20poly1305".to_string(),
             key_id: None,
+            recipients: vec![],
             signatures: vec![],
         });
 

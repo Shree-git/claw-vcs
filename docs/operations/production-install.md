@@ -8,11 +8,16 @@ This guide installs Claw for the supported self-hosted `v0.1.x` production basel
 - Repository data is local under `.claw/` in the repo root.
 - Clients connect through `claw sync` using gRPC remotes.
 - Auth is bearer-token based (`authorization: Bearer <token>`).
+- Non-local production gRPC binds require auth and TLS. Non-local health/metrics
+  binds require an explicit `--allow-public-health` opt-in.
 
 ## Host prerequisites
 
 - Claw binary installed and on `PATH`.
-- Install from a tagged GitHub release, Homebrew, or the Windows MSI before using this guide.
+- Install from a channel whose current tag has a passing record in
+  [install-verification-log.md](install-verification-log.md). Until a
+  launch-hardening release is verified, use the source install path only for
+  controlled evaluation.
 - Stable storage for repository checkout plus `.claw/`.
 - Service account with read/write access to the repository directory.
 - Network controls allowing only approved clients to daemon port.
@@ -41,7 +46,14 @@ claw admin preflight
 5. Start daemon:
 
 ```bash
-claw daemon --listen 0.0.0.0:50051 --auth-profile default
+claw daemon \
+  --listen 0.0.0.0:50051 \
+  --health-listen 0.0.0.0:50052 \
+  --allow-public-health \
+  --auth-profile default \
+  --tls-cert /etc/claw/tls/server.pem \
+  --tls-key /etc/claw/tls/server-key.pem \
+  --audit-log /var/log/claw/daemon-audit.jsonl
 ```
 
 ## Service manager example (systemd)
@@ -56,13 +68,35 @@ Type=simple
 User=claw
 Group=claw
 WorkingDirectory=/srv/claw/repo
-ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --auth-profile default
+ExecStart=/usr/local/bin/claw daemon --listen 0.0.0.0:50051 --health-listen 0.0.0.0:50052 --allow-public-health --auth-profile default --tls-cert /etc/claw/tls/server.pem --tls-key /etc/claw/tls/server-key.pem --audit-log /var/log/claw/daemon-audit.jsonl
 Restart=always
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+## Container and Helm Preview
+
+Container deployment assets are present for operators who want to evaluate the daemon in Kubernetes, but a public OCI image is not a launch-ready install channel until a release publishes signed, attested images and records clean-environment verification.
+
+Build the image locally from a checked-out release tag:
+
+```bash
+docker build -f crates/claw/deploy/container/Dockerfile -t claw-vcs:<release-tag> .
+docker run --rm --entrypoint /usr/local/bin/claw claw-vcs:<release-tag> --version
+```
+
+Validate the chart before installation:
+
+```bash
+helm lint crates/claw/deploy/helm/claw
+helm template claw crates/claw/deploy/helm/claw \
+  --set image.repository=claw-vcs \
+  --set image.tag=<release-tag>
+```
+
+When an official image is published, use the image repository and tag from that release's notes instead of assuming `ghcr.io/shree-git/claw-vcs` is available.
 
 ## TLS guidance
 

@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust quality gate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Verify generated protobuf output
+        run: scripts/verify-generated-protos.sh
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run production panic audit
+        run: cargo clippy --workspace --lib --bins --locked -- -D clippy::panic -D clippy::todo -D clippy::unimplemented
+
+      - name: Run unsafe code audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn --include='*.rs' --exclude-dir=generated 'unsafe' crates tests; then
+            echo "unsafe Rust requires an explicit audit entry before merging" >&2
+            exit 1
+          fi
+
+      - name: Run workspace tests
+        run: cargo test --workspace --all-targets --locked --exclude claw-integration-tests
+
+      - name: Run public CLI smoke suites
+        run: |
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_error_contract_tests --locked
+          cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test backlog_gap_tests --locked -- --test-threads=1
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
+
+      - name: Run example workflow smoke scripts
+        run: |
+          cargo build -p claw-vcs --locked
+          CLAW_BIN=target/debug/claw examples/basic-demo/scripts/demo.sh
+          CLAW_BIN=target/debug/claw examples/agent-capsule/scripts/demo.sh
+          CLAW_BIN=target/debug/claw examples/policy-gated-integration/scripts/failure-cases.sh
+          CLAW_BIN=target/debug/claw examples/backup-restore/scripts/demo.sh
+
+      - name: Build rustdoc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+
+      - name: Compile fuzz targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+
+      - name: Smoke fuzz targets
+        run: |
+          for target in \
+            core_cof_decode \
+            cof_decode \
+            patch_codecs \
+            patch_apply \
+            json_tree_merge \
+            policy_checks \
+            crypto_capsule \
+            store_objects \
+            object_id_parse \
+            git_import_parse \
+            sync_chunk_decode; do
+            cargo run --manifest-path fuzz/Cargo.toml --bin "$target" --locked -- -runs=1
+          done
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.19.6 --locked
+
+      - name: Run cargo-deny
+        run: cargo deny check
+
+      - name: Install cargo-vet
+        run: cargo install cargo-vet --version 0.10.2 --locked
+
+      - name: Run cargo-vet
+        run: cargo vet
+
+  sbom:
+    name: SBOM and attestation
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
+
+      - name: Generate CycloneDX SBOMs
+        run: |
+          cargo cyclonedx --all-features --format json
+          cargo cyclonedx --all-features --format xml
+
+      - name: Collect SBOM files
+        id: sbom
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p sbom-artifacts
+          find . -type f \( -name "*.cdx.json" -o -name "*.cdx.xml" -o -name "bom.json" -o -name "bom.xml" \) -exec cp {} sbom-artifacts/ \;
+
+          sbom_json="$(find sbom-artifacts -type f \( -name "*.cdx.json" -o -name "bom.json" \) | sort | head -n 1)"
+          if [[ -z "$sbom_json" ]]; then
+            echo "No JSON SBOM was generated" >&2
+            exit 1
+          fi
+
+          attested_sbom="sbom-artifacts/claw.cdx.json"
+          if [[ "$sbom_json" != "$attested_sbom" ]]; then
+            cp "$sbom_json" "$attested_sbom"
+          fi
+          echo "path=$attested_sbom" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cyclonedx-sbom-${{ github.sha }}
+          path: sbom-artifacts/
+          if-no-files-found: error
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-path: Cargo.lock
+          sbom-path: ${{ steps.sbom.outputs.path }}

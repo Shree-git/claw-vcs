@@ -1,0 +1,13 @@
+.git
+.github
+target
+fuzz/target
+coverage
+video
+.claw
+*.db
+*.sqlite
+*.sqlite3
+*.log
+.DS_Store
+Thumbs.db

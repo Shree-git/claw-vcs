@@ -23,4 +23,6 @@ pub enum StoreError {
     RefCasConflict { expected: String, actual: String },
     #[error("invalid ref name: {0}")]
     InvalidRefName(String),
+    #[error("ref path escapes refs root: {0}")]
+    RefPathEscapesRoot(PathBuf),
 }

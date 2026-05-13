@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 
 use crate::auth_store::{load_auth_config, save_auth_config, AuthProfile};
 
-// ClawLab v1 only allows this single public client id.
-const CLAWLAB_OAUTH_CLIENT_ID: &str = "claw-cli";
+// Hosted auth endpoints use this public CLI client id by convention.
+const HOSTED_OAUTH_CLIENT_ID: &str = "claw-cli";
 
 #[derive(Args)]
 pub struct AuthArgs {
@@ -18,10 +18,10 @@ pub struct AuthArgs {
 
 #[derive(Subcommand)]
 enum AuthCommand {
-    /// Login to ClawLab with browser PKCE flow
+    /// Login to a configured hosted remote with browser PKCE flow
     Login {
-        /// Base URL of ClawLab API
-        #[arg(long, default_value = "https://api.clawlab.com")]
+        /// Base URL of the hosted auth API
+        #[arg(long, value_name = "URL")]
         base_url: String,
         /// Auth profile name
         #[arg(long, default_value = "default")]
@@ -48,7 +48,8 @@ enum TokenCommand {
     /// Set access token manually
     Set {
         token: String,
-        #[arg(long, default_value = "https://api.clawlab.com")]
+        /// Base URL of the hosted auth API
+        #[arg(long, value_name = "URL")]
         base_url: String,
         #[arg(long, default_value = "default")]
         profile: String,
@@ -122,7 +123,7 @@ async fn login(base_url: String, profile: String, no_browser: bool) -> anyhow::R
     let authorize_url = format!(
         "{}/oauth/authorize?response_type=code&client_id={}&code_challenge_method=S256&code_challenge={}&redirect_uri={}&state={}",
         base_url.trim_end_matches('/'),
-        urlencoding::encode(CLAWLAB_OAUTH_CLIENT_ID),
+        urlencoding::encode(HOSTED_OAUTH_CLIENT_ID),
         urlencoding::encode(&challenge),
         urlencoding::encode(redirect_uri),
         urlencoding::encode(&state)
@@ -142,7 +143,7 @@ async fn login(base_url: String, profile: String, no_browser: bool) -> anyhow::R
     let token_url = format!("{}/oauth/token", base_url.trim_end_matches('/'));
     let body = TokenRequest {
         grant_type: "authorization_code".to_string(),
-        client_id: CLAWLAB_OAUTH_CLIENT_ID.to_string(),
+        client_id: HOSTED_OAUTH_CLIENT_ID.to_string(),
         code,
         code_verifier: verifier,
         redirect_uri: redirect_uri.to_string(),
@@ -153,8 +154,9 @@ async fn login(base_url: String, profile: String, no_browser: bool) -> anyhow::R
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         anyhow::bail!(
-            "token exchange failed ({}). You can fallback to `claw auth token set <token> --profile {}`. Body: {}",
+            "token exchange failed ({}). You can fallback to `claw auth token set <token> --base-url {} --profile {}`. Body: {}",
             status,
+            base_url,
             profile,
             text
         );
@@ -247,4 +249,53 @@ fn token(command: TokenCommand) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: AuthArgs,
+    }
+
+    #[test]
+    fn hosted_login_requires_explicit_base_url() {
+        match TestCli::try_parse_from(["claw", "login", "--profile", "prod"]) {
+            Ok(_) => panic!("login without --base-url should fail"),
+            Err(err) => assert!(err.to_string().contains("--base-url")),
+        }
+    }
+
+    #[test]
+    fn token_set_records_explicit_base_url() {
+        let cli = TestCli::parse_from([
+            "claw",
+            "token",
+            "set",
+            "token-value",
+            "--base-url",
+            "https://daemon.example.invalid",
+            "--profile",
+            "prod",
+        ]);
+        match cli.args.command {
+            AuthCommand::Token {
+                command:
+                    TokenCommand::Set {
+                        token,
+                        base_url,
+                        profile,
+                    },
+            } => {
+                assert_eq!(token, "token-value");
+                assert_eq!(base_url, "https://daemon.example.invalid");
+                assert_eq!(profile, "prod");
+            }
+            _ => panic!("expected token set"),
+        }
+    }
 }

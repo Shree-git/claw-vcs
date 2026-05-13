@@ -5,20 +5,38 @@ use tonic::{Request, Response, Status};
 
 use claw_core::id::ObjectId;
 use claw_core::object::Object;
-use claw_core::types::{Capsule, CapsulePublic, Evidence};
+use claw_core::types::{Capsule, CapsulePublic, CapsuleRecipient, Evidence};
 use claw_crypto::capsule::verify_capsule;
 use claw_store::ClawStore;
 
 use crate::proto::capsule::capsule_service_server::CapsuleService;
 use crate::proto::capsule::*;
+use crate::security::{
+    metadata_value, AuditSink, AuthorizationAction, Authorizer, ServiceSecurity,
+    PRINCIPAL_METADATA_KEY,
+};
 
 pub struct CapsuleServer {
     store: Arc<RwLock<ClawStore>>,
+    security: ServiceSecurity,
 }
 
 impl CapsuleServer {
     pub fn new(store: Arc<RwLock<ClawStore>>) -> Self {
-        Self { store }
+        Self {
+            store,
+            security: ServiceSecurity::default(),
+        }
+    }
+
+    pub fn with_authorizer(mut self, authorizer: Arc<dyn Authorizer>) -> Self {
+        self.security = self.security.with_authorizer(authorizer);
+        self
+    }
+
+    pub fn with_audit_sink(mut self, audit_sink: Arc<dyn AuditSink>) -> Self {
+        self.security = self.security.with_audit_sink(audit_sink);
+        self
     }
 }
 
@@ -42,6 +60,20 @@ fn capsule_to_proto(c: &Capsule) -> crate::proto::objects::Capsule {
                     duration_ms: e.duration_ms,
                     artifact_refs: e.artifact_refs.clone(),
                     summary: e.summary.clone().unwrap_or_default(),
+                    revision_id: e.revision_id.map(|id| crate::proto::common::ObjectId {
+                        hash: id.as_bytes().to_vec(),
+                    }),
+                    command: e.command.clone(),
+                    exit_code: e.exit_code,
+                    started_at_ms: e.started_at_ms,
+                    ended_at_ms: e.ended_at_ms,
+                    environment_digest: e.environment_digest.clone(),
+                    runner_identity: e.runner_identity.clone(),
+                    log_digest: e.log_digest.clone(),
+                    artifact_digest: e.artifact_digest.clone(),
+                    expires_at_ms: e.expires_at_ms,
+                    trust_domain: e.trust_domain.clone(),
+                    signature: e.signature.clone(),
                 })
                 .collect(),
         }),
@@ -56,11 +88,24 @@ fn capsule_to_proto(c: &Capsule) -> crate::proto::objects::Capsule {
                 signature: s.signature.clone(),
             })
             .collect(),
+        recipients: c
+            .recipients
+            .iter()
+            .map(|r| crate::proto::objects::CapsuleRecipient {
+                recipient_id: r.recipient_id.clone(),
+                key_id: r.key_id.clone(),
+                algorithm: r.algorithm.clone(),
+                ephemeral_public_key: r.ephemeral_public_key.clone(),
+                encrypted_content_key: r.encrypted_content_key.clone(),
+            })
+            .collect(),
     }
 }
 
-fn public_from_proto(p: &crate::proto::objects::CapsulePublic) -> CapsulePublic {
-    CapsulePublic {
+fn public_from_proto(
+    p: &crate::proto::objects::CapsulePublic,
+) -> Result<CapsulePublic, &'static str> {
+    Ok(CapsulePublic {
         agent_id: p.agent_id.clone(),
         agent_version: if p.agent_version.is_empty() {
             None
@@ -80,18 +125,53 @@ fn public_from_proto(p: &crate::proto::objects::CapsulePublic) -> CapsulePublic 
         evidence: p
             .evidence
             .iter()
-            .map(|e| Evidence {
-                name: e.name.clone(),
-                status: e.status.clone(),
-                duration_ms: e.duration_ms,
-                artifact_refs: e.artifact_refs.clone(),
-                summary: if e.summary.is_empty() {
-                    None
-                } else {
-                    Some(e.summary.clone())
-                },
+            .map(|e| {
+                let revision_id = match &e.revision_id {
+                    Some(id) if !id.hash.is_empty() => {
+                        let bytes: [u8; 32] = id
+                            .hash
+                            .as_slice()
+                            .try_into()
+                            .map_err(|_| "invalid evidence revision_id")?;
+                        Some(ObjectId::from_bytes(bytes))
+                    }
+                    _ => None,
+                };
+                Ok(Evidence {
+                    name: e.name.clone(),
+                    status: e.status.clone(),
+                    duration_ms: e.duration_ms,
+                    artifact_refs: e.artifact_refs.clone(),
+                    summary: if e.summary.is_empty() {
+                        None
+                    } else {
+                        Some(e.summary.clone())
+                    },
+                    revision_id,
+                    command: e.command.clone(),
+                    exit_code: e.exit_code,
+                    started_at_ms: e.started_at_ms,
+                    ended_at_ms: e.ended_at_ms,
+                    environment_digest: e.environment_digest.clone(),
+                    runner_identity: e.runner_identity.clone(),
+                    log_digest: e.log_digest.clone(),
+                    artifact_digest: e.artifact_digest.clone(),
+                    expires_at_ms: e.expires_at_ms,
+                    trust_domain: e.trust_domain.clone(),
+                    signature: e.signature.clone(),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, &'static str>>()?,
+    })
+}
+
+fn recipient_from_proto(r: &crate::proto::objects::CapsuleRecipient) -> CapsuleRecipient {
+    CapsuleRecipient {
+        recipient_id: r.recipient_id.clone(),
+        key_id: r.key_id.clone(),
+        algorithm: r.algorithm.clone(),
+        ephemeral_public_key: r.ephemeral_public_key.clone(),
+        encrypted_content_key: r.encrypted_content_key.clone(),
     }
 }
 
@@ -148,12 +228,56 @@ fn verify_capsule_for_revision(capsule: &Capsule, revision_id: &ObjectId) -> (bo
     }
 }
 
+fn principal_from_request<T>(request: &Request<T>) -> Option<String> {
+    metadata_value(request, PRINCIPAL_METADATA_KEY)
+}
+
+fn recipient_id_matches_principal(recipient_id: &str, principal: &str) -> bool {
+    recipient_id.eq_ignore_ascii_case(principal)
+}
+
+pub(crate) fn capsule_private_visible_to_principal(
+    capsule: &Capsule,
+    principal: Option<&str>,
+    can_read_private: bool,
+) -> bool {
+    if capsule.encrypted_private.is_none() {
+        return true;
+    }
+
+    let authorized = principal.is_some_and(|principal| {
+        capsule
+            .recipients
+            .iter()
+            .any(|recipient| recipient_id_matches_principal(&recipient.recipient_id, principal))
+    });
+
+    authorized && can_read_private
+}
+
+fn capsule_for_principal(
+    capsule: &Capsule,
+    principal: Option<&str>,
+    can_read_private: bool,
+) -> Capsule {
+    if capsule_private_visible_to_principal(capsule, principal, can_read_private) {
+        return capsule.clone();
+    }
+
+    let mut redacted = capsule.clone();
+    redacted.encrypted_private = None;
+    redacted.recipients.clear();
+    redacted
+}
+
 #[tonic::async_trait]
 impl CapsuleService for CapsuleServer {
     async fn create(
         &self,
         request: Request<CreateCapsuleRequest>,
     ) -> Result<Response<CreateCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::CreateCapsule, None)?;
         let req = request.into_inner();
 
         let rev_id_msg = req
@@ -166,17 +290,29 @@ impl CapsuleService for CapsuleServer {
             .map_err(|_| Status::invalid_argument("invalid ObjectId"))?;
         let revision_id = ObjectId::from_bytes(arr);
 
-        let public_fields =
-            req.public_fields
-                .as_ref()
-                .map(public_from_proto)
-                .unwrap_or(CapsulePublic {
-                    agent_id: String::new(),
-                    agent_version: None,
-                    toolchain_digest: None,
-                    env_fingerprint: None,
-                    evidence: vec![],
-                });
+        let public_fields = req
+            .public_fields
+            .as_ref()
+            .map(public_from_proto)
+            .transpose()
+            .map_err(Status::invalid_argument)?
+            .unwrap_or(CapsulePublic {
+                agent_id: String::new(),
+                agent_version: None,
+                toolchain_digest: None,
+                env_fingerprint: None,
+                evidence: vec![],
+            });
+        let recipients = req
+            .recipients
+            .iter()
+            .map(recipient_from_proto)
+            .collect::<Vec<_>>();
+        if !req.private_data.is_empty() && recipients.is_empty() {
+            return Err(Status::invalid_argument(
+                "private_data requires at least one capsule recipient envelope",
+            ));
+        }
 
         let capsule = Capsule {
             revision_id,
@@ -186,8 +322,13 @@ impl CapsuleService for CapsuleServer {
             } else {
                 Some(req.private_data)
             },
-            encryption: String::new(),
-            key_id: None,
+            encryption: req.encryption,
+            key_id: if req.key_id.is_empty() {
+                None
+            } else {
+                Some(req.key_id)
+            },
+            recipients,
             signatures: vec![],
         };
 
@@ -220,6 +361,12 @@ impl CapsuleService for CapsuleServer {
         &self,
         request: Request<GetCapsuleRequest>,
     ) -> Result<Response<GetCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::ReadCapsule, None)?;
+        let can_read_private =
+            self.security
+                .allows(&request, AuthorizationAction::ReadPrivateCapsule, None);
+        let principal = principal_from_request(&request);
         let req = request.into_inner();
         let rev_id_msg = req
             .revision_id
@@ -242,7 +389,11 @@ impl CapsuleService for CapsuleServer {
             .map_err(|e| Status::internal(e.to_string()))?
         {
             Object::Capsule(c) => Ok(Response::new(GetCapsuleResponse {
-                capsule: Some(capsule_to_proto(&c)),
+                capsule: Some(capsule_to_proto(&capsule_for_principal(
+                    &c,
+                    principal.as_deref(),
+                    can_read_private,
+                ))),
             })),
             _ => Err(Status::internal("object is not a capsule")),
         }
@@ -252,6 +403,8 @@ impl CapsuleService for CapsuleServer {
         &self,
         request: Request<VerifyCapsuleRequest>,
     ) -> Result<Response<VerifyCapsuleResponse>, Status> {
+        self.security
+            .authorize(&request, AuthorizationAction::VerifyCapsule, None)?;
         let req = request.into_inner();
         let rev_id_msg = req
             .revision_id
@@ -295,10 +448,10 @@ impl CapsuleService for CapsuleServer {
 
 #[cfg(test)]
 mod tests {
-    use super::verify_capsule_for_revision;
+    use super::{capsule_for_principal, verify_capsule_for_revision};
     use claw_core::hash::content_hash;
     use claw_core::object::TypeTag;
-    use claw_core::types::CapsulePublic;
+    use claw_core::types::{Capsule, CapsulePublic, CapsuleRecipient};
     use claw_crypto::capsule::build_capsule;
     use claw_crypto::keypair::KeyPair;
 
@@ -344,5 +497,82 @@ mod tests {
         let (valid, message) = verify_capsule_for_revision(&capsule, &other_revision_id);
         assert!(!valid);
         assert!(message.contains("mismatch"));
+    }
+
+    fn recipient_capsule() -> Capsule {
+        Capsule {
+            revision_id: content_hash(TypeTag::Revision, b"revision-recipient"),
+            public_fields: public_fields(),
+            encrypted_private: Some(b"ciphertext".to_vec()),
+            encryption: "xchacha20poly1305+recipient-envelope-v1".to_string(),
+            key_id: None,
+            recipients: vec![CapsuleRecipient {
+                recipient_id: "runner-a".to_string(),
+                key_id: "key-1".to_string(),
+                algorithm: "x25519-blake3-xchacha20poly1305".to_string(),
+                ephemeral_public_key: vec![1, 2, 3],
+                encrypted_content_key: vec![4, 5, 6],
+            }],
+            signatures: vec![],
+        }
+    }
+
+    #[test]
+    fn capsule_private_fields_are_redacted_for_non_recipient_principals() {
+        let capsule = recipient_capsule();
+
+        let redacted = capsule_for_principal(&capsule, Some("runner-b"), true);
+
+        assert!(redacted.encrypted_private.is_none());
+        assert!(redacted.recipients.is_empty());
+        assert_eq!(
+            redacted.public_fields.agent_id,
+            capsule.public_fields.agent_id
+        );
+    }
+
+    #[test]
+    fn capsule_private_fields_are_redacted_for_recipient_without_private_read_scope() {
+        let capsule = recipient_capsule();
+
+        let redacted = capsule_for_principal(&capsule, Some("runner-a"), false);
+
+        assert!(redacted.encrypted_private.is_none());
+        assert!(redacted.recipients.is_empty());
+    }
+
+    #[test]
+    fn capsule_private_fields_are_kept_for_authorized_recipient_principal() {
+        let capsule = recipient_capsule();
+
+        let visible = capsule_for_principal(&capsule, Some("runner-a"), true);
+
+        assert_eq!(visible.encrypted_private, capsule.encrypted_private);
+        assert_eq!(visible.recipients.len(), 1);
+    }
+
+    #[test]
+    fn capsule_private_fields_use_case_insensitive_recipient_principal_match() {
+        let capsule = recipient_capsule();
+
+        let visible = capsule_for_principal(&capsule, Some("RUNNER-A"), true);
+
+        assert_eq!(visible.encrypted_private, capsule.encrypted_private);
+        assert_eq!(visible.recipients.len(), 1);
+    }
+
+    #[test]
+    fn capsule_private_fields_without_recipients_are_redacted() {
+        let mut capsule = recipient_capsule();
+        capsule.recipients.clear();
+
+        let redacted = capsule_for_principal(&capsule, Some("runner-a"), true);
+
+        assert!(redacted.encrypted_private.is_none());
+        assert!(redacted.recipients.is_empty());
+        assert_eq!(
+            redacted.public_fields.agent_id,
+            capsule.public_fields.agent_id
+        );
     }
 }

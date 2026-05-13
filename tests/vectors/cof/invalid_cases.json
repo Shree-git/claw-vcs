@@ -1,0 +1,48 @@
+[
+  {
+    "name": "invalid_magic",
+    "cof_hex": "42414421010100000000000000",
+    "expected_error": "invalid magic"
+  },
+  {
+    "name": "future_version",
+    "cof_hex": "434c57317f0100000000000000",
+    "expected_version": 127,
+    "expected_error": "unsupported cof version"
+  },
+  {
+    "name": "unknown_type_tag",
+    "cof_hex": "434c573101ff00000000000000",
+    "expected_error": "unknown type tag"
+  },
+  {
+    "name": "unknown_flags",
+    "cof_hex": "434c5731010180000000000000",
+    "expected_error": "unknown cof flags"
+  },
+  {
+    "name": "unknown_compression",
+    "cof_hex": "434c5731010100ff0000000000",
+    "expected_error": "unknown compression"
+  },
+  {
+    "name": "unterminated_uvarint",
+    "cof_hex": "434c57310101000080808080",
+    "expected_error": "unexpected end of uvarint"
+  },
+  {
+    "name": "length_mismatch",
+    "cof_hex": "434c5731010100000500000000",
+    "expected_error": "length mismatch"
+  },
+  {
+    "name": "bad_zstd_payload",
+    "cof_hex": "434c5731010101010568656c6c6f00000000",
+    "expected_error": "decompression error"
+  },
+  {
+    "name": "crc_mismatch",
+    "cof_hex": "434c5731010100000568656c6c6f86a61037",
+    "expected_error": "crc32 mismatch"
+  }
+]

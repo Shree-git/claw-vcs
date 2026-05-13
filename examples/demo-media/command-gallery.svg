@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="title desc">
+  <title id="title">Claw VCS command screenshot gallery</title>
+  <desc id="desc">Terminal-style screenshots for status, log, diff, show, policy, failed integrate, successful ship, and Git export.</desc>
+  <rect width="1200" height="780" fill="#0f1419"/>
+  <text x="32" y="48" fill="#e6edf3" font-family="Menlo, Consolas, monospace" font-size="26">Claw VCS command gallery</text>
+  <g font-family="Menlo, Consolas, monospace" font-size="15">
+    <rect x="32" y="80" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="52" y="115" fill="#7ee787">$ claw status</text>
+    <text x="52" y="145" fill="#e6edf3">On branch demo</text>
+    <text x="52" y="175" fill="#79c0ff">A  app.conf</text>
+    <text x="52" y="205" fill="#8b949e">snapshot with: claw snapshot --change &lt;id&gt; -m "..."</text>
+
+    <rect x="628" y="80" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="648" y="115" fill="#7ee787">$ claw log</text>
+    <text x="648" y="145" fill="#e6edf3">clw_demo_revision Add demo config</text>
+    <text x="648" y="175" fill="#8b949e">Intent: Add dark mode</text>
+    <text x="648" y="205" fill="#8b949e">Evidence: smoke=pass lint=pass</text>
+
+    <rect x="32" y="250" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="52" y="285" fill="#7ee787">$ claw diff</text>
+    <text x="52" y="315" fill="#f85149">- theme = "light"</text>
+    <text x="52" y="345" fill="#3fb950">+ theme = "dark"</text>
+    <text x="52" y="375" fill="#8b949e">codec: text/line</text>
+
+    <rect x="628" y="250" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="648" y="285" fill="#7ee787">$ claw show --json clw_demo_revision</text>
+    <text x="648" y="315" fill="#e6edf3">{ "type": "Revision",</text>
+    <text x="648" y="345" fill="#e6edf3">  "summary": "Add demo config",</text>
+    <text x="648" y="375" fill="#e6edf3">  "capsule_id": "clw_demo_capsule" }</text>
+
+    <rect x="32" y="420" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="52" y="455" fill="#7ee787">$ claw policy eval release --revision heads/demo --json</text>
+    <text x="52" y="485" fill="#e6edf3">{ "allowed": true,</text>
+    <text x="52" y="515" fill="#e6edf3">  "policy": { "id": "release" } }</text>
+
+    <rect x="628" y="420" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="648" y="455" fill="#7ee787">$ claw integrate --right heads/demo</text>
+    <text x="648" y="485" fill="#f85149">policy denied: missing required check lint</text>
+    <text x="648" y="515" fill="#8b949e">Try: claw policy eval release --revision heads/demo --json</text>
+
+    <rect x="32" y="590" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="52" y="625" fill="#7ee787">$ claw ship --intent &lt;id&gt; --evidence test=pass</text>
+    <text x="52" y="655" fill="#e6edf3">Capsule: clw_demo_capsule</text>
+    <text x="52" y="685" fill="#e6edf3">Revision: clw_demo_revision</text>
+
+    <rect x="628" y="590" width="540" height="145" rx="8" fill="#161b22"/>
+    <text x="648" y="625" fill="#7ee787">$ claw git-export --git-dir /tmp/exported.git</text>
+    <text x="648" y="655" fill="#e6edf3">Exported heads/main -&gt; refs/heads/claw/main</text>
+    <text x="648" y="685" fill="#8b949e">verify: git -C /tmp/exported.git fsck</text>
+  </g>
+</svg>

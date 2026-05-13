@@ -24,30 +24,34 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
+          persist-credentials: false
           fetch-depth: 1
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Run core library contract tests
-        run: cargo test -p claw -- --nocapture
+        run: cargo test -p claw-vcs --locked -- --nocapture
 
       - name: Run public workflow CLI tests
         run: |
-          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests
-          cargo test -p claw-integration-tests --test cli_core_workflow_tests
-          cargo test -p claw-integration-tests --test cli_sync_e2e_tests
-          cargo test -p claw-integration-tests --test cli_error_contract_tests
+          cargo test -p claw-integration-tests --test cli_admin_git_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_core_workflow_tests --locked
+          cargo test -p claw-integration-tests --test cli_sync_e2e_tests --locked
+          cargo test -p claw-integration-tests --test cli_error_contract_tests --locked
 
       - name: Run contract artifact and interoperability suites
         run: |
-          cargo test -p claw-integration-tests --test spec_tests
-          cargo test -p claw-integration-tests --test ops_artifacts_tests
-          cargo test -p claw-integration-tests --test daemon_http_contract_tests
-          cargo test -p claw-integration-tests --test cross_version_runtime_tests
-          cargo test -p claw-integration-tests --test load_soak_tests -- --test-threads=1
+          cargo test -p claw-integration-tests --test spec_tests --locked
+          cargo test -p claw-integration-tests --test ops_artifacts_tests --locked
+          cargo test -p claw-integration-tests --test vector_manifest_tests --locked
+          cargo test -p claw-integration-tests --test backlog_gap_tests --locked -- --test-threads=1
+          cargo test -p claw-integration-tests --test chaos_tests --locked -- --test-threads=1
+          cargo test -p claw-integration-tests --test daemon_http_contract_tests --locked
+          cargo test -p claw-integration-tests --test cross_version_runtime_tests --locked
+          cargo test -p claw-integration-tests --test load_soak_tests --locked -- --test-threads=1

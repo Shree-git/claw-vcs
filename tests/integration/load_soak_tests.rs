@@ -81,6 +81,52 @@ strict_startup_checks = false
 "#
 }
 
+fn rate_limited_config() -> &'static str {
+    r#"
+config_version = 1
+
+[auth]
+require_auth_for_daemon = false
+default_profile = "default"
+
+[tls]
+require_for_non_localhost = true
+
+[timeouts]
+io_ms = 5000
+git_bridge_ms = 15000
+policy_eval_ms = 5000
+
+[retries]
+idempotent_only = true
+max_attempts = 4
+base_backoff_ms = 100
+max_backoff_ms = 2000
+jitter = true
+
+[queues]
+worker_pool_size = 8
+queue_capacity = 1024
+backpressure = true
+rate_limit_per_minute = 2
+
+[telemetry]
+structured_logs = true
+correlation_ids = true
+metrics = true
+traces = true
+
+[policy]
+fail_closed_integrate = true
+fail_closed_ship = true
+
+[backup]
+snapshot_interval_min = 60
+verify_integrity_on_startup = false
+strict_startup_checks = false
+"#
+}
+
 fn object_chunk_for(store: &ClawStore, id: ObjectId) -> ObjectChunk {
     let object = store.load_object(&id).expect("load object for chunk");
     let payload = object
@@ -242,6 +288,33 @@ async fn live_push_pressure_rejects_ref_mutation_until_capacity_recovers() {
             .expect("read ref after recovery"),
         Some(next)
     );
+}
+
+#[tokio::test]
+async fn live_daemon_enforces_configured_rate_limit() {
+    let repo = init_temp_repo();
+    write_repo_config(repo.path(), rate_limited_config());
+    let daemon = LiveDaemon::spawn(repo.path(), &[]).await;
+
+    let mut client = SyncServiceClient::connect(daemon.grpc_endpoint.clone())
+        .await
+        .expect("connect rate-limited client");
+    client
+        .hello(tonic::Request::new(HelloRequest {
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
+            capabilities: vec![],
+        }))
+        .await
+        .expect("first explicit request should fit remaining rate budget");
+
+    let limited = client
+        .hello(tonic::Request::new(HelloRequest {
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
+            capabilities: vec![],
+        }))
+        .await
+        .expect_err("second explicit request should hit configured rate limit");
+    assert_eq!(limited.code(), tonic::Code::ResourceExhausted);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

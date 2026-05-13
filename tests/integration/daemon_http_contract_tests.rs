@@ -30,6 +30,10 @@ async fn documented_health_paths_are_live_and_match_the_envelope_contract() {
         .get("required")
         .and_then(Value::as_array)
         .expect("HealthEnvelope must declare required field list");
+    let envelope_properties = envelope
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("HealthEnvelope must declare properties");
 
     for path in [
         "/v1/health/live",
@@ -51,6 +55,14 @@ async fn documented_health_paths_are_live_and_match_the_envelope_contract() {
             "HealthEnvelope required list missing field: {field}"
         );
     }
+    assert_eq!(
+        envelope_properties
+            .get("code")
+            .and_then(|schema| schema.get("type"))
+            .and_then(Value::as_str),
+        Some("string"),
+        "HealthEnvelope.code must match the daemon's string status codes"
+    );
 
     for (path, request_id, expected_status) in [
         ("/v1/health/live", "live-check-1", "live"),
@@ -99,7 +111,6 @@ async fn live_metrics_and_error_paths_match_documented_http_behavior() {
     let metrics_body = String::from_utf8(metrics.body).expect("metrics body should be utf-8");
     assert!(metrics_body.contains("# HELP claw_daemon_http_request_latency_seconds"));
     assert!(metrics_body.contains("# HELP claw_daemon_auth_failures_total"));
-    assert!(metrics_body.contains("# HELP claw_daemon_retry_total"));
     assert!(metrics_body.contains("# HELP claw_daemon_policy_eval_duration_seconds"));
     assert!(metrics_body.contains("# HELP claw_daemon_queue_depth"));
     assert!(metrics_body.contains("# HELP claw_daemon_worker_pool_size"));

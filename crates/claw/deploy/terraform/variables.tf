@@ -31,11 +31,11 @@ variable "values_files" {
 variable "image_repository" {
   description = "Container image repository to deploy."
   type        = string
-  default     = "ghcr.io/infinite-apps/claw"
+  default     = "claw-vcs"
 }
 
 variable "image_tag" {
   description = "Container image tag to deploy."
   type        = string
-  default     = "latest"
+  default     = "dev"
 }

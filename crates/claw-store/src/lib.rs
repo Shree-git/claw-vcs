@@ -1,13 +1,50 @@
+//! Content-addressed repository storage for Claw VCS.
+//!
+//! `claw-store` owns `.claw/` layout operations: loose object storage, refs,
+//! HEAD, reflogs, lockfiles, and object loading through COF decoding. It keeps
+//! storage behavior separate from CLI and network concerns.
+//!
+//! # Example
+//!
+//! ```rust
+//! use claw_core::object::Object;
+//! use claw_core::types::Blob;
+//! use claw_store::ClawStore;
+//!
+//! let temp = tempfile::tempdir()?;
+//! let store = ClawStore::init(temp.path())?;
+//!
+//! let id = store.store_object(&Object::Blob(Blob {
+//!     data: b"hello from claw".to_vec(),
+//!     media_type: Some("text/plain".to_string()),
+//! }))?;
+//!
+//! assert!(store.has_object(&id));
+//! assert!(matches!(store.load_object(&id)?, Object::Blob(_)));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+/// Store error types.
 pub mod error;
+/// HEAD file read/write helpers.
 pub mod head;
+/// Worktree index data structures.
 pub mod index;
+/// `.claw/` repository layout helpers.
 pub mod layout;
+/// Filesystem lockfile helper.
 pub mod lockfile;
+/// Loose object storage helpers.
 pub mod loose;
+/// Packfile storage helpers.
 pub mod pack;
+/// Reference log helpers.
 pub mod reflog;
+/// Reference validation and storage helpers.
 pub mod refs;
+/// Repository config read/write helpers.
 pub mod repo;
+/// Tree diff helpers used by snapshots.
 pub mod tree_diff;
 
 pub use error::StoreError;

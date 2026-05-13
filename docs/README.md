@@ -5,7 +5,21 @@ This tree is for teams evaluating or running self-hosted Claw deployments. Treat
 ## Start here
 
 - [Quickstart](getting-started/quickstart.md)
+- [Static landing page](index.html)
+- [Landing page](landing-page.md)
+- [Concepts](concepts/index.md)
+- [Workflows](workflows/index.md)
+- [Agent docs](agents/index.md)
+- [Migration docs](migration/index.md)
+- [Persona index](persona/index.md)
+- [CLI reference](cli/README.md)
+- [Public interface manifest](reference/public-interface-manifest.md)
+- [Deprecation policy](reference/deprecation-policy.md)
 - [Production install](operations/production-install.md)
+- [Public launch checklist](operations/public-launch-checklist.md)
+- [Public launch backlog coverage](operations/backlog-coverage.md)
+- [Release verification](security/verifying-releases.md)
+- [Threat model](security/threat-model.md)
 - [Upgrade and rollback](operations/upgrade-and-rollback.md)
 - [Disaster recovery](operations/disaster-recovery.md)
 - [Troubleshooting](operations/troubleshooting.md)
@@ -21,8 +35,24 @@ This tree is for teams evaluating or running self-hosted Claw deployments. Treat
 ## Reference
 
 - [Compatibility](reference/compatibility.md)
+- [Stability reference](reference/stability.md)
+- [Data layout](reference/data-layout.md)
+- [Known limitations](reference/known-limitations.md)
+- [Object format spec](spec/object-format.md)
+- [Benchmarks](reference/benchmarks.md)
+- [Unsafe audit](reference/unsafe-audit.md)
+- [Panic audit](reference/panic-audit.md)
 - [Production readiness checklist](reference/production-readiness-checklist.md)
 - [Production profile defaults](reference/production-profile-defaults.md)
+- [Telemetry policy](reference/telemetry.md)
+
+## Maintainers
+
+- [Governance](maintainers/governance.md)
+- [Maintainer guide](maintainers/guide.md)
+- [Telemetry maintainer guide](maintainers/telemetry.md)
+- [Deprecation maintainer guide](maintainers/deprecations.md)
+- [Dependency policy](maintainers/dependency-policy.md)
 
 ## Self-hosted-first baseline
 
@@ -33,3 +63,4 @@ Use this baseline unless you have stricter internal controls:
 - Terminate TLS at an ingress/proxy or configure daemon TLS via `.claw/config.toml`.
 - Validate environment with `claw admin preflight` before first start and after major changes.
 - Create and verify metadata backups with `claw admin backup create` and `claw admin backup verify`.
+- Run the backup/restore demo in `examples/backup-restore/`.

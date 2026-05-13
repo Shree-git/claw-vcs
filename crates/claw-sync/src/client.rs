@@ -5,12 +5,15 @@ use claw_core::object::Object;
 use claw_store::ClawStore;
 use rand::Rng;
 use tokio::time::{sleep, Duration};
+use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
 use tonic::Code;
 
 use crate::http_client::HttpSyncClient;
 use crate::proto::sync::sync_service_client::SyncServiceClient;
 use crate::proto::sync::*;
-use crate::transport::{RemoteTransportConfig, SyncTransport};
+use crate::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
+use crate::security::REPLAY_NONCE_METADATA_KEY;
+use crate::transport::{GrpcTlsConfig, RemoteTransportConfig, SyncTransport};
 use crate::SyncError;
 
 pub struct SyncClient {
@@ -66,6 +69,7 @@ impl SyncClient {
         Self::connect_with_transport(RemoteTransportConfig::Grpc {
             addr: addr.to_string(),
             bearer_token: None,
+            tls: None,
         })
         .await
     }
@@ -79,9 +83,11 @@ impl SyncClient {
         retry_policy: RetryPolicy,
     ) -> Result<Self, SyncError> {
         let inner: Box<dyn SyncTransport> = match config {
-            RemoteTransportConfig::Grpc { addr, bearer_token } => {
-                Box::new(GrpcSyncClient::connect(&addr, bearer_token).await?)
-            }
+            RemoteTransportConfig::Grpc {
+                addr,
+                bearer_token,
+                tls,
+            } => Box::new(GrpcSyncClient::connect(&addr, bearer_token, tls).await?),
             RemoteTransportConfig::Http {
                 base_url,
                 repo,
@@ -125,8 +131,8 @@ impl SyncClient {
         }
     }
 
-    async fn retry_wait(&self, attempt: u32) {
-        let delay = self.retry_policy.backoff_delay(attempt);
+    async fn retry_wait(policy: RetryPolicy, attempt: u32) {
+        let delay = policy.backoff_delay(attempt);
         sleep(delay).await;
     }
 
@@ -143,12 +149,14 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
 
-        Err(last_err.expect("retry loop always records error before exit"))
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
     }
 
     async fn retry_advertise_refs(
@@ -167,12 +175,14 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
 
-        Err(last_err.expect("retry loop always records error before exit"))
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
     }
 
     async fn retry_fetch_objects(
@@ -193,12 +203,76 @@ impl SyncClient {
                     if !retryable || attempt == attempts {
                         break;
                     }
-                    self.retry_wait(attempt).await;
+                    Self::retry_wait(self.retry_policy, attempt).await;
                 }
             }
         }
 
-        Err(last_err.expect("retry loop always records error before exit"))
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
+    }
+
+    async fn retry_update_refs(
+        &mut self,
+        updates: &[(String, Option<ObjectId>, ObjectId)],
+        force: bool,
+    ) -> Result<UpdateRefsResponse, SyncError> {
+        if self.retry_policy.idempotent_only {
+            return self.inner.update_refs(updates, force).await;
+        }
+
+        let attempts = self.retry_policy.attempts();
+        let mut last_err = None;
+
+        for attempt in 1..=attempts {
+            match self.inner.update_refs(updates, force).await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    let retryable = self.should_retry(&err);
+                    last_err = Some(err);
+                    if !retryable || attempt == attempts {
+                        break;
+                    }
+                    Self::retry_wait(self.retry_policy, attempt).await;
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
+    }
+
+    async fn retry_push_objects(
+        &mut self,
+        store: &ClawStore,
+        ids: &[ObjectId],
+    ) -> Result<PushObjectsResponse, SyncError> {
+        if self.retry_policy.idempotent_only {
+            return self.inner.push_objects(store, ids).await;
+        }
+
+        let attempts = self.retry_policy.attempts();
+        let mut last_err = None;
+
+        for attempt in 1..=attempts {
+            match self.inner.push_objects(store, ids).await {
+                Ok(resp) => return Ok(resp),
+                Err(err) => {
+                    let retryable = self.should_retry(&err);
+                    last_err = Some(err);
+                    if !retryable || attempt == attempts {
+                        break;
+                    }
+                    Self::retry_wait(self.retry_policy, attempt).await;
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            SyncError::ConnectionFailed("retry loop exited without recording an error".to_string())
+        }))
     }
 
     pub async fn hello(&mut self) -> Result<HelloResponse, SyncError> {
@@ -226,7 +300,7 @@ impl SyncClient {
         updates: &[(String, Option<ObjectId>, ObjectId)],
         force: bool,
     ) -> Result<UpdateRefsResponse, SyncError> {
-        self.inner.update_refs(updates, force).await
+        self.retry_update_refs(updates, force).await
     }
 
     pub async fn push_objects(
@@ -234,7 +308,7 @@ impl SyncClient {
         store: &ClawStore,
         ids: &[ObjectId],
     ) -> Result<PushObjectsResponse, SyncError> {
-        self.inner.push_objects(store, ids).await
+        self.retry_push_objects(store, ids).await
     }
 }
 
@@ -254,8 +328,28 @@ pub struct GrpcSyncClient {
 }
 
 impl GrpcSyncClient {
-    pub async fn connect(addr: &str, bearer_token: Option<String>) -> Result<Self, SyncError> {
-        let client = SyncServiceClient::connect(addr.to_string()).await?;
+    pub async fn connect(
+        addr: &str,
+        bearer_token: Option<String>,
+        tls: Option<GrpcTlsConfig>,
+    ) -> Result<Self, SyncError> {
+        let channel = match tls {
+            Some(tls_config) => {
+                let endpoint = Endpoint::from_shared(addr.to_string())
+                    .map_err(|e| SyncError::ConnectionFailed(e.to_string()))?;
+                endpoint
+                    .tls_config(build_client_tls_config(tls_config)?)?
+                    .connect()
+                    .await?
+            }
+            None => {
+                Endpoint::from_shared(addr.to_string())
+                    .map_err(|e| SyncError::ConnectionFailed(e.to_string()))?
+                    .connect()
+                    .await?
+            }
+        };
+        let client = SyncServiceClient::new(channel);
         Ok(Self {
             client,
             bearer_token,
@@ -275,14 +369,58 @@ impl GrpcSyncClient {
         }
         Ok(request)
     }
+
+    #[allow(clippy::result_large_err)]
+    fn with_replay_nonce<T>(
+        &self,
+        request: tonic::Request<T>,
+    ) -> Result<tonic::Request<T>, SyncError> {
+        let mut request = self.with_auth(request)?;
+        let nonce = new_replay_nonce();
+        let metadata_value = nonce
+            .parse()
+            .map_err(|e| SyncError::TransferFailed(format!("invalid replay nonce: {e}")))?;
+        request
+            .metadata_mut()
+            .insert(REPLAY_NONCE_METADATA_KEY, metadata_value);
+        Ok(request)
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn build_client_tls_config(config: GrpcTlsConfig) -> Result<ClientTlsConfig, SyncError> {
+    let mut tls = ClientTlsConfig::new();
+    if let Some(domain_name) = config.domain_name {
+        tls = tls.domain_name(domain_name);
+    }
+    if let Some(ca_cert_pem) = config.ca_cert_pem {
+        tls = tls.ca_certificate(Certificate::from_pem(ca_cert_pem));
+    }
+    match (config.client_cert_pem, config.client_key_pem) {
+        (Some(cert), Some(key)) => {
+            tls = tls.identity(Identity::from_pem(cert, key));
+        }
+        (None, None) => {}
+        _ => {
+            return Err(SyncError::ConnectionFailed(
+                "client TLS requires both client certificate and client key".to_string(),
+            ));
+        }
+    }
+    Ok(tls)
+}
+
+fn new_replay_nonce() -> String {
+    let bytes: [u8; 16] = rand::thread_rng().gen();
+    hex::encode(bytes)
 }
 
 #[async_trait]
 impl SyncTransport for GrpcSyncClient {
     async fn hello(&mut self) -> Result<HelloResponse, SyncError> {
         let request = self.with_auth(tonic::Request::new(HelloRequest {
-            client_version: "0.1.0".to_string(),
-            capabilities: vec!["partial-clone".to_string()],
+            client_version: SYNC_PROTOCOL_VERSION.to_string(),
+            capabilities: server_capabilities(),
         }))?;
         let resp = self.client.hello(request).await?;
         Ok(resp.into_inner())
@@ -374,9 +512,11 @@ impl SyncTransport for GrpcSyncClient {
 
         let resp = self
             .client
-            .update_refs(self.with_auth(tonic::Request::new(UpdateRefsRequest {
-                updates: proto_updates,
-            }))?)
+            .update_refs(
+                self.with_replay_nonce(tonic::Request::new(UpdateRefsRequest {
+                    updates: proto_updates,
+                }))?,
+            )
             .await?;
         Ok(resp.into_inner())
     }
@@ -412,7 +552,7 @@ impl SyncTransport for GrpcSyncClient {
         });
 
         let stream = tokio_stream::iter(chunks);
-        let request = self.with_auth(tonic::Request::new(stream))?;
+        let request = self.with_replay_nonce(tonic::Request::new(stream))?;
         let resp = self.client.push_objects(request).await?;
         Ok(resp.into_inner())
     }
@@ -517,9 +657,10 @@ mod tests {
 
     #[tokio::test]
     async fn does_not_retry_non_idempotent_update_refs() {
-        let transport = Box::new(MockTransport::new(0));
+        let transport = MockTransport::new(0);
+        let calls = Arc::clone(&transport.update_refs_calls);
         let mut client = SyncClient::from_transport_for_test(
-            transport,
+            Box::new(transport),
             RetryPolicy {
                 idempotent_only: true,
                 max_attempts: 5,
@@ -537,5 +678,32 @@ mod tests {
             SyncError::Grpc(status) => assert_eq!(status.code(), Code::Unavailable),
             other => panic!("unexpected error: {other}"),
         }
+        assert_eq!(*calls.lock().await, 1);
+    }
+
+    #[tokio::test]
+    async fn retries_non_idempotent_update_refs_when_explicitly_enabled() {
+        let transport = MockTransport::new(0);
+        let calls = Arc::clone(&transport.update_refs_calls);
+        let mut client = SyncClient::from_transport_for_test(
+            Box::new(transport),
+            RetryPolicy {
+                idempotent_only: false,
+                max_attempts: 3,
+                base_backoff_ms: 1,
+                max_backoff_ms: 4,
+                jitter: false,
+            },
+        );
+
+        let err = client
+            .update_refs(&[], false)
+            .await
+            .expect_err("update_refs should fail after configured attempts");
+        match err {
+            SyncError::Grpc(status) => assert_eq!(status.code(), Code::Unavailable),
+            other => panic!("unexpected error: {other}"),
+        }
+        assert_eq!(*calls.lock().await, 3);
     }
 }

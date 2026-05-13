@@ -1,0 +1,26 @@
+name: Question
+description: Ask a usage, workflow, or operator question
+title: "[Question]: "
+labels:
+  - question
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for public questions that do not include secrets or vulnerability details.
+        Report security issues through GitHub Security Advisories instead.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to understand or decide?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include command output, docs links, or workflow details if useful.
+    validations:
+      required: false

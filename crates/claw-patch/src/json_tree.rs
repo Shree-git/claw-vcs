@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::codec::Codec;
 use crate::PatchError;
 
+/// Codec that diffs JSON values by path and merges non-overlapping object edits.
 pub struct JsonTreeCodec;
 
 impl Codec for JsonTreeCodec {
@@ -18,7 +19,7 @@ impl Codec for JsonTreeCodec {
             serde_json::from_slice(new).map_err(|e| PatchError::InvalidJson(e.to_string()))?;
 
         let mut ops = Vec::new();
-        diff_values("", &old_val, &new_val, &mut ops);
+        diff_values("", &old_val, &new_val, &mut ops)?;
         Ok(ops)
     }
 
@@ -81,7 +82,8 @@ impl Codec for JsonTreeCodec {
                     PathRelation::Independent => {}
                     PathRelation::SiblingArrayElements => {
                         // Array index adjustment would be needed for full impl
-                        // For MVP, treat as non-commutable if they affect the same array
+                        // Array edits at the same path are treated as non-commutable until
+                        // indexed array operations are represented explicitly.
                         return Err(PatchError::CommuteFailed);
                     }
                 }
@@ -104,9 +106,18 @@ impl Codec for JsonTreeCodec {
     }
 }
 
-fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
+fn value_bytes(value: &Value) -> Result<Vec<u8>, PatchError> {
+    serde_json::to_vec(value).map_err(|e| PatchError::InvalidJson(e.to_string()))
+}
+
+fn diff_values(
+    path: &str,
+    old: &Value,
+    new: &Value,
+    ops: &mut Vec<PatchOp>,
+) -> Result<(), PatchError> {
     if old == new {
-        return;
+        return Ok(());
     }
 
     match (old, new) {
@@ -118,7 +129,7 @@ fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
                     ops.push(PatchOp {
                         address: child_path,
                         op_type: "delete".to_string(),
-                        old_data: Some(serde_json::to_vec(&old_map[key]).unwrap()),
+                        old_data: Some(value_bytes(&old_map[key])?),
                         new_data: None,
                         context_hash: None,
                     });
@@ -132,7 +143,7 @@ fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
                         address: child_path,
                         op_type: "insert".to_string(),
                         old_data: None,
-                        new_data: Some(serde_json::to_vec(&new_map[key]).unwrap()),
+                        new_data: Some(value_bytes(&new_map[key])?),
                         context_hash: None,
                     });
                 }
@@ -141,7 +152,7 @@ fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
             for key in old_map.keys() {
                 if let Some(new_val) = new_map.get(key) {
                     let child_path = format!("{path}/{key}");
-                    diff_values(&child_path, &old_map[key], new_val, ops);
+                    diff_values(&child_path, &old_map[key], new_val, ops)?;
                 }
             }
         }
@@ -151,14 +162,14 @@ fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
                 ops.push(PatchOp {
                     address: path.to_string(),
                     op_type: "replace".to_string(),
-                    old_data: Some(serde_json::to_vec(old).unwrap()),
-                    new_data: Some(serde_json::to_vec(new).unwrap()),
+                    old_data: Some(value_bytes(old)?),
+                    new_data: Some(value_bytes(new)?),
                     context_hash: None,
                 });
             } else {
                 for (i, (o, n)) in old_arr.iter().zip(new_arr.iter()).enumerate() {
                     let child_path = format!("{path}/{i}");
-                    diff_values(&child_path, o, n, ops);
+                    diff_values(&child_path, o, n, ops)?;
                 }
             }
         }
@@ -167,12 +178,13 @@ fn diff_values(path: &str, old: &Value, new: &Value, ops: &mut Vec<PatchOp>) {
             ops.push(PatchOp {
                 address: path.to_string(),
                 op_type: "replace".to_string(),
-                old_data: Some(serde_json::to_vec(old).unwrap()),
-                new_data: Some(serde_json::to_vec(new).unwrap()),
+                old_data: Some(value_bytes(old)?),
+                new_data: Some(value_bytes(new)?),
                 context_hash: None,
             });
         }
     }
+    Ok(())
 }
 
 fn apply_op(val: &mut Value, op: &PatchOp) -> Result<(), PatchError> {
@@ -334,8 +346,12 @@ fn path_relationship(a: &str, b: &str) -> PathRelation {
         let a_parent = &a_parts[..a_parts.len() - 1];
         let b_parent = &b_parts[..b_parts.len() - 1];
         if a_parent == b_parent {
-            let a_last = a_parts.last().unwrap();
-            let b_last = b_parts.last().unwrap();
+            let Some(a_last) = a_parts.last() else {
+                return PathRelation::Independent;
+            };
+            let Some(b_last) = b_parts.last() else {
+                return PathRelation::Independent;
+            };
             if a_last.parse::<usize>().is_ok() && b_last.parse::<usize>().is_ok() {
                 return PathRelation::SiblingArrayElements;
             }

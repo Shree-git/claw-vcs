@@ -1,5 +1,5 @@
 /// Convert claw blob data to git blob object bytes.
-/// Git blob format: "blob <size>\0<data>"
+/// Git blob format: `blob <size>\0<data>`.
 pub fn to_git_blob(data: &[u8]) -> Vec<u8> {
     let header = format!("blob {}\0", data.len());
     let mut result = Vec::with_capacity(header.len() + data.len());

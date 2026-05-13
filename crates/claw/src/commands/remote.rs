@@ -7,6 +7,9 @@ use crate::config::find_repo_root;
 
 #[derive(Args)]
 pub struct RemoteArgs {
+    /// Output result as JSON
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: RemoteCommand,
 }
@@ -28,6 +31,9 @@ enum RemoteCommand {
         /// Auth profile for transport bearer token (grpc/clawlab)
         #[arg(long)]
         token_profile: Option<String>,
+        /// Preview without updating .claw/remotes.toml
+        #[arg(long)]
+        dry_run: bool,
     },
     /// List remotes
     List,
@@ -35,6 +41,9 @@ enum RemoteCommand {
     Remove {
         /// Remote name
         name: String,
+        /// Preview without updating .claw/remotes.toml
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -79,9 +88,10 @@ pub fn run(args: RemoteArgs) -> anyhow::Result<()> {
             kind,
             repo,
             token_profile,
-        } => run_add(&name, &url, &kind, repo, token_profile),
-        RemoteCommand::List => run_list(),
-        RemoteCommand::Remove { name } => run_remove(&name),
+            dry_run,
+        } => run_add(&name, &url, &kind, repo, token_profile, args.json, dry_run),
+        RemoteCommand::List => run_list(args.json),
+        RemoteCommand::Remove { name, dry_run } => run_remove(&name, args.json, dry_run),
     }
 }
 
@@ -91,13 +101,18 @@ fn run_add(
     kind: &str,
     repo: Option<String>,
     token_profile: Option<String>,
+    json: bool,
+    dry_run: bool,
 ) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let config_path = root.join(".claw").join("remotes.toml");
 
     let mut config = load_remotes(&config_path);
     if config.remotes.contains_key(name) {
-        anyhow::bail!("remote '{}' already exists", name);
+        anyhow::bail!(
+            "remote '{}' already exists. Run `claw remote list` to inspect it.",
+            name
+        );
     }
 
     let entry = match kind {
@@ -122,18 +137,54 @@ fn run_add(
         other => anyhow::bail!("unsupported remote kind: {other} (expected grpc|clawlab)"),
     };
 
+    let resolved = normalize_entry(entry.clone())?;
     config.remotes.insert(name.to_string(), entry);
-    save_remotes(&config_path, &config)?;
+    if !dry_run {
+        save_remotes(&config_path, &config)?;
+    }
 
-    println!("Added remote '{}' ({kind}) -> {url}", name);
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "action": "add",
+                "remote": remote_json(name, &resolved),
+                "dry_run": dry_run,
+                "saved": !dry_run,
+                "config_path": config_path.display().to_string(),
+            }))?
+        );
+    } else if dry_run {
+        println!("Would add remote '{}' ({kind}) -> {url}", name);
+    } else {
+        println!("Added remote '{}' ({kind}) -> {url}", name);
+    }
     Ok(())
 }
 
-fn run_list() -> anyhow::Result<()> {
+fn run_list(json: bool) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let config_path = root.join(".claw").join("remotes.toml");
 
     let config = load_remotes(&config_path);
+    if json {
+        let remotes = config
+            .remotes
+            .iter()
+            .map(|(name, entry)| {
+                normalize_entry(entry.clone()).map(|resolved| remote_json(name, &resolved))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "remotes": remotes,
+                "config_path": config_path.display().to_string(),
+            }))?
+        );
+        return Ok(());
+    }
+
     if config.remotes.is_empty() {
         println!("No remotes configured.");
         return Ok(());
@@ -170,17 +221,38 @@ fn run_list() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_remove(name: &str) -> anyhow::Result<()> {
+fn run_remove(name: &str, json: bool, dry_run: bool) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let config_path = root.join(".claw").join("remotes.toml");
 
     let mut config = load_remotes(&config_path);
-    if config.remotes.remove(name).is_none() {
-        anyhow::bail!("remote '{}' not found", name);
+    let removed = config.remotes.remove(name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "remote '{}' not found. Run `claw remote list` to inspect configured remotes.",
+            name
+        )
+    })?;
+    let resolved = normalize_entry(removed)?;
+    if !dry_run {
+        save_remotes(&config_path, &config)?;
     }
-    save_remotes(&config_path, &config)?;
 
-    println!("Removed remote '{}'", name);
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "action": "remove",
+                "remote": remote_json(name, &resolved),
+                "dry_run": dry_run,
+                "saved": !dry_run,
+                "config_path": config_path.display().to_string(),
+            }))?
+        );
+    } else if dry_run {
+        println!("Would remove remote '{}'", name);
+    } else {
+        println!("Removed remote '{}'", name);
+    }
     Ok(())
 }
 
@@ -239,6 +311,31 @@ fn normalize_entry(entry: RemoteEntry) -> anyhow::Result<ResolvedRemote> {
     }
 }
 
+fn remote_json(name: &str, remote: &ResolvedRemote) -> serde_json::Value {
+    match remote {
+        ResolvedRemote::Grpc {
+            addr,
+            token_profile,
+        } => serde_json::json!({
+            "name": name,
+            "kind": "grpc",
+            "url": addr,
+            "token_profile": token_profile,
+        }),
+        ResolvedRemote::ClawLab {
+            base_url,
+            repo,
+            token_profile,
+        } => serde_json::json!({
+            "name": name,
+            "kind": "clawlab",
+            "base_url": base_url,
+            "repo": repo,
+            "token_profile": token_profile.as_deref().unwrap_or("default"),
+        }),
+    }
+}
+
 /// Resolve a remote argument to its transport-specific connection details.
 pub fn resolve_remote(root: &Path, remote_arg: &str) -> anyhow::Result<ResolvedRemote> {
     if remote_arg.contains("://") || remote_arg.contains("localhost") {
@@ -287,7 +384,7 @@ mod tests {
     fn normalize_clawlab_entry() {
         let entry = RemoteEntry {
             kind: Some("clawlab".to_string()),
-            base_url: Some("https://api.clawlab.com".to_string()),
+            base_url: Some("https://hosted.example.invalid".to_string()),
             repo: Some("acme/widgets".to_string()),
             token_profile: Some("default".to_string()),
             ..RemoteEntry::default()
@@ -299,7 +396,7 @@ mod tests {
                 repo,
                 token_profile,
             } => {
-                assert_eq!(base_url, "https://api.clawlab.com");
+                assert_eq!(base_url, "https://hosted.example.invalid");
                 assert_eq!(repo, "acme/widgets");
                 assert_eq!(token_profile.as_deref(), Some("default"));
             }

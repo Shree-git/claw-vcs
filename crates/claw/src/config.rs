@@ -6,17 +6,39 @@ use crate::diff_render;
 
 const SUPPORTED_CONFIG_VERSION: u32 = 1;
 
+#[derive(Debug)]
+pub struct NotRepositoryError;
+
+impl std::fmt::Display for NotRepositoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("not in a claw repository (no .claw directory found)")
+    }
+}
+
+impl std::error::Error for NotRepositoryError {}
+
 /// Find the claw repo root by walking up from the current directory.
 pub fn find_repo_root() -> anyhow::Result<PathBuf> {
     let mut dir = std::env::current_dir()?;
     loop {
-        if dir.join(".claw").is_dir() {
+        if is_repository_metadata_dir(&dir.join(".claw")) {
             return Ok(dir);
         }
         if !dir.pop() {
-            anyhow::bail!("not in a claw repository (no .claw directory found)");
+            return Err(NotRepositoryError.into());
         }
     }
+}
+
+fn is_repository_metadata_dir(claw_dir: &Path) -> bool {
+    if !claw_dir.is_dir() {
+        return false;
+    }
+
+    claw_dir.join("config.toml").is_file()
+        || claw_dir.join("HEAD").is_file()
+        || claw_dir.join("objects").is_dir()
+        || claw_dir.join("refs").is_dir()
 }
 
 pub fn config_file_path(root: &Path) -> PathBuf {
@@ -103,6 +125,9 @@ pub struct QueueSection {
     pub worker_pool_size: usize,
     pub queue_capacity: usize,
     pub backpressure: bool,
+    pub rate_limit_per_minute: Option<u32>,
+    pub max_push_chunk_bytes: Option<usize>,
+    pub max_push_request_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +217,9 @@ impl Default for QueueSection {
             worker_pool_size: 8,
             queue_capacity: 1_024,
             backpressure: true,
+            rate_limit_per_minute: None,
+            max_push_chunk_bytes: Some(8 * 1024 * 1024),
+            max_push_request_bytes: Some(128 * 1024 * 1024),
         }
     }
 }
@@ -365,6 +393,19 @@ mod tests {
 
         let loaded = load_or_default_config(root).expect("load saved config");
         assert_eq!(loaded, expected);
+    }
+
+    #[test]
+    fn repository_discovery_ignores_auth_only_claw_dirs() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let claw_dir = temp.path().join(".claw");
+        fs::create_dir_all(&claw_dir).expect("create .claw dir");
+        fs::write(claw_dir.join("auth.toml"), "[profiles]\n").expect("write auth config");
+
+        assert!(!is_repository_metadata_dir(&claw_dir));
+
+        fs::create_dir_all(claw_dir.join("objects")).expect("create object store");
+        assert!(is_repository_metadata_dir(&claw_dir));
     }
 
     #[test]

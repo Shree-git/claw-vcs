@@ -1,26 +1,28 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts,
-    Registry, TextEncoder,
+    Encoder, Histogram, HistogramOpts, HistogramVec, IntCounterVec, IntGauge, Opts, Registry,
+    TextEncoder,
 };
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
-use tonic::transport::{Identity, Server, ServerTlsConfig};
+use tonic::metadata::MetadataValue;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Status};
 
 use claw_store::ClawStore;
 use claw_sync::capsule_service::CapsuleServer;
 use claw_sync::change_service::ChangeServer;
-use claw_sync::event_service::EventServer;
+use claw_sync::event_service::{EventBus, EventServer};
 use claw_sync::intent_service::IntentServer;
 use claw_sync::proto::capsule::capsule_service_server::CapsuleServiceServer;
 use claw_sync::proto::change::change_service_server::ChangeServiceServer;
@@ -28,6 +30,13 @@ use claw_sync::proto::event::event_stream_service_server::EventStreamServiceServ
 use claw_sync::proto::intent::intent_service_server::IntentServiceServer;
 use claw_sync::proto::sync::sync_service_server::SyncServiceServer;
 use claw_sync::proto::workstream::workstream_service_server::WorkstreamServiceServer;
+use claw_sync::protocol::{server_capabilities, SYNC_PROTOCOL_VERSION};
+use claw_sync::security::{
+    now_ms, request_id_from_request, subject_from_request, AuditEvent, AuditSink,
+    AuthorizationAction, AuthorizationRole, AuthorizationScope, Authorizer, JsonlAuditSink,
+    RateLimiter, ReplayProtectionConfig, RoleBasedAuthorizer, TeeAuditSink, TracingAuditSink,
+    PRINCIPAL_METADATA_KEY, TOKEN_ID_METADATA_KEY,
+};
 use claw_sync::server::{SyncServer, SyncServerOptions};
 use claw_sync::workstream_service::WorkstreamServer;
 
@@ -43,6 +52,9 @@ pub struct DaemonArgs {
     /// HTTP health listen address
     #[arg(long, default_value = "[::1]:50052")]
     health_listen: String,
+    /// Allow unauthenticated health and metrics endpoints to bind outside localhost in production
+    #[arg(long)]
+    allow_public_health: bool,
     /// Use stdio instead of TCP (for embedded use)
     #[arg(long)]
     stdio: bool,
@@ -52,52 +64,150 @@ pub struct DaemonArgs {
     /// Read bearer auth token from a saved auth profile
     #[arg(long)]
     auth_profile: Option<String>,
+    /// Principal name attached to the configured bearer token for daemon authorization
+    #[arg(long, default_value = "daemon-token")]
+    auth_principal: String,
+    /// Daemon authorization role for the configured bearer token
+    #[arg(long, default_value = "admin")]
+    auth_role: String,
+    /// Additional daemon authorization scope for the configured bearer token
+    #[arg(long = "auth-scope")]
+    auth_scopes: Vec<String>,
+    /// Require replay nonce metadata on sync ref/object mutations
+    #[arg(long)]
+    require_replay_nonce: bool,
+    /// Maximum accepted sync requests per minute for this daemon
+    #[arg(long)]
+    rate_limit_per_minute: Option<u32>,
+    /// Maximum byte length for one pushed object chunk
+    #[arg(long)]
+    max_push_chunk_bytes: Option<usize>,
+    /// Maximum aggregate byte length for one push request
+    #[arg(long)]
+    max_push_request_bytes: Option<usize>,
     /// TLS certificate (PEM) path
     #[arg(long)]
     tls_cert: Option<PathBuf>,
     /// TLS private key (PEM) path
     #[arg(long)]
     tls_key: Option<PathBuf>,
+    /// Client CA certificate (PEM) path; enables required client certificate auth for gRPC TLS
+    #[arg(long)]
+    client_ca_cert: Option<PathBuf>,
+    /// Append authorization audit events to this JSON Lines file
+    #[arg(long)]
+    audit_log: Option<PathBuf>,
 }
 
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+const MAX_HEALTH_REQUEST_BODY_BYTES: usize = 64 * 1024;
+const GRPC_MESSAGE_OVERHEAD_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone)]
 struct BearerAuthInterceptor {
     expected_header: Arc<str>,
+    principal: Arc<str>,
+    token_id: Arc<str>,
     metrics: Arc<DaemonMetrics>,
+    audit_sink: Arc<dyn AuditSink>,
+    auth_failure_limiter: Option<Arc<Mutex<RateLimiter>>>,
 }
 
 impl BearerAuthInterceptor {
-    fn new(token: String, metrics: Arc<DaemonMetrics>) -> Self {
+    fn new(
+        token: String,
+        principal: String,
+        metrics: Arc<DaemonMetrics>,
+        audit_sink: Arc<dyn AuditSink>,
+    ) -> Self {
         Self {
+            token_id: Arc::<str>::from(bearer_token_id(&token)),
             expected_header: Arc::<str>::from(format!("Bearer {token}")),
+            principal: Arc::<str>::from(principal),
             metrics,
+            audit_sink,
+            auth_failure_limiter: None,
         }
+    }
+
+    fn with_auth_failure_rate_limit(mut self, limit_per_minute: Option<u32>) -> Self {
+        self.auth_failure_limiter = limit_per_minute
+            .map(|limit| Arc::new(Mutex::new(RateLimiter::per_minute(limit, Instant::now()))));
+        self
+    }
+
+    fn record_auth_denied(&self, request: &Request<()>, reason: &'static str) {
+        self.audit_sink.record(AuditEvent::denied(
+            now_ms(),
+            request_id_from_request(request),
+            subject_from_request(request),
+            AuthorizationAction::Hello,
+            None,
+            reason,
+        ));
+    }
+
+    fn enforce_auth_failure_rate_limit(&self, request: &Request<()>) -> Result<(), Status> {
+        let Some(limiter) = &self.auth_failure_limiter else {
+            return Ok(());
+        };
+        let mut limiter = limiter
+            .lock()
+            .map_err(|_| Status::internal("auth failure limiter lock poisoned"))?;
+        if limiter.try_acquire(Instant::now()) {
+            return Ok(());
+        }
+
+        self.metrics
+            .auth_failures
+            .with_label_values(&["throttled"])
+            .inc();
+        self.record_auth_denied(request, "auth failure rate limit exceeded");
+        Err(Status::resource_exhausted(
+            "auth failure rate limit exceeded",
+        ))
     }
 }
 
 impl tonic::service::Interceptor for BearerAuthInterceptor {
-    fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
         let provided = request
             .metadata()
             .get("authorization")
             .and_then(|value| value.to_str().ok());
 
         match provided {
-            Some(value) if value == self.expected_header.as_ref() => Ok(request),
+            Some(value) if value == self.expected_header.as_ref() => {
+                request.metadata_mut().remove(PRINCIPAL_METADATA_KEY);
+                request.metadata_mut().remove(TOKEN_ID_METADATA_KEY);
+                let principal = MetadataValue::try_from(self.principal.as_ref())
+                    .map_err(|_| Status::internal("invalid configured auth principal"))?;
+                let token_id = MetadataValue::try_from(self.token_id.as_ref())
+                    .map_err(|_| Status::internal("invalid configured auth token id"))?;
+                request
+                    .metadata_mut()
+                    .insert(PRINCIPAL_METADATA_KEY, principal);
+                request
+                    .metadata_mut()
+                    .insert(TOKEN_ID_METADATA_KEY, token_id);
+                Ok(request)
+            }
             Some(_) => {
+                self.enforce_auth_failure_rate_limit(&request)?;
                 self.metrics
                     .auth_failures
                     .with_label_values(&["invalid"])
                     .inc();
+                self.record_auth_denied(&request, "invalid bearer token");
                 Err(Status::unauthenticated("invalid bearer token"))
             }
             None => {
+                self.enforce_auth_failure_rate_limit(&request)?;
                 self.metrics
                     .auth_failures
                     .with_label_values(&["missing"])
                     .inc();
+                self.record_auth_denied(&request, "missing bearer token");
                 Err(Status::unauthenticated("missing bearer token"))
             }
         }
@@ -109,7 +219,6 @@ struct DaemonMetrics {
     registry: Registry,
     request_latency: HistogramVec,
     auth_failures: IntCounterVec,
-    retry_total: IntCounter,
     policy_eval_duration: Histogram,
     queue_depth: IntGauge,
     worker_pool_size: IntGauge,
@@ -133,10 +242,6 @@ impl DaemonMetrics {
             ),
             &["reason"],
         )?;
-        let retry_total = IntCounter::new(
-            "claw_daemon_retry_total",
-            "Retry attempts made by daemon workers",
-        )?;
         let policy_eval_duration = Histogram::with_opts(HistogramOpts::new(
             "claw_daemon_policy_eval_duration_seconds",
             "Duration of policy evaluations",
@@ -149,7 +254,6 @@ impl DaemonMetrics {
 
         registry.register(Box::new(request_latency.clone()))?;
         registry.register(Box::new(auth_failures.clone()))?;
-        registry.register(Box::new(retry_total.clone()))?;
         registry.register(Box::new(policy_eval_duration.clone()))?;
         registry.register(Box::new(queue_depth.clone()))?;
         registry.register(Box::new(worker_pool_size_gauge.clone()))?;
@@ -161,6 +265,7 @@ impl DaemonMetrics {
         request_latency.with_label_values(&["unknown"]);
         auth_failures.with_label_values(&["missing"]);
         auth_failures.with_label_values(&["invalid"]);
+        auth_failures.with_label_values(&["throttled"]);
 
         queue_depth.set(0);
         worker_pool_size_gauge.set(worker_pool_size as i64);
@@ -169,7 +274,6 @@ impl DaemonMetrics {
             registry,
             request_latency,
             auth_failures,
-            retry_total,
             policy_eval_duration,
             queue_depth,
             worker_pool_size: worker_pool_size_gauge,
@@ -200,8 +304,7 @@ impl DaemonMetrics {
         Ok(out)
     }
 
-    fn touch_placeholders(&self) {
-        let _ = self.retry_total.get();
+    fn register_metric_families(&self) {
         let _ = self.policy_eval_duration.get_sample_count();
         let _ = self.queue_depth.get();
         let _ = self.worker_pool_size.get();
@@ -233,6 +336,64 @@ fn resolve_daemon_auth_token(args: &DaemonArgs) -> anyhow::Result<Option<String>
     }
 
     Ok(None)
+}
+
+fn bearer_token_id(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let digest = hex::encode(hasher.finalize());
+    format!("sha256:{}", &digest[..16])
+}
+
+fn validate_metadata_value(label: &str, value: &str) -> anyhow::Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("{label} cannot be empty");
+    }
+    MetadataValue::try_from(trimmed)
+        .map_err(|err| anyhow::anyhow!("{label} must be valid ASCII gRPC metadata: {err}"))?;
+    Ok(trimmed.to_string())
+}
+
+fn build_sync_authorizer(
+    args: &DaemonArgs,
+    auth_token: Option<&str>,
+) -> anyhow::Result<Option<Arc<dyn Authorizer>>> {
+    let authz_requested = auth_token.is_some()
+        || !args.auth_role.eq_ignore_ascii_case("admin")
+        || !args.auth_scopes.is_empty();
+    if !authz_requested {
+        return Ok(None);
+    }
+
+    let role = AuthorizationRole::from_str(&args.auth_role).map_err(anyhow::Error::msg)?;
+    let scopes = args
+        .auth_scopes
+        .iter()
+        .map(|scope| AuthorizationScope::from_str(scope).map_err(anyhow::Error::msg))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let principal = if auth_token.is_some() {
+        validate_metadata_value("--auth-principal", &args.auth_principal)?
+    } else {
+        "anonymous".to_string()
+    };
+
+    let mut principals = vec![principal];
+    if let Some(token) = auth_token {
+        principals.push(bearer_token_id(token));
+    }
+
+    let mut authorizer = RoleBasedAuthorizer::new();
+    for principal in principals {
+        authorizer = authorizer.grant_role(principal.clone(), role);
+        for scope in &scopes {
+            authorizer = authorizer.grant_scope(principal.clone(), *scope);
+        }
+    }
+
+    let authorizer: Arc<dyn Authorizer> = Arc::new(authorizer);
+    Ok(Some(authorizer))
 }
 
 fn is_local_bind_addr(addr: &SocketAddr) -> bool {
@@ -470,6 +631,7 @@ async fn handle_health_connection(
     let start = Instant::now();
 
     if method != "GET" {
+        drain_request_body(&mut stream, &buf[..n]).await?;
         let envelope = HealthEnvelope {
             code: "method_not_allowed".to_string(),
             message: "method not allowed".to_string(),
@@ -501,7 +663,7 @@ async fn handle_health_connection(
             log_health_request(&request_id, path, 200);
         }
         "/v1/metrics" => {
-            metrics.touch_placeholders();
+            metrics.register_metric_families();
             let payload = metrics.render_prometheus()?;
             write_http_text_response(
                 &mut stream,
@@ -526,6 +688,44 @@ async fn handle_health_connection(
         }
     }
     metrics.observe_http_latency(path, start);
+
+    Ok(())
+}
+
+async fn drain_request_body(
+    stream: &mut tokio::net::TcpStream,
+    received: &[u8],
+) -> anyhow::Result<()> {
+    let Some(header_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return Ok(());
+    };
+    let head = String::from_utf8_lossy(&received[..header_end]);
+    let content_length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    if content_length > MAX_HEALTH_REQUEST_BODY_BYTES {
+        anyhow::bail!(
+            "health request body too large: {content_length} bytes exceeds {MAX_HEALTH_REQUEST_BODY_BYTES}"
+        );
+    }
+    let already_read = received.len().saturating_sub(header_end + 4);
+    let mut remaining = content_length.saturating_sub(already_read);
+    let mut scratch = [0u8; 1024];
+
+    while remaining > 0 {
+        let to_read = remaining.min(scratch.len());
+        let read = stream.read(&mut scratch[..to_read]).await?;
+        if read == 0 {
+            break;
+        }
+        remaining -= read;
+    }
 
     Ok(())
 }
@@ -560,6 +760,37 @@ fn resolve_tls_identity(
     }
 }
 
+fn resolve_client_ca_certificate(cert_path: Option<&Path>) -> anyhow::Result<Option<Certificate>> {
+    let Some(cert_path) = cert_path else {
+        return Ok(None);
+    };
+    let cert = std::fs::read(cert_path)?;
+    Ok(Some(Certificate::from_pem(cert)))
+}
+
+fn build_audit_sink(path: Option<&Path>) -> anyhow::Result<Arc<dyn AuditSink>> {
+    let tracing_sink: Arc<dyn AuditSink> = Arc::new(TracingAuditSink);
+    let Some(path) = path else {
+        return Ok(tracing_sink);
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file_sink: Arc<dyn AuditSink> = Arc::new(JsonlAuditSink::open(path)?);
+    Ok(Arc::new(TeeAuditSink::new(tracing_sink, file_sink)))
+}
+
+fn grpc_message_limit_bytes(options: &SyncServerOptions) -> usize {
+    options
+        .max_push_chunk_bytes
+        .unwrap_or_else(|| {
+            SyncServerOptions::default()
+                .max_push_chunk_bytes
+                .unwrap_or(8 * 1024 * 1024)
+        })
+        .saturating_add(GRPC_MESSAGE_OVERHEAD_BYTES)
+}
+
 pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<()> {
     let root = find_repo_root()?;
     let cfg = config::load_or_default_config(&root)?;
@@ -582,14 +813,17 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
             if line.is_empty() {
                 continue;
             }
-            // Simple echo-based protocol for MVP
+            // Stdio clients use newline-delimited JSON requests for embedded
+            // agent integrations. Keep responses structured so callers can
+            // negotiate capabilities before issuing ref or sync requests.
             let response = match serde_json::from_str::<serde_json::Value>(&line) {
                 Ok(req) => {
                     let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
                     match method {
                         "hello" => serde_json::json!({
-                            "server_version": "0.1.0",
-                            "capabilities": ["partial-clone"]
+                            "server_version": env!("CARGO_PKG_VERSION"),
+                            "protocol_version": SYNC_PROTOCOL_VERSION,
+                            "capabilities": server_capabilities()
                         }),
                         "refs" => {
                             let prefix = req.get("prefix").and_then(|p| p.as_str()).unwrap_or("");
@@ -616,6 +850,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     let addr: SocketAddr = args.listen.parse()?;
     let health_addr: SocketAddr = args.health_listen.parse()?;
     let non_local_bind = !is_local_bind_addr(&addr);
+    let non_local_health_bind = !is_local_bind_addr(&health_addr);
 
     if auth_token.is_none() {
         let profile = config::default_profile(&cfg);
@@ -631,6 +866,12 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
         .clone()
         .or_else(|| cfg.tls.key_path.as_ref().map(PathBuf::from));
     let tls_identity = resolve_tls_identity(tls_cert.as_deref(), tls_key.as_deref())?;
+    let client_ca_certificate = resolve_client_ca_certificate(args.client_ca_cert.as_deref())?;
+    let mtls_enabled = client_ca_certificate.is_some();
+    if mtls_enabled && tls_identity.is_none() {
+        anyhow::bail!("--client-ca-cert requires --tls-cert and --tls-key");
+    }
+    let sync_authorizer = build_sync_authorizer(&args, auth_token.as_deref())?;
 
     let enforce_prod_profile = runtime.profile.eq_ignore_ascii_case("prod");
     if non_local_bind && enforce_prod_profile {
@@ -645,28 +886,73 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
             );
         }
     }
+    if non_local_health_bind && enforce_prod_profile && !args.allow_public_health {
+        anyhow::bail!(
+            "non-local health bind exposes unauthenticated health and metrics; use --allow-public-health to opt in"
+        );
+    }
 
     let shared_store = Arc::new(RwLock::new(store));
     let metrics = Arc::new(DaemonMetrics::new(cfg.queues.worker_pool_size)?);
+    let event_bus = EventBus::default();
+    let sync_defaults = SyncServerOptions::default();
 
-    let sync_server = SyncServer::from_shared_with_options(
+    let sync_options = SyncServerOptions {
+        worker_pool_size: cfg.queues.worker_pool_size,
+        queue_capacity: cfg.queues.queue_capacity,
+        backpressure: cfg.queues.backpressure,
+        io_timeout: std::time::Duration::from_millis(cfg.timeouts.io_ms),
+        max_push_chunk_bytes: args
+            .max_push_chunk_bytes
+            .or(cfg.queues.max_push_chunk_bytes)
+            .or(sync_defaults.max_push_chunk_bytes),
+        max_push_request_bytes: args
+            .max_push_request_bytes
+            .or(cfg.queues.max_push_request_bytes)
+            .or(sync_defaults.max_push_request_bytes),
+        rate_limit_per_minute: args
+            .rate_limit_per_minute
+            .or(cfg.queues.rate_limit_per_minute)
+            .or(sync_defaults.rate_limit_per_minute),
+    };
+    let auth_failure_rate_limit = sync_options.rate_limit_per_minute;
+    let grpc_message_limit = grpc_message_limit_bytes(&sync_options);
+    let mut sync_server = SyncServer::from_shared_with_options_and_events(
         shared_store.clone(),
-        SyncServerOptions {
-            worker_pool_size: cfg.queues.worker_pool_size,
-            queue_capacity: cfg.queues.queue_capacity,
-            backpressure: cfg.queues.backpressure,
-            io_timeout: std::time::Duration::from_millis(cfg.timeouts.io_ms),
-        },
-    );
-    let intent_server = IntentServer::new(shared_store.clone());
-    let change_server = ChangeServer::new(shared_store.clone());
-    let capsule_server = CapsuleServer::new(shared_store.clone());
-    let workstream_server = WorkstreamServer::new(shared_store.clone());
-    let event_server = EventServer::new(shared_store);
+        sync_options,
+        Some(event_bus.clone()),
+    )
+    .with_replay_protection(ReplayProtectionConfig::default(), args.require_replay_nonce);
+    if let Some(authorizer) = sync_authorizer.as_ref() {
+        sync_server = sync_server.with_authorizer(authorizer.clone());
+    }
+    let mut intent_server = IntentServer::new(shared_store.clone());
+    let mut change_server = ChangeServer::new(shared_store.clone());
+    let mut capsule_server = CapsuleServer::new(shared_store.clone());
+    let mut workstream_server = WorkstreamServer::new(shared_store.clone());
+    let mut event_server = EventServer::with_bus(event_bus);
+    let audit_sink = build_audit_sink(args.audit_log.as_deref())?;
+    sync_server = sync_server.with_audit_sink(audit_sink.clone());
+    intent_server = intent_server.with_audit_sink(audit_sink.clone());
+    change_server = change_server.with_audit_sink(audit_sink.clone());
+    capsule_server = capsule_server.with_audit_sink(audit_sink.clone());
+    workstream_server = workstream_server.with_audit_sink(audit_sink.clone());
+    event_server = event_server.with_audit_sink(audit_sink.clone());
+    if let Some(authorizer) = sync_authorizer {
+        intent_server = intent_server.with_authorizer(authorizer.clone());
+        change_server = change_server.with_authorizer(authorizer.clone());
+        capsule_server = capsule_server.with_authorizer(authorizer.clone());
+        workstream_server = workstream_server.with_authorizer(authorizer.clone());
+        event_server = event_server.with_authorizer(authorizer);
+    }
 
     let mut grpc_builder = Server::builder();
     if let Some(identity) = tls_identity {
-        grpc_builder = grpc_builder.tls_config(ServerTlsConfig::new().identity(identity))?;
+        let mut tls_config = ServerTlsConfig::new().identity(identity);
+        if let Some(client_ca) = client_ca_certificate {
+            tls_config = tls_config.client_ca_root(client_ca);
+        }
+        grpc_builder = grpc_builder.tls_config(tls_config)?;
     }
 
     println!("Claw daemon listening (gRPC) on {}", addr);
@@ -675,46 +961,95 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
     if auth_token.is_some() {
         println!("gRPC auth enabled (bearer token required)");
     }
+    if mtls_enabled {
+        println!("gRPC mTLS enabled (client certificate required)");
+    }
+    if args.require_replay_nonce {
+        println!("sync replay nonce enforcement enabled");
+    }
 
     let grpc_metrics = metrics.clone();
+    let auth_principal = validate_metadata_value("--auth-principal", &args.auth_principal)?;
     let grpc_task = async move {
         if let Some(token) = auth_token {
-            let interceptor = BearerAuthInterceptor::new(token, grpc_metrics.clone());
+            let interceptor = BearerAuthInterceptor::new(
+                token,
+                auth_principal,
+                grpc_metrics.clone(),
+                audit_sink.clone(),
+            )
+            .with_auth_failure_rate_limit(auth_failure_rate_limit);
             grpc_builder
-                .add_service(SyncServiceServer::with_interceptor(
-                    sync_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    SyncServiceServer::new(sync_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(IntentServiceServer::with_interceptor(
-                    intent_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    IntentServiceServer::new(intent_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(ChangeServiceServer::with_interceptor(
-                    change_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    ChangeServiceServer::new(change_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(CapsuleServiceServer::with_interceptor(
-                    capsule_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    CapsuleServiceServer::new(capsule_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(WorkstreamServiceServer::with_interceptor(
-                    workstream_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    WorkstreamServiceServer::new(workstream_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor.clone(),
                 ))
-                .add_service(EventStreamServiceServer::with_interceptor(
-                    event_server,
+                .add_service(tonic::service::interceptor::InterceptedService::new(
+                    EventStreamServiceServer::new(event_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
                     interceptor,
                 ))
                 .serve(addr)
                 .await?;
         } else {
             grpc_builder
-                .add_service(SyncServiceServer::new(sync_server))
-                .add_service(IntentServiceServer::new(intent_server))
-                .add_service(ChangeServiceServer::new(change_server))
-                .add_service(CapsuleServiceServer::new(capsule_server))
-                .add_service(WorkstreamServiceServer::new(workstream_server))
-                .add_service(EventStreamServiceServer::new(event_server))
+                .add_service(
+                    SyncServiceServer::new(sync_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    IntentServiceServer::new(intent_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    ChangeServiceServer::new(change_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    CapsuleServiceServer::new(capsule_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    WorkstreamServiceServer::new(workstream_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
+                .add_service(
+                    EventStreamServiceServer::new(event_server)
+                        .max_decoding_message_size(grpc_message_limit)
+                        .max_encoding_message_size(grpc_message_limit),
+                )
                 .serve(addr)
                 .await?;
         }
@@ -731,8 +1066,20 @@ mod tests {
     use super::*;
     use serde_json::Value;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::sync::Mutex;
     use tonic::metadata::MetadataValue;
     use tonic::service::Interceptor;
+
+    #[derive(Clone, Default)]
+    struct TestAuditSink {
+        events: Arc<Mutex<Vec<AuditEvent>>>,
+    }
+
+    impl AuditSink for TestAuditSink {
+        fn record(&self, event: AuditEvent) {
+            self.events.lock().expect("audit lock").push(event);
+        }
+    }
 
     fn test_metrics() -> Arc<DaemonMetrics> {
         Arc::new(DaemonMetrics::new(8).expect("create test metrics"))
@@ -872,17 +1219,46 @@ mod tests {
         assert!(head.contains("content-type: text/plain; version=0.0.4; charset=utf-8"));
         assert!(body.contains("# HELP claw_daemon_http_request_latency_seconds"));
         assert!(body.contains("# HELP claw_daemon_auth_failures_total"));
-        assert!(body.contains("# HELP claw_daemon_retry_total"));
         assert!(body.contains("# HELP claw_daemon_policy_eval_duration_seconds"));
         assert!(body.contains("# HELP claw_daemon_queue_depth"));
         assert!(body.contains("# HELP claw_daemon_worker_pool_size"));
     }
 
+    #[tokio::test]
+    async fn drain_request_body_rejects_large_content_length() {
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind local body-drain test listener");
+        let addr = listener.local_addr().expect("read local listener address");
+        let client = tokio::spawn(async move {
+            tokio::net::TcpStream::connect(addr)
+                .await
+                .expect("connect to local body-drain listener")
+        });
+        let (mut stream, _) = listener.accept().await.expect("accept test connection");
+        let _client = client.await.expect("join client task");
+        let request = format!(
+            "POST /v1/health/live HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+            MAX_HEALTH_REQUEST_BODY_BYTES + 1
+        );
+
+        let err = drain_request_body(&mut stream, request.as_bytes())
+            .await
+            .expect_err("oversized health body should be rejected");
+
+        assert!(err.to_string().contains("health request body too large"));
+    }
+
     #[test]
     fn auth_failure_metrics_increment_for_missing_and_invalid_bearer() {
         let metrics = test_metrics();
-        let mut interceptor =
-            BearerAuthInterceptor::new("correct-token".to_string(), metrics.clone());
+        let audit = TestAuditSink::default();
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics.clone(),
+            Arc::new(audit.clone()),
+        );
 
         let missing = interceptor.call(Request::new(()));
         assert!(missing.is_err());
@@ -903,5 +1279,178 @@ mod tests {
             metrics.auth_failures.with_label_values(&["invalid"]).get(),
             1
         );
+        let events = audit.events.lock().expect("audit lock");
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|event| event.outcome == claw_sync::security::AuditOutcome::Denied));
+        assert!(events
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("missing bearer token")));
+        assert!(events
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("invalid bearer token")));
+    }
+
+    #[test]
+    fn auth_failure_rate_limit_throttles_invalid_bearer_floods() {
+        let metrics = test_metrics();
+        let audit = TestAuditSink::default();
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics.clone(),
+            Arc::new(audit.clone()),
+        )
+        .with_auth_failure_rate_limit(Some(1));
+
+        let mut first = Request::new(());
+        first.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer wrong-token-1").expect("valid metadata value"),
+        );
+        assert!(interceptor.call(first).is_err());
+
+        let mut second = Request::new(());
+        second.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer wrong-token-2").expect("valid metadata value"),
+        );
+        let throttled = interceptor
+            .call(second)
+            .expect_err("second auth failure should be throttled");
+
+        assert_eq!(throttled.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(
+            metrics.auth_failures.with_label_values(&["invalid"]).get(),
+            1
+        );
+        assert_eq!(
+            metrics
+                .auth_failures
+                .with_label_values(&["throttled"])
+                .get(),
+            1
+        );
+        assert!(audit
+            .events
+            .lock()
+            .expect("audit lock")
+            .iter()
+            .any(|event| event.reason.as_deref() == Some("auth failure rate limit exceeded")));
+    }
+
+    #[test]
+    fn grpc_message_limit_tracks_configured_push_chunk_limit() {
+        let options = SyncServerOptions {
+            max_push_chunk_bytes: Some(16 * 1024 * 1024),
+            ..SyncServerOptions::default()
+        };
+
+        assert_eq!(
+            grpc_message_limit_bytes(&options),
+            17 * 1024 * 1024,
+            "tonic message limits should leave headroom above Claw's push chunk limit"
+        );
+    }
+
+    #[test]
+    fn tls_identity_requires_cert_and_key_pair() {
+        let cert_only = resolve_tls_identity(Some(Path::new("server.pem")), None)
+            .expect_err("missing key should fail");
+        assert!(cert_only.to_string().contains("--tls-cert and --tls-key"));
+
+        let key_only = resolve_tls_identity(None, Some(Path::new("server-key.pem")))
+            .expect_err("missing cert should fail");
+        assert!(key_only.to_string().contains("--tls-cert and --tls-key"));
+    }
+
+    #[test]
+    fn client_ca_certificate_loader_reads_configured_pem() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let ca_path = temp.path().join("ca.pem");
+        std::fs::write(
+            &ca_path,
+            b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+        )
+        .expect("write ca");
+
+        let cert =
+            resolve_client_ca_certificate(Some(&ca_path)).expect("client CA PEM should be read");
+        assert!(cert.is_some());
+    }
+
+    #[test]
+    fn bearer_auth_interceptor_attaches_authorization_subject_metadata() {
+        let metrics = test_metrics();
+        let mut interceptor = BearerAuthInterceptor::new(
+            "correct-token".to_string(),
+            "agent-a".to_string(),
+            metrics,
+            Arc::new(TracingAuditSink),
+        );
+
+        let mut request = Request::new(());
+        request.metadata_mut().insert(
+            "authorization",
+            MetadataValue::try_from("Bearer correct-token").expect("valid metadata value"),
+        );
+
+        let request = interceptor.call(request).expect("valid bearer token");
+        let expected_token_id = bearer_token_id("correct-token");
+        assert_eq!(
+            request
+                .metadata()
+                .get(PRINCIPAL_METADATA_KEY)
+                .and_then(|value| value.to_str().ok()),
+            Some("agent-a")
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get(TOKEN_ID_METADATA_KEY)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected_token_id.as_str())
+        );
+    }
+
+    #[test]
+    fn sync_authorizer_grants_configured_role_and_scopes_to_token_principal() {
+        let args = DaemonArgs {
+            listen: "[::1]:50051".to_string(),
+            health_listen: "[::1]:50052".to_string(),
+            stdio: false,
+            auth_token: Some("correct-token".to_string()),
+            auth_profile: None,
+            auth_principal: "agent-a".to_string(),
+            auth_role: "reader".to_string(),
+            auth_scopes: vec!["refs:write".to_string()],
+            require_replay_nonce: false,
+            rate_limit_per_minute: None,
+            max_push_chunk_bytes: None,
+            max_push_request_bytes: None,
+            tls_cert: None,
+            tls_key: None,
+            client_ca_cert: None,
+            audit_log: None,
+            allow_public_health: false,
+        };
+
+        let authorizer = build_sync_authorizer(&args, args.auth_token.as_deref())
+            .expect("valid authorizer")
+            .expect("auth token enables role authorizer");
+        let subject = claw_sync::security::AuthorizationSubject {
+            principal: Some("agent-a".to_string()),
+            token_id: Some(bearer_token_id("correct-token")),
+            peer_addr: None,
+        };
+
+        assert!(authorizer
+            .authorize(&claw_sync::security::AuthorizationRequest {
+                subject,
+                action: claw_sync::security::AuthorizationAction::UpdateRefs,
+                resource: Some("heads/main".to_string()),
+            })
+            .is_allowed());
     }
 }

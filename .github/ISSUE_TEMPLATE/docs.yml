@@ -1,0 +1,33 @@
+name: Docs request
+description: Report missing, stale, or confusing documentation
+title: "docs: "
+labels: ["docs", "needs-triage"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      placeholder: "docs/reference/stability.md"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should the doc say?
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Reader
+      options:
+        - new user
+        - agent integrator
+        - platform operator
+        - maintainer
+        - contributor
+        - unsure

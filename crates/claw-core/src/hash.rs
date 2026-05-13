@@ -1,7 +1,10 @@
 use crate::id::ObjectId;
 use crate::object::TypeTag;
 
-/// Domain-separated BLAKE3 hash: "claw\0" || type_tag || version || payload
+/// Compute a domain-separated BLAKE3 object hash.
+///
+/// The hash input is `"claw\0" || type_tag || version || payload`, which
+/// prevents identical bytes in different object domains from sharing IDs.
 pub fn content_hash(type_tag: TypeTag, payload: &[u8]) -> ObjectId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"claw\0");

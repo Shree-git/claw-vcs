@@ -1,4 +1,4 @@
-# Releasing Claw
+# Releasing Claw VCS
 
 When release infrastructure is configured, this repo uses `cargo-dist` to build and publish:
 
@@ -6,6 +6,7 @@ When release infrastructure is configured, this repo uses `cargo-dist` to build 
 - `claw-installer.sh` + `claw-installer.ps1`
 - Windows `.msi`
 - A Homebrew formula published to a tap repository
+- artifact signatures, attestations, and SBOMs when the release workflows are enabled
 
 ## One-time setup
 
@@ -23,13 +24,151 @@ In the `shree-git/claw-vcs` repo, add a secret:
 
 - `HOMEBREW_TAP_TOKEN`: a token with the minimum write access required for `shree-git/homebrew-tap`
 
+### 3) Reserve crates.io package names
+
+The CLI package is `claw-vcs` and publishes the `claw` binary. Internal crates
+publish under `claw-vcs-*` package names to avoid unrelated crates that already
+own names such as `claw-core`, `claw-crypto`, and `claw-sync`.
+
+Publish order:
+
+```text
+claw-vcs-core
+claw-vcs-store
+claw-vcs-patch
+claw-vcs-crypto
+claw-vcs-policy
+claw-vcs-merge
+claw-vcs-sync
+claw-vcs-git
+claw-vcs
+```
+
+Before the first publish, `claw-vcs-core` can be verified locally because it has
+no internal registry dependencies:
+
+```bash
+scripts/publish-cratesio.sh --package claw-vcs-core
+```
+
+The default dry-run verifies packages whose earlier internal dependencies are
+already visible on crates.io and skips the rest with an explicit dependency
+list:
+
+```bash
+scripts/publish-cratesio.sh
+```
+
+For the remaining packages, run an explicit package dry-run immediately before
+each real publish after its earlier `claw-vcs-*` dependencies exist on
+crates.io:
+
+```bash
+scripts/publish-cratesio.sh --package claw-vcs-store
+```
+
+Cargo intentionally resolves those version dependencies from the registry during
+packaging, so dependent package dry-runs cannot pass until the earlier packages
+are live.
+
+After credentials are configured and the release commit is final, publish the
+full package set with the guarded helper:
+
+```bash
+CLAW_CRATESIO_PUBLISH=1 scripts/publish-cratesio.sh --publish
+```
+
 ## Cutting a release
 
 1. Bump the version in `Cargo.toml` (`[workspace.package].version`).
-2. Commit the version bump.
-3. Create and push a git tag in the form `vX.Y.Z` (example: `v0.1.0`).
+2. Update `CHANGELOG.md`.
+3. Run local gates:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+cargo audit --deny warnings
+cargo deny check
+cargo vet
+```
+
+4. Compile and smoke-test fuzz targets:
+
+```bash
+cargo check --manifest-path fuzz/Cargo.toml --bins --locked
+for target in \
+  core_cof_decode \
+  cof_decode \
+  patch_codecs \
+  patch_apply \
+  json_tree_merge \
+  policy_checks \
+  crypto_capsule \
+  store_objects \
+  object_id_parse \
+  git_import_parse \
+  sync_chunk_decode; do
+  cargo run --manifest-path fuzz/Cargo.toml --bin "$target" --locked -- -runs=1
+done
+```
+
+5. Run a release dry-run if supported by the local `cargo-dist` version:
+
+```bash
+dist plan
+```
+
+6. Commit the version and changelog update.
+7. Create and push a git tag in the form `vX.Y.Z` (example: `v0.1.0`).
 
 Pushing the tag triggers `.github/workflows/release.yml` which builds and publishes artifacts.
+
+## Release verification
+
+Before announcing a release, verify from a clean machine or container:
+
+```bash
+claw --version
+claw doctor
+mkdir /tmp/claw-demo
+cd /tmp/claw-demo
+claw init
+claw status
+```
+
+Verify release assets:
+
+- checksums match
+- Cosign signatures verify
+- GitHub artifact attestations verify with `gh attestation verify`
+- SBOM is present and readable
+- Homebrew formula installs the tagged version
+- Windows MSI installs and adds `claw` to `PATH`
+- `cargo install --git https://github.com/shree-git/claw-vcs.git --tag vX.Y.Z --package claw-vcs --locked` installs the tagged version
+
+For a clean Unix host smoke test, run:
+
+```bash
+scripts/verify-release-channel.sh vX.Y.Z
+```
+
+See [docs/security/verifying-releases.md](docs/security/verifying-releases.md).
+
+## Rollback
+
+Keep the previous release artifact and a verified repository backup available before promoting a new release.
+
+Rollback procedure:
+
+1. Stop the daemon.
+2. Install the previous verified version.
+3. Restore a verified backup if a migration changed `.claw/` state.
+4. Run `claw admin preflight`.
+5. Restart the daemon.
+6. Verify refs, object store health, and client sync.
+
+See [docs/operations/upgrade-and-rollback.md](docs/operations/upgrade-and-rollback.md).
 
 ## WinGet (manual, first publish)
 
@@ -37,7 +176,7 @@ WinGet publishing is manual until the initial package is accepted into `microsof
 
 Suggested package identifier:
 
-- `ShreeGit.Claw`
+- `ShreeGit.ClawVCS`
 
 High-level steps:
 

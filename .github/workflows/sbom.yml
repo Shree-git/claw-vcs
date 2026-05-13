@@ -14,15 +14,21 @@ permissions:
 jobs:
   cyclonedx:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
+        run: cargo install cargo-cyclonedx --version 0.5.9 --locked
 
       - name: Generate CycloneDX SBOM (JSON)
         run: cargo cyclonedx --all-features --format json
@@ -31,14 +37,35 @@ jobs:
         run: cargo cyclonedx --all-features --format xml
 
       - name: Collect SBOM files
+        id: sbom
         shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p sbom-artifacts
           find . -type f \( -name "*.cdx.json" -o -name "*.cdx.xml" -o -name "bom.json" -o -name "bom.xml" \) -exec cp {} sbom-artifacts/ \;
 
+          sbom_json="$(find sbom-artifacts -type f \( -name "*.cdx.json" -o -name "bom.json" \) | sort | head -n 1)"
+          if [[ -z "$sbom_json" ]]; then
+            echo "No JSON SBOM was generated" >&2
+            exit 1
+          fi
+
+          attested_sbom="sbom-artifacts/claw.cdx.json"
+          if [[ "$sbom_json" != "$attested_sbom" ]]; then
+            cp "$sbom_json" "$attested_sbom"
+          fi
+          echo "path=$attested_sbom" >> "$GITHUB_OUTPUT"
+
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cyclonedx-sbom-${{ github.sha }}
           path: sbom-artifacts/
           if-no-files-found: error
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        with:
+          subject-path: Cargo.lock
+          sbom-path: ${{ steps.sbom.outputs.path }}

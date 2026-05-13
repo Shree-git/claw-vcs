@@ -26,11 +26,22 @@ pub fn write_loose_object(
         std::fs::create_dir_all(parent)?;
     }
 
-    // Atomic write: temp file + rename
-    let dir = path.parent().unwrap();
-    let temp = tempfile::NamedTempFile::new_in(dir)?;
-    std::fs::write(temp.path(), data)?;
+    // Atomic write: temp file + fsync + rename.
+    let dir = path
+        .parent()
+        .ok_or_else(|| StoreError::Index("loose object path has no parent".to_string()))?;
+    let mut temp = tempfile::NamedTempFile::new_in(dir)?;
+    {
+        use std::io::Write;
+
+        let file = temp.as_file_mut();
+        file.write_all(data)?;
+        file.sync_all()?;
+    }
     temp.persist(&path).map_err(|e| StoreError::Io(e.error))?;
+    if let Ok(dir_handle) = std::fs::File::open(dir) {
+        dir_handle.sync_all()?;
+    }
 
     Ok(())
 }
@@ -99,5 +110,24 @@ mod tests {
 
         let id = content_hash(TypeTag::Blob, b"nonexistent");
         assert!(read_loose_object(&layout, &id).is_err());
+    }
+
+    #[test]
+    fn interrupted_temp_object_write_is_ignored_by_listing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let layout = RepoLayout::new(tmp.path());
+        layout.create_dirs().unwrap();
+
+        let data = b"durable object";
+        let id = content_hash(TypeTag::Blob, data);
+        let shard_dir = layout.objects_dir().join(id.shard_prefix());
+        std::fs::create_dir_all(&shard_dir).unwrap();
+        std::fs::write(shard_dir.join(".tmp-partial-object"), b"partial").unwrap();
+
+        write_loose_object(&layout, &id, data).unwrap();
+        let ids = list_loose_object_ids(&layout).unwrap();
+
+        assert_eq!(ids, vec![id]);
+        assert_eq!(read_loose_object(&layout, &id).unwrap(), data);
     }
 }

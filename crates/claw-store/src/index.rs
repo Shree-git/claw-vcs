@@ -1,7 +1,7 @@
 use crate::StoreError;
 
 /// Index operations backed by redb.
-/// In MVP, the index is optional - we can operate purely on loose objects and ref files.
+/// The index is currently optional: repositories can operate from loose objects and ref files.
 /// This provides an acceleration layer for type lookups and ref searches.
 pub struct MetaIndex {
     _db: redb::Database,

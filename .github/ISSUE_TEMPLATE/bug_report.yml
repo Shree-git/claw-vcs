@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible Claw defect
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for defects in the CLI, daemon, sync, policies, Git interop, or docs.
+  - type: input
+    id: version
+    attributes:
+      label: Claw version
+      description: Paste the output of `claw --version`.
+      placeholder: "claw 0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - daemon
+        - sync
+        - policy
+        - Git interop
+        - docs
+        - release/install
+        - unsure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, config snippets, and any needed setup.
+      placeholder: |
+        1. Run `claw init`
+        2. Run `...`
+        3. See `...`
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include full error text.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, install channel, daemon/client version pairing, and remote type.
+      placeholder: |
+        OS:
+        Install channel:
+        Daemon version:
+        Client version:
+        Remote kind:
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste safe output from `claw admin preflight` or note the support bundle path.

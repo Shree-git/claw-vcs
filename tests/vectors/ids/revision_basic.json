@@ -1,0 +1,21 @@
+{
+  "name": "revision_basic",
+  "input_object": {
+    "type": "Revision",
+    "change_id": "02020202020202020202020202020202",
+    "parents": [
+      "clw_ambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambq"
+    ],
+    "tree": "clw_we43b6zpgvwo26ap7io2cxgdlsxwwodxee7jcbe23pggl2csyn5q",
+    "author": "agent@example.com",
+    "created_at_ms": 1778500000000,
+    "summary": "basic revision vector",
+    "policy_evidence": [
+      "test=pass"
+    ]
+  },
+  "canonical_payload_hex": "0a120a100202020202020202020202020202020212220a2003030303030303030303030303030303030303030303030303030303030303032a220a20b139b0fb2f356ced780ffa1da15cc35caf6b3877213e91049adbcc65e852c37b3a116167656e74406578616d706c652e636f6d4080b2f1b6e1334a156261736963207265766973696f6e20766563746f725209746573743d70617373",
+  "expected_object_id_hex": "e3b36e71c4991d0e6ff2e294506f7a23060722be7fd5e4d277b7de3ed8cfebc2",
+  "expected_object_id": "clw_4ozw44oeteoq437s4kkfa332emdaoiv6p7k6jutxw7pd5wgp5pba",
+  "expected_verification_result": "valid"
+}

@@ -29,7 +29,7 @@ pub fn append_reflog(
     let old_hex = old.map_or_else(|| ZERO_HEX.to_string(), |id| id.to_hex());
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64;
     let line = format!(
         "{} {} {} {} {}\n",

@@ -27,6 +27,9 @@ Default values below are the baseline generated/used by Claw when `.claw/config.
 | `queues` | `worker_pool_size` | `8` |
 | `queues` | `queue_capacity` | `1024` |
 | `queues` | `backpressure` | `true` |
+| `queues` | `rate_limit_per_minute` | unset |
+| `queues` | `max_push_chunk_bytes` | `8388608` |
+| `queues` | `max_push_request_bytes` | `134217728` |
 | `telemetry` | `structured_logs` | `true` |
 | `telemetry` | `correlation_ids` | `true` |
 | `telemetry` | `metrics` | `true` |
@@ -41,5 +44,9 @@ Default values below are the baseline generated/used by Claw when `.claw/config.
 
 - `auth.require_auth_for_daemon = true` means production deployments should require bearer auth.
 - `tls.require_for_non_localhost = true` means you should enforce TLS when binding beyond localhost.
+- `queues.rate_limit_per_minute` applies to sync service work and to repeated
+  missing/invalid bearer-token failures before those requests reach a service.
+- Non-local health/metrics binds are blocked in the production profile unless
+  the daemon is started with `--allow-public-health`.
 - Policy and backup defaults are fail-closed and integrity-focused.
 - Use `claw admin preflight` to validate host/config assumptions before daemon startup.

@@ -14,6 +14,12 @@ pub struct CheckoutArgs {
     /// Force checkout even with uncommitted changes
     #[arg(long)]
     force: bool,
+    /// Preview the checkout without updating HEAD or the working tree
+    #[arg(long)]
+    dry_run: bool,
+    /// Output result as JSON
+    #[arg(long)]
+    json: bool,
 }
 
 pub fn run(args: CheckoutArgs) -> anyhow::Result<()> {
@@ -21,29 +27,39 @@ pub fn run(args: CheckoutArgs) -> anyhow::Result<()> {
     let store = ClawStore::open(&root)?;
 
     // Resolve target: try branch ref first, then object ID
-    let (new_head_state, target_id) =
-        if let Some(id) = store.get_ref(&format!("heads/{}", args.target))? {
-            (
-                HeadState::Symbolic {
-                    ref_name: format!("heads/{}", args.target),
-                },
-                id,
-            )
-        } else if let Ok(id) = ObjectId::from_hex(&args.target) {
-            if store.has_object(&id) {
-                (HeadState::Detached { target: id }, id)
-            } else {
-                anyhow::bail!("object not found: {}", args.target);
-            }
-        } else if let Ok(id) = ObjectId::from_display(&args.target) {
-            if store.has_object(&id) {
-                (HeadState::Detached { target: id }, id)
-            } else {
-                anyhow::bail!("object not found: {}", args.target);
-            }
+    let (new_head_state, target_id) = if let Some(id) =
+        store.get_ref(&format!("heads/{}", args.target))?
+    {
+        (
+            HeadState::Symbolic {
+                ref_name: format!("heads/{}", args.target),
+            },
+            id,
+        )
+    } else if let Ok(id) = ObjectId::from_hex(&args.target) {
+        if store.has_object(&id) {
+            (HeadState::Detached { target: id }, id)
         } else {
-            anyhow::bail!("unknown branch or revision: {}", args.target);
-        };
+            anyhow::bail!(
+                "object not found: {}. Run `claw log --all` to find a revision.",
+                args.target
+            );
+        }
+    } else if let Ok(id) = ObjectId::from_display(&args.target) {
+        if store.has_object(&id) {
+            (HeadState::Detached { target: id }, id)
+        } else {
+            anyhow::bail!(
+                "object not found: {}. Run `claw log --all` to find a revision.",
+                args.target
+            );
+        }
+    } else {
+        anyhow::bail!(
+                "unknown branch or revision: {}. Run `claw branch` or `claw log --all` to inspect available targets.",
+                args.target
+            );
+    };
 
     // Load target revision
     let target_obj = store.load_object(&target_id)?;
@@ -71,7 +87,7 @@ pub fn run(args: CheckoutArgs) -> anyhow::Result<()> {
                         )?;
                         if !changes.is_empty() {
                             anyhow::bail!(
-                                "uncommitted changes ({} files). Use --force to override.",
+                                "uncommitted changes ({} files). Use `claw status`, snapshot first, or use --force to override.",
                                 changes.len()
                             );
                         }
@@ -79,6 +95,24 @@ pub fn run(args: CheckoutArgs) -> anyhow::Result<()> {
                 }
             }
         }
+    }
+
+    if args.dry_run {
+        let target = checkout_target_label(&new_head_state);
+        if args.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "target": target,
+                    "target_id": target_id.to_hex(),
+                    "dry_run": true,
+                    "updated": false,
+                }))?
+            );
+        } else {
+            println!("Would switch to {target} at {target_id}");
+        }
+        return Ok(());
     }
 
     // Remove files tracked in current tree but not in target tree
@@ -108,17 +142,40 @@ pub fn run(args: CheckoutArgs) -> anyhow::Result<()> {
     // Update HEAD
     store.write_head(&new_head_state)?;
 
-    match &new_head_state {
-        HeadState::Symbolic { ref_name } => {
-            let branch = ref_name.strip_prefix("heads/").unwrap_or(ref_name);
-            println!("Switched to branch '{}'", branch);
-        }
-        HeadState::Detached { target } => {
-            println!("HEAD detached at {}", target);
+    let target = checkout_target_label(&new_head_state);
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "target": target,
+                "target_id": target_id.to_hex(),
+                "dry_run": false,
+                "updated": true,
+            }))?
+        );
+    } else {
+        match &new_head_state {
+            HeadState::Symbolic { ref_name } => {
+                let branch = ref_name.strip_prefix("heads/").unwrap_or(ref_name);
+                println!("Switched to branch '{}'", branch);
+            }
+            HeadState::Detached { target } => {
+                println!("HEAD detached at {}", target);
+            }
         }
     }
 
     Ok(())
+}
+
+fn checkout_target_label(state: &HeadState) -> String {
+    match state {
+        HeadState::Symbolic { ref_name } => ref_name
+            .strip_prefix("heads/")
+            .unwrap_or(ref_name)
+            .to_string(),
+        HeadState::Detached { target } => format!("detached:{target}"),
+    }
 }
 
 fn remove_empty_dirs(dir: &std::path::Path, stop_at: &std::path::Path) -> std::io::Result<()> {
