@@ -400,6 +400,16 @@ fn is_local_bind_addr(addr: &SocketAddr) -> bool {
     addr.ip().is_loopback()
 }
 
+fn validate_distinct_listen_addrs(
+    addr: &SocketAddr,
+    health_addr: &SocketAddr,
+) -> anyhow::Result<()> {
+    if addr == health_addr {
+        anyhow::bail!("--listen and --health-listen must use different addresses");
+    }
+    Ok(())
+}
+
 fn new_request_id() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -849,6 +859,7 @@ pub async fn run(args: DaemonArgs, runtime: &RuntimeOptions) -> anyhow::Result<(
 
     let addr: SocketAddr = args.listen.parse()?;
     let health_addr: SocketAddr = args.health_listen.parse()?;
+    validate_distinct_listen_addrs(&addr, &health_addr)?;
     let non_local_bind = !is_local_bind_addr(&addr);
     let non_local_health_bind = !is_local_bind_addr(&health_addr);
 
@@ -1149,6 +1160,21 @@ mod tests {
         let non_local = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 50051);
 
         assert!(!is_local_bind_addr(&non_local));
+    }
+
+    #[test]
+    fn daemon_listen_addresses_must_be_distinct() {
+        let grpc = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 50051);
+        let same_health = grpc;
+        let distinct_health = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 50052);
+
+        let err = validate_distinct_listen_addrs(&grpc, &same_health)
+            .expect_err("same daemon listener addresses should fail");
+        assert!(err
+            .to_string()
+            .contains("--listen and --health-listen must use different addresses"));
+        validate_distinct_listen_addrs(&grpc, &distinct_health)
+            .expect("distinct daemon listener addresses should pass");
     }
 
     #[test]

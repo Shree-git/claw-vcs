@@ -119,8 +119,7 @@ impl CliTestEnv {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let grpc_addr = reserve_local_addr();
-        let health_addr = reserve_local_addr();
+        let (grpc_addr, health_addr) = reserve_distinct_local_addrs();
         let stdout_log = self
             .temp_root()
             .join(format!("daemon-{}.stdout.log", random_suffix()));
@@ -309,13 +308,21 @@ fn apply_isolated_env(command: &mut Command, home_dir: &Path) {
     command.env("RUST_BACKTRACE", "1");
 }
 
-fn reserve_local_addr() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral localhost port");
-    let addr = listener
+fn reserve_distinct_local_addrs() -> (String, String) {
+    let grpc_listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral gRPC port");
+    let health_listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral health port");
+    let grpc_addr = grpc_listener
         .local_addr()
-        .expect("read ephemeral localhost port");
-    drop(listener);
-    addr.to_string()
+        .expect("read ephemeral gRPC address");
+    let health_addr = health_listener
+        .local_addr()
+        .expect("read ephemeral health address");
+    assert_ne!(
+        grpc_addr, health_addr,
+        "integration daemon gRPC and health listeners must use distinct ports"
+    );
+    drop((grpc_listener, health_listener));
+    (grpc_addr.to_string(), health_addr.to_string())
 }
 
 fn random_suffix() -> u128 {

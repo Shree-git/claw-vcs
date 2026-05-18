@@ -56,13 +56,21 @@ fn ensure_claw_binary() -> &'static PathBuf {
     })
 }
 
-fn free_local_addr() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral localhost port");
-    let addr = listener
+fn free_distinct_local_addrs() -> (SocketAddr, SocketAddr) {
+    let grpc_listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral gRPC port");
+    let health_listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral health port");
+    let grpc_addr = grpc_listener
         .local_addr()
-        .expect("read ephemeral localhost port");
-    drop(listener);
-    addr
+        .expect("read ephemeral gRPC address");
+    let health_addr = health_listener
+        .local_addr()
+        .expect("read ephemeral health address");
+    assert_ne!(
+        grpc_addr, health_addr,
+        "integration daemon gRPC and health listeners must use distinct ports"
+    );
+    drop((grpc_listener, health_listener));
+    (grpc_addr, health_addr)
 }
 
 fn child_output_string(output: &Output) -> String {
@@ -230,8 +238,7 @@ pub struct LiveDaemon {
 
 impl LiveDaemon {
     pub async fn spawn(root: &Path, extra_daemon_args: &[&str]) -> Self {
-        let grpc_addr = free_local_addr();
-        let health_addr = free_local_addr();
+        let (grpc_addr, health_addr) = free_distinct_local_addrs();
 
         let mut command = Command::new(ensure_claw_binary());
         configure_isolated_home(&mut command, root);
