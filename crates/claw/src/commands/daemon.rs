@@ -407,6 +407,15 @@ fn validate_distinct_listen_addrs(
     if addr == health_addr {
         anyhow::bail!("--listen and --health-listen must use different addresses");
     }
+    if addr.port() == health_addr.port()
+        && (addr.ip() == health_addr.ip()
+            || addr.ip().is_unspecified()
+            || health_addr.ip().is_unspecified())
+    {
+        anyhow::bail!(
+            "--listen and --health-listen must not share a port on overlapping bind interfaces"
+        );
+    }
     Ok(())
 }
 
@@ -1166,6 +1175,7 @@ mod tests {
     fn daemon_listen_addresses_must_be_distinct() {
         let grpc = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 50051);
         let same_health = grpc;
+        let wildcard_same_port = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 50051);
         let distinct_health = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 50052);
 
         let err = validate_distinct_listen_addrs(&grpc, &same_health)
@@ -1173,6 +1183,11 @@ mod tests {
         assert!(err
             .to_string()
             .contains("--listen and --health-listen must use different addresses"));
+        let err = validate_distinct_listen_addrs(&grpc, &wildcard_same_port)
+            .expect_err("overlapping daemon listener ports should fail");
+        assert!(err.to_string().contains(
+            "--listen and --health-listen must not share a port on overlapping bind interfaces"
+        ));
         validate_distinct_listen_addrs(&grpc, &distinct_health)
             .expect("distinct daemon listener addresses should pass");
     }
